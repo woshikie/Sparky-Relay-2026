@@ -37,7 +37,8 @@ import memory          # noqa: E402
 import relay_site      # noqa: E402
 import vault           # noqa: E402
 import words           # noqa: E402
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram import (InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton,
+                      ReplyKeyboardMarkup, ReplyKeyboardRemove, Update)
 from telegram.constants import ParseMode
 from telegram.error import TelegramError
 from telegram.ext import (Application, ApplicationBuilder, CallbackQueryHandler,
@@ -566,7 +567,13 @@ def parse_profile(board_text):
 # ----------------------------------------------------------------------
 
 async def on_start(update: Update, ctx):
-    """Entry point. Access Mode decides whether anything else happens."""
+    """Entry point. Access Mode decides whether anything else happens.
+
+    Sends exactly one message. The greeting and the Credentials Prompt used to
+    be separate replies, which read as the bot talking to itself; the prompt now
+    rides along on the same message, with the reply keyboard attached so the
+    commands are one tap away.
+    """
     chat = update.effective_chat
     msg = update.effective_message
     d = access.check(chat.id, getattr(chat, "username", None))
@@ -576,23 +583,49 @@ async def on_start(update: Update, ctx):
             # First-run claim: whoever got here first owns the Relay.
             if access.claim(chat.id):
                 await msg.reply_text(words.claimed(),
-                                     parse_mode=ParseMode.MARKDOWN)
+                                     parse_mode=ParseMode.MARKDOWN,
+                                     reply_markup=kb_reply())
             else:
                 await msg.reply_text(words.already_claimed(),
-                                     parse_mode=ParseMode.MARKDOWN)
+                                     parse_mode=ParseMode.MARKDOWN,
+                                     reply_markup=kb_reply())
             return
         if d.why == "needs_secret":
             await msg.reply_text(words.secret_prompt(),
-                                 parse_mode=ParseMode.MARKDOWN)
+                                 parse_mode=ParseMode.MARKDOWN,
+                                 reply_markup=kb_reply())
             return
         await msg.reply_text(words.access_refused(d),
-                             parse_mode=ParseMode.MARKDOWN)
+                             parse_mode=ParseMode.MARKDOWN,
+                             reply_markup=kb_reply())
         return
 
-    await msg.reply_text(words.welcome(getattr(chat, "first_name", None)),
-                         parse_mode=ParseMode.MARKDOWN)
-    if not has_credentials(chat.id):
-        await ask_credentials(msg, chat.id)
+    if has_credentials(chat.id):
+        body = words.welcome(getattr(chat, "first_name", None))
+        markup = kb_reply()
+    else:
+        # One message: the greeting, then the prompt, then the buttons for it.
+        body = words.welcome(getattr(chat, "first_name", None)) + "\n\n" + \
+            _credential_prompt_body()
+        _start_credential_stage(chat.id)
+        markup = kb_credential_choice() if config.has_preset_credentials() \
+            else kb_reply()
+    await msg.reply_text(body, parse_mode=ParseMode.MARKDOWN,
+                         reply_markup=markup)
+
+
+def _credential_prompt_body():
+    """The prompt text, without choosing a keyboard for it."""
+    if config.has_preset_credentials():
+        return words.choose_preset(config.SITE_USERNAME)
+    return words.ask_username()
+
+
+def _start_credential_stage(chat_id):
+    if config.has_preset_credentials():
+        _set_stage(chat_id, "choose_preset")
+    else:
+        _set_stage(chat_id, "username")
 
 
 def has_credentials(chat_id):
@@ -655,9 +688,9 @@ async def on_status(update: Update, ctx):
     preset_in_use = bool(st.get("preset")) and config.has_preset_credentials()
 
     if preset_in_use:
-        who = "%s (preset from config)" % config.SITE_USERNAME
+        who = "%s (preset from config)" % words.code(config.SITE_USERNAME)
     elif creds:
-        who = "%s (stored, encrypted)" % creds["username"]
+        who = "%s (stored, encrypted)" % words.code(creds["username"])
     else:
         who = "none — send /login"
 
@@ -665,11 +698,10 @@ async def on_status(update: Update, ctx):
     denied = ledger.all_denied()
     txt = (
         "**Relay status**\n\n"
-        "**Site:** `%s`\n"
+        "**Site:** %s\n"
         "**Signing in as:** %s\n"
         # access.describe() carries its own ** markers, and nesting those inside
-        # another ** pair made the whole reply unparseable, so /status returned
-        # nothing at all. Plain fragment inside the bold span instead.
+        # another ** pair made the whole reply unparseable. Plain fragment.
         "**Access:** %s\n"
         "**Browser:** headless=%s, launched per Screenshot\n"
         "**Memory:** %.0fMB usable (browser needs ~%dMB) — can launch: **%s**\n"
@@ -677,11 +709,13 @@ async def on_status(update: Update, ctx):
         "**Chats with access:** %s\n"
         "**Chats denied:** %s\n"
         "**Pending confirmations:** %d"
-        % (config.SITE_BASE, who, access.describe(markdown=False), config.HEADLESS,
+        % (words.code(config.SITE_BASE), who,
+           access.describe(markdown=False), config.HEADLESS,
            rep["available_mb"], rep["browser_peak_mb"],
            "yes" if rep["can_launch"] else "NO", len(subs),
-           ", ".join("`%s` (%s)" % (a["chat_id"], a["how"]) for a in granted) or "none",
-           ", ".join("`%s`" % a["chat_id"] for a in denied) or "none",
+           ", ".join("%s (%s)" % (words.code(a["chat_id"]),
+                                  words.md(a["how"])) for a in granted) or "none",
+           ", ".join(words.code(a["chat_id"]) for a in denied) or "none",
            len(PENDING))
     )
     await msg.reply_text(txt, parse_mode=ParseMode.MARKDOWN)
@@ -707,6 +741,53 @@ PROMPTING = {}
 
 # How long a half-finished prompt is worth holding before forgetting it.
 PROMPT_TTL = 600.0
+
+# Reply-keyboard button label -> handler name. Kept next to kb_reply() so the
+# two cannot drift: a label that changes in one and not the other becomes a
+# button that silently does nothing.
+BUTTON_COMMANDS = {
+    "📸 Submit steps": "submit",
+    "🔑 /login": "login",
+    "🚪 /logout": "logout",
+    "📋 /status": "status",
+    "📜 /log": "log",
+    "❓ /help": "help",
+    "❌ Cancel": "cancel",
+}
+
+
+async def _run_button(ctx, msg, chat, action, stage):
+    """Dispatch a tapped reply-keyboard button."""
+    if action == "submit":
+        if stage and stage.get("stage") in ("username", "password"):
+            await msg.reply_text(
+                words.cancel_prompt_first(), parse_mode=ParseMode.MARKDOWN)
+            return
+        await msg.reply_text(words.send_a_screenshot(),
+                             parse_mode=ParseMode.MARKDOWN)
+        return
+    if action == "cancel":
+        _clear_stage(chat.id)
+        await msg.reply_text(words.cancelled(), parse_mode=ParseMode.MARKDOWN,
+                             reply_markup=kb_done())
+        return
+
+    handler = {
+        "login": on_login, "logout": on_logout,
+        "status": on_status, "log": on_log, "help": on_start,
+    }.get(action)
+    if handler is None:
+        return
+    # Re-enter through the command handlers so there is one implementation of
+    # each, not a second copy here that could fall behind.
+    await handler(_as_update(msg, chat), ctx)
+
+
+def _as_update(msg, chat):
+    update = Update(0, message=msg)
+    update._effective_chat = chat
+    update._effective_user = chat
+    return update
 
 
 def _prompt_stage(chat_id):
@@ -740,7 +821,8 @@ async def ask_credentials(msg, chat_id):
 
 async def ask_username(msg, chat_id):
     _set_stage(chat_id, "username")
-    await msg.reply_text(words.ask_username(), parse_mode=ParseMode.MARKDOWN)
+    await msg.reply_text(words.ask_username(), parse_mode=ParseMode.MARKDOWN,
+                         reply_markup=kb_prompt())
 
 
 async def ask_password(msg, chat_id, username=None, preset=False):
@@ -752,7 +834,13 @@ async def ask_password(msg, chat_id, username=None, preset=False):
     an earlier version dropped it here and the password could not be stored.
     """
     _set_stage(chat_id, "password", username=username, preset=preset)
-    await msg.reply_text(words.ask_password(), parse_mode=ParseMode.MARKDOWN)
+    await msg.reply_text(words.ask_password(), parse_mode=ParseMode.MARKDOWN,
+                         reply_markup=kb_prompt())
+
+
+def kb_done():
+    """Back to the standing commands once a prompt is finished."""
+    return kb_reply()
 
 
 def kb_preset():
@@ -762,6 +850,41 @@ def kb_preset():
         [InlineKeyboardButton("Enter different credentials",
                               callback_data="cred:new")],
     ])
+
+
+def kb_credential_choice():
+    """Inline buttons for "use the preset, or give me your own"."""
+    return kb_preset()
+
+
+def kb_reply():
+    """The persistent reply keyboard: commands as ordinary buttons.
+
+    A reply keyboard rather than inline ones, because these are standing
+    commands rather than answers to a question. It also means /status and /log
+    are reachable without remembering a slash.
+    """
+    return ReplyKeyboardMarkup(
+        [
+            [KeyboardButton("📸 Submit steps"),
+             KeyboardButton("🔑 /login")],
+            [KeyboardButton("📋 /status"), KeyboardButton("📜 /log")],
+            [KeyboardButton("🚪 /logout"), KeyboardButton("❓ /help")],
+        ],
+        resize_keyboard=True,
+        is_persistent=True,     # survives a restart of the client
+        input_field_placeholder="Send a screenshot, or pick a command",
+    )
+
+
+def kb_prompt():
+    """Keyboard shown mid-prompt: the prompt itself must be typed."""
+    return ReplyKeyboardMarkup(
+        [[KeyboardButton("❌ Cancel")]],
+        resize_keyboard=True,
+        one_time_keyboard=True,
+        input_field_placeholder="Type your answer",
+    )
 
 
 async def on_credential_choice(update: Update, ctx):
@@ -794,11 +917,21 @@ def kb_after_login():
 
 
 async def on_text(update: Update, ctx):
-    """Handle the Credentials Prompt and the Shared Secret exchange."""
+    """Handle the Credentials Prompt, the Shared Secret exchange, and buttons.
+
+    Reply-keyboard buttons arrive here as ordinary text, so they are dispatched
+    first. That has to happen before the prompt handling: mid-prompt the bot
+    expects a username or a password, and a tapped "Submit steps" button must
+    not be mistaken for either.
+    """
     chat = update.effective_chat
     msg = update.effective_message
     text = (msg.text or "").strip()
     st = _prompt_stage(chat.id)
+
+    if text in BUTTON_COMMANDS:
+        await _run_button(ctx, msg, chat, BUTTON_COMMANDS[text], st)
+        return
 
     # --- Access gate first: an unauthorised chat gets nothing, and its input
     # --- is never treated as a secret.
@@ -964,8 +1097,7 @@ def main():
     app.add_handler(MessageHandler(filters.PHOTO, on_photo))
     app.add_handler(MessageHandler(
         filters.Document.MimeType("image/"), on_photo))
-    app.add_handler(MessageHandler(
-        filters.TEXT & ~filters.COMMAND, on_text))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_text))
 
     if app.job_queue is None:
         raise SystemExit(

@@ -403,7 +403,34 @@ def test_status_never_shows_a_password(bot, granted):
 def test_status_reports_the_access_mode(bot, granted):
     upd = FakeUpdate(chat_id=1)
     run(bot.on_status(upd, None))
-    assert "whitelist_claim" in upd.message.replies[0][0]
+    # Escaped: a bare `_` would open an italic Telegram never closes.
+    assert "whitelist\\_claim" in upd.message.replies[0][0]
+
+
+def test_start_sends_exactly_one_message(bot, granted):
+    """The greeting and the Credentials Prompt used to be two replies, which
+    read as the bot talking to itself.
+
+    Chat 2 is granted but holds no credentials, so the prompt is due and has
+    to ride along on the greeting.
+    """
+    access_module = bot.access
+    access_module.grant(2, "manual")
+    upd = FakeUpdate(chat_id=2)
+    run(bot.on_start(upd, None))
+    assert len(upd.message.replies) == 1
+    said = upd.message.said
+    assert "Hello" in said
+    # The prompt rides along on the greeting rather than as a second reply.
+    assert "username" in said.lower()
+
+
+def test_start_stays_quiet_when_credentials_are_ready(bot, granted):
+    """A chat that can already sign in gets the greeting and nothing else."""
+    upd = FakeUpdate(chat_id=1)
+    run(bot.on_start(upd, None))
+    assert len(upd.message.replies) == 1
+    assert "/login" not in upd.message.said
 
 
 def test_status_reports_the_memory_budget(bot, granted):

@@ -11,6 +11,8 @@ bold with `*`, italic with `_`, and fixed-width with backticks. These checks
 model that closely enough to catch unbalanced markers, which is the failure
 that matters.
 """
+import re
+
 import pytest
 
 import access
@@ -133,9 +135,47 @@ def test_every_string_formats_at_its_own_arity(label, text):
 
 @pytest.mark.parametrize("label,text", CASES, ids=[c[0] for c in CASES])
 def test_markers_are_balanced(label, text):
+    r"""Escape sequences do not count: `\_` is a literal underscore.
+
+    A CommonMark parser would not catch an unescaped `_` here, because
+    CommonMark leaves intra-word underscores alone and Telegram does not. So
+    this check counts markers outside escapes, which is what Telegram sees.
+    """
+    stripped = re.sub(r"\\.", "", text)      # drop escaped pairs
     for marker in ("*", "`"):
-        assert text.count(marker) % 2 == 0, \
+        assert stripped.count(marker) % 2 == 0, \
             "%s: odd number of %r" % (label, marker)
+
+
+def test_md_escapes_what_telegram_treats_as_markup():
+    """The library, not a hand-rolled version, and specifically `_`.
+
+    `_` is what actually broke /status: `whitelist_claim` opened an italic
+    that never closed, Telegram rejected the whole message, and there was no
+    error anywhere to point at the cause.
+    """
+    out = words.md("whitelist_claim")
+    assert words.md("whitelist_claim") == out
+    # No bare underscore survives into the output.
+    assert "\\" in out
+    assert out.replace("\\", "") .count("_") == 1    # the underscore, escaped
+
+
+def test_md_is_not_a_hand_rolled_approximation():
+    """Pin it to the library, so a future edit cannot quietly diverge."""
+    from telegram.helpers import escape_markdown
+    for sample in ("whitelist_claim", "a*b_c[d]`e", "path/with_underscore"):
+        assert words.md(sample) == escape_markdown(sample)
+
+
+def test_code_neutralises_markup_entirely():
+    """A code span is literal, which is why identifiers use it."""
+    assert words.code("whitelist_claim") == "`whitelist_claim`"
+    assert words.code("a`b") == "`ab`", "a backtick would close the span"
+
+
+def test_a_value_cannot_break_out_of_a_code_span():
+    assert words.code("` rm -rf /").count("`") == 2
 
 
 def test_no_string_nests_bold():

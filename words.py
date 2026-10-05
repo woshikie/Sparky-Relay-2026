@@ -1,5 +1,47 @@
-"""Telegram chat copy. Kept apart so wording changes are one file."""
+"""Telegram chat copy. Kept apart so wording changes are one file.
+
+Two rules for anything in here:
+
+1. Dynamic values are never interpolated raw. They go through `md()` (escape)
+   or `code()` (literal). Every bug in this file so far has been a value that
+   skipped that: `{'name': ...}` printed literally, `whitelist_claim`
+   silently killing a whole message.
+2. Literal markup in the templates is fine and deliberate. Only interpolated
+   values need escaping.
+"""
+from telegram.helpers import escape_markdown
 import datetime
+
+def md(text):
+    """Escape a value for interpolation into a Telegram Markdown message.
+
+    This is python-telegram-bot's own `escape_markdown`, not a hand-rolled
+    version: it is maintained alongside the library that sends the message, and
+    it knows which version of the dialect it targets.
+
+    It matters more than it looks. `_` is an italic delimiter in Telegram's
+    legacy Markdown, and identifiers are full of them — `whitelist_claim`
+    contains one — so an unescaped mode name opens an italic that never closes.
+    Telegram rejects the *whole* message, with no error locally and nothing
+    visible in the client. That is how `/status` came to return nothing at all
+    while every test passed.
+
+    Note that a CommonMark parser will NOT catch this: CommonMark leaves
+    intra-word underscores alone, Telegram does not. Validating with the wrong
+    dialect is worse than not validating, because it looks like it worked.
+    """
+    return escape_markdown(str(text))
+
+
+def code(text):
+    """Render a value as a code span, where Markdown is not interpreted.
+
+    Preferred over escaping for identifiers and paths: it renders them as
+    literal values rather than as prose, and it cannot be broken by whatever
+    character the value happens to contain.
+    """
+    return "`%s`" % str(text).replace("`", "")
+
 
 EMOJI = {
     "start": "\U0001F3AF",
@@ -346,6 +388,22 @@ def recorded(reported, date_label, iso, site_text=None):
                 txt += "\n> %s" % ln
                 break
     return txt
+
+
+def send_a_screenshot():
+    return (
+        "Send me a screenshot of your step tracker's **day view** — the one "
+        "showing the daily total, not week or month.\n\n"
+        "I will read the step count, show it to you, and ask which day it "
+        "belongs to before anything is recorded."
+    )
+
+
+def cancel_prompt_first():
+    return (
+        "You are part-way through telling me your credentials.\n\n"
+        "Finish it, or tap Cancel to stop. Then send the screenshot."
+    )
 
 
 def cancelled():

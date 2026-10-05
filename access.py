@@ -151,17 +151,21 @@ def describe(markdown=True):
     The default carries its own ** markers, and nesting those inside another
     ** pair is what made /status fail to parse -- the reply was silently
     dropped, so the command looked like it did nothing.
+
+    The mode name is escaped because `whitelist_claim` contains an underscore,
+    which Telegram reads as an italic delimiter.
     """
-    mode = config.ACCESS_MODE
+    import words
+    mode = words.md(config.ACCESS_MODE)
     if markdown:
         line = "Access Mode: **%s**" % mode
     else:
         line = "Access Mode: %s" % mode
-    if mode == "blacklist":
+    if config.ACCESS_MODE == "blacklist":
         line += "  ⚠️ anyone not denied can drive this"
-    if mode == "whitelist_claim":
+    if config.ACCESS_MODE == "whitelist_claim":
         line += "  (first /start claims it)"
-    if mode == "shared_secret":
+    if config.ACCESS_MODE == "shared_secret":
         line += "  (%d secret(s) configured)" % len(
             ledger.list_secret_labels())
     return line
