@@ -16,11 +16,13 @@ import sys
 import time
 from datetime import time as wallclock
 
+import access
 import config
 import datepicker
 import ledger
 import memory
 import relay_site
+import vault
 import words
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.constants import ParseMode
@@ -115,6 +117,10 @@ class BrowserUnavailable(Exception):
     """The host cannot spare the RAM for the browser right now."""
 
 
+class _NoCredentials(Exception):
+    """This chat has not supplied Site credentials yet."""
+
+
 @contextlib.contextmanager
 async def browser_session():
     """Yield a started Relay, then close the browser.
@@ -143,11 +149,29 @@ async def browser_session():
 
 
 async def site_login(ctx, force=False):
+    """Sign in using the credentials held for this chat.
+
+    The old ledger "session_valid" shortcut is gone: it was never written to, so
+    it always reported stale, and with prompted credentials the browser profile
+    is what actually decides whether a re-login is needed.
+    """
+    raise RuntimeError("site_login(ctx) is superseded by browser_session()")
+
+
+async def sign_in(chat_id):
+    """Sign the Relay in for this chat, or raise something we can explain.
+
+    Called inside an open browser_session(), so the caller owns the browser
+    lifetime; this only resolves the credentials and logs in.
+    """
     r = get_relay()
-    if not force and ledger.session_valid():
-        log(ctx, "site session still valid per ledger")
-    r.start()
-    await asyncio.to_thread(r.login, config.SITE_USERNAME, config.SITE_PASSWORD)
+    try:
+        creds = site_credentials(chat_id)   # raises vault.DecryptionFailed
+    except TypeError:
+        raise _NoCredentials("no credentials stored for this chat")
+    username, password = creds
+    await asyncio.to_thread(r.login, username, password)
+    return r
 
 
 # ----------------------------------------------------------------------
@@ -193,8 +217,9 @@ def kb_pick_date(year, month):
 async def on_photo(update: Update, ctx):
     chat = update.effective_chat
     msg = update.effective_message
-    if not authorised(ctx, chat.id):
-        await msg.reply_text(words.unauthorized(chat.id))
+    d = access.check(chat.id, getattr(chat, "username", None))
+    if not d:
+        await msg.reply_text(words.access_refused(d), parse_mode=ParseMode.MARKDOWN)
         return
 
     scratch = await msg.reply_text(words.scanning(
@@ -217,9 +242,22 @@ async def on_photo(update: Update, ctx):
     # holding ~640MB open while the user decides on a date is not affordable.
     try:
         async with browser_session() as r:
-            await asyncio.to_thread(r.login, config.SITE_USERNAME,
-                                    config.SITE_PASSWORD)
+            await sign_in(chat.id)
             steps, reported = await asyncio.to_thread(r.upload, path)
+    except _NoCredentials:
+        await scratch.delete()
+        await msg.reply_text(words.need_credentials(),
+                             parse_mode=ParseMode.MARKDOWN)
+        await ask_credentials(msg, chat.id)
+        return
+    except vault.DecryptionFailed as e:
+        # Almost always a rotated bot token: the vault key no longer opens the
+        # stored entry. The old password is unrecoverable by design.
+        await scratch.delete()
+        await msg.reply_text(words.vault_unreadable(str(e)),
+                             parse_mode=ParseMode.MARKDOWN)
+        await ask_credentials(msg, chat.id)
+        return
     except memory.InsufficientMemory:
         await scratch.delete()
         await msg.reply_text(words.low_memory(), parse_mode=ParseMode.MARKDOWN)
@@ -406,8 +444,7 @@ async def cb_ok(update: Update, ctx):
     site_text = ""
     try:
         async with browser_session() as r:
-            await asyncio.to_thread(r.login, config.SITE_USERNAME,
-                                    config.SITE_PASSWORD)
+            await sign_in(chat.id)
             # Re-reading must agree with what the user confirmed, or the
             # Screenshot is not the one they agreed to submit.
             steps2, reported2 = await asyncio.to_thread(r.upload, st["path"])
@@ -420,6 +457,20 @@ async def cb_ok(update: Update, ctx):
                 return
             await asyncio.to_thread(r.set_date, date)
             site_text = await asyncio.to_thread(r.commit, st["steps"])
+    except _NoCredentials:
+        PENDING.pop(key, None)
+        await msg.reply_text(words.need_credentials(),
+                             parse_mode=ParseMode.MARKDOWN)
+        await ask_credentials(msg, chat.id)
+        await q.answer("credentials needed", show_alert=True)
+        return
+    except vault.DecryptionFailed as e:
+        PENDING.pop(key, None)
+        await msg.reply_text(words.vault_unreadable(str(e)),
+                             parse_mode=ParseMode.MARKDOWN)
+        await ask_credentials(msg, chat.id)
+        await q.answer("stored credentials unreadable", show_alert=True)
+        return
     except (memory.InsufficientMemory, BrowserUnavailable) as e:
         PENDING.pop(key, None)
         await msg.reply_text(words.low_memory(str(e) or ""),
@@ -498,20 +549,76 @@ def parse_profile(board_text):
 # ----------------------------------------------------------------------
 
 async def on_start(update: Update, ctx):
+    """Entry point. Access Mode decides whether anything else happens."""
     chat = update.effective_chat
-    if not authorised(ctx, chat.id):
-        await update.effective_message.reply_text(words.unauthorized(chat.id))
+    msg = update.effective_message
+    d = access.check(chat.id, getattr(chat, "username", None))
+
+    if not d:
+        if d.why == "needs_claim":
+            # First-run claim: whoever got here first owns the Relay.
+            if access.claim(chat.id):
+                await msg.reply_text(words.claimed(),
+                                     parse_mode=ParseMode.MARKDOWN)
+            else:
+                await msg.reply_text(words.already_claimed(),
+                                     parse_mode=ParseMode.MARKDOWN)
+            return
+        if d.why == "needs_secret":
+            await msg.reply_text(words.secret_prompt(),
+                                 parse_mode=ParseMode.MARKDOWN)
+            return
+        await msg.reply_text(words.access_refused(d),
+                             parse_mode=ParseMode.MARKDOWN)
         return
-    ledger.remember_user(chat.id, getattr(chat, "username", None))
-    await update.effective_message.reply_text(
-        words.welcome(getattr(chat, "first_name", None)),
-        parse_mode=ParseMode.MARKDOWN)
+
+    await msg.reply_text(words.welcome(getattr(chat, "first_name", None)),
+                         parse_mode=ParseMode.MARKDOWN)
+    if not has_credentials(chat.id):
+        await ask_credentials(msg, chat.id)
+
+
+def has_credentials(chat_id):
+    """True if this chat can sign in right now."""
+    st = _prompt_stage(chat_id) or {}
+    if st.get("preset"):
+        return config.has_preset_credentials()
+    return ledger.credentials_stored(chat_id) is not None
+
+
+async def on_login(update: Update, ctx):
+    """(Re-)supply Site credentials at any time."""
+    chat = update.effective_chat
+    msg = update.effective_message
+    d = access.check(chat.id, getattr(chat, "username", None))
+    if not d:
+        await msg.reply_text(words.access_refused(d),
+                             parse_mode=ParseMode.MARKDOWN)
+        return
+    _clear_stage(chat.id)
+    await ask_credentials(msg, chat.id)
+
+
+async def on_logout(update: Update, ctx):
+    """Drop the stored credentials and any prompt in progress."""
+    chat = update.effective_chat
+    msg = update.effective_message
+    d = access.check(chat.id, getattr(chat, "username", None))
+    if not d:
+        await msg.reply_text(words.access_refused(d),
+                             parse_mode=ParseMode.MARKDOWN)
+        return
+    _clear_stage(chat.id)
+    ledger.forget_credentials(chat.id)
+    await msg.reply_text(words.logged_out(), parse_mode=ParseMode.MARKDOWN)
 
 
 async def on_log(update: Update, ctx):
     chat = update.effective_chat
-    if not authorised(ctx, chat.id):
-        await update.effective_message.reply_text(words.unauthorized(chat.id))
+    d = access.check(chat.id, getattr(chat, "username", None))
+    if not d:
+        await update.effective_message.reply_text(words.access_refused(d),
+                                                  parse_mode=ParseMode.MARKDOWN)
         return
     await update.effective_message.reply_text(
         words.log_lines(ledger.all_submissions()), parse_mode=ParseMode.MARKDOWN)
@@ -519,49 +626,243 @@ async def on_log(update: Update, ctx):
 
 async def on_status(update: Update, ctx):
     chat = update.effective_chat
-    if not authorised(ctx, chat.id):
-        await update.effective_message.reply_text(words.unauthorized(chat.id))
+    msg = update.effective_message
+    d = access.check(chat.id, getattr(chat, "username", None))
+    if not d:
+        await msg.reply_text(words.access_refused(d), parse_mode=ParseMode.MARKDOWN)
         return
     subs = ledger.all_submissions()
-    sess = ledger.load_session()
-    until = ""
-    if sess and sess.get("expires_at"):
-        until = " (expires %s)" % time.strftime(
-            "%H:%M:%S", time.localtime(sess["expires_at"]))
-    users = ledger.known_users()
-    rep = memory.budget_report()
+    rep = memory.budget()
+    creds = ledger.credentials_stored(chat.id)
+    st = _prompt_stage(chat.id) or {}
+    preset_in_use = bool(st.get("preset")) and config.has_preset_credentials()
+
+    if preset_in_use:
+        who = "%s (preset from config)" % config.SITE_USERNAME
+    elif creds:
+        who = "%s (stored, encrypted)" % creds["username"]
+    else:
+        who = "none — send /login"
+
+    granted = ledger.all_access()
+    denied = ledger.all_denied()
     txt = (
         "**Relay status**\n\n"
         "Site: `%s`\n"
-        "User: `%s`\n"
+        "Signing in as: %s\n"
+        "Access: %s\n"
         "Browser: headless=%s, launched per Screenshot\n"
-        "Memory: %.0fMB total, %.0fMB available (browser needs ~%dMB) — can "
-        "launch: **%s**\n"
-        "Session: %s%s\n"
+        "Memory: %.0fMB usable (browser needs ~%dMB) — can launch: **%s**\n"
         "Submissions recorded: %d\n"
-        "Authorised chats: %s\n"
+        "Chats with access: %s\n"
+        "Chats denied: %s\n"
         "Pending confirmations: %d"
-        % (config.SITE_BASE, config.SITE_USERNAME, config.HEADLESS,
-           rep["total_mb"], rep["available_mb"], rep["browser_peak_mb"],
-           "yes" if rep["can_launch"] else "NO",
-           "valid" if ledger.session_valid() else "needs sign-in", until,
-           len(subs), ", ".join("`%s`" % u["chat_id"] for u in users) or "none",
+        % (config.SITE_BASE, who, access.describe(), config.HEADLESS,
+           rep["available_mb"], rep["browser_peak_mb"],
+           "yes" if rep["can_launch"] else "NO", len(subs),
+           ", ".join("`%s`(%s)" % (a["chat_id"], a["how"]) for a in granted) or "none",
+           ", ".join("`%s`" % a["chat_id"] for a in denied) or "none",
            len(PENDING))
     )
-    await update.effective_message.reply_text(txt, parse_mode=ParseMode.MARKDOWN)
+    await msg.reply_text(txt, parse_mode=ParseMode.MARKDOWN)
 
 
 def authorised(ctx, chat_id):
-    if config.ALLOWED_CHAT_ID:
+    """Deprecated shim. Access now lives in access.check().
+
+    Kept so nothing calls a removed function, but every handler should ask
+    access.check() directly — it returns a reason, which the user needs to be
+    told.
+    """
+    return bool(access.check(chat_id))
+
+
+# ----------------------------------------------------------------------
+# Credentials Prompt
+# ----------------------------------------------------------------------
+
+# Where a chat is in the Credentials Prompt, or the Shared Secret exchange.
+# chat_id -> {"stage": ..., "preset": bool}
+PROMPTING = {}
+
+# How long a half-finished prompt is worth holding before forgetting it.
+PROMPT_TTL = 600.0
+
+
+def _prompt_stage(chat_id):
+    st = PROMPTING.get(chat_id)
+    if st and time.time() - st.get("at", 0) > PROMPT_TTL:
+        PROMPTING.pop(chat_id, None)
+        return None
+    return st
+
+
+def _set_stage(chat_id, stage, **kw):
+    PROMPTING[chat_id] = dict(stage=stage, at=time.time(), **kw)
+    return PROMPTING[chat_id]
+
+
+def _clear_stage(chat_id):
+    return PROMPTING.pop(chat_id, None)
+
+
+async def ask_credentials(msg, chat_id):
+    """Offer Preset Credentials if they exist, otherwise just ask."""
+    if config.has_preset_credentials():
+        _set_stage(chat_id, "choose_preset")
+        await msg.reply_text(
+            words.choose_preset(config.SITE_USERNAME),
+            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=kb_preset())
+        return
+    await ask_username(msg, chat_id)
+
+
+async def ask_username(msg, chat_id):
+    _set_stage(chat_id, "username")
+    await msg.reply_text(words.ask_username(), parse_mode=ParseMode.MARKDOWN)
+
+
+async def ask_password(msg, chat_id):
+    _set_stage(chat_id, "password")
+    await msg.reply_text(words.ask_password(), parse_mode=ParseMode.MARKDOWN)
+
+
+def kb_preset():
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("Use %s" % config.SITE_USERNAME,
+                              callback_data="cred:preset")],
+        [InlineKeyboardButton("Enter different credentials",
+                              callback_data="cred:new")],
+    ])
+
+
+async def on_credential_choice(update: Update, ctx):
+    q = update.callback_query
+    chat = update.effective_chat
+    st = _prompt_stage(chat.id)
+    if not st or st.get("stage") != "choose_preset":
+        await q.answer("Nothing to choose — send /login first.", show_alert=True)
+        return
+    if q.data.endswith("preset"):
+        # Credentials came from the environment: nothing to store, and the
+        # vault is not involved at all.
+        _clear_stage(chat.id)
+        _set_stage(chat.id, "ready", username=config.SITE_USERNAME, preset=True)
+        await q.edit_message_text(words.using_preset(config.SITE_USERNAME),
+                                  parse_mode=ParseMode.MARKDOWN,
+                                  reply_markup=kb_after_login())
+        await q.answer("using preset credentials")
+    else:
+        await q.edit_message_reply_markup(reply_markup=None)
+        await ask_username(q.message, chat.id)
+        await q.answer()
+
+
+def kb_after_login():
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("Use different credentials",
+                              callback_data="cred:new")],
+    ])
+
+
+async def on_text(update: Update, ctx):
+    """Handle the Credentials Prompt and the Shared Secret exchange."""
+    chat = update.effective_chat
+    msg = update.effective_message
+    text = (msg.text or "").strip()
+    st = _prompt_stage(chat.id)
+
+    # --- Access gate first: an unauthorised chat gets nothing, and its input
+    # --- is never treated as a secret.
+    d = access.check(chat.id, getattr(chat, "username", None))
+    if d.why == "needs_secret":
+        if not text:
+            return
+        # The rate limit is enforced inside present_secret, not here.
+        r = access.present_secret(chat.id, text)
+        # The message carried a secret: remove it from the chat immediately.
+        await _scrub(msg)
+        if r:
+            await msg.reply_text(words.secret_accepted(r.how),
+                                 parse_mode=ParseMode.MARKDOWN)
+            await ask_credentials(msg, chat.id)
+        elif r.why == "secret_throttled":
+            await msg.reply_text(words.secret_throttled(r.retry_after),
+                                 parse_mode=ParseMode.MARKDOWN)
+        else:
+            await msg.reply_text(words.secret_rejected(),
+                                 parse_mode=ParseMode.MARKDOWN)
+        return
+
+    if not st:
+        # No prompt in progress and access is fine: treat as an unknown
+        # command rather than silently swallowing it.
+        await msg.reply_text(words.no_prompt(), parse_mode=ParseMode.MARKDOWN)
+        return
+
+    if st.get("stage") == "username":
+        if not text:
+            return
+        if len(text) < 3 or len(text) > 40:
+            await msg.reply_text(words.bad_username(), parse_mode=ParseMode.MARKDOWN)
+            return
+        _set_stage(chat.id, "password", username=text, preset=st.get("preset", False))
+        await ask_password(msg, chat.id)
+        return
+
+    if st.get("stage") == "password":
+        if not text:
+            return
+        username = st.get("username")
+        # Store encrypted, then drop it. The plaintext is not kept anywhere.
         try:
-            return int(config.ALLOWED_CHAT_ID) == int(chat_id)
-        except ValueError:
-            return False
-    ledger.remember_user(chat_id)
-    known = [u["chat_id"] for u in ledger.known_users()]
-    if not known:
-        return True
-    return int(chat_id) in known
+            ledger.save_credentials(chat.id, username, text,
+                                    config.TELEGRAM_BOT_TOKEN,
+                                    preset=False)
+        except Exception as e:
+            await msg.reply_text(words.credential_store_failed(str(e)[:120]),
+                                 parse_mode=ParseMode.MARKDOWN)
+            return
+        finally:
+            _clear_stage(chat.id)
+        await _scrub(msg)
+        _set_stage(chat.id, "ready", username=username, preset=False)
+        await msg.reply_text(words.credentials_saved(username),
+                             parse_mode=ParseMode.MARKDOWN)
+        return
+
+
+async def _scrub(msg):
+    """Delete a message that carried a secret. Best effort.
+
+    A bot can delete messages in a chat it administers, which covers private
+    chats. It cannot undo a notification that already rendered, so the README
+    says to use a private chat for anything sensitive.
+    """
+    try:
+        await msg.delete()
+    except TelegramError:
+        try:
+            await msg.reply_text(words.scrub_failed(),
+                                 parse_mode=ParseMode.MARKDOWN)
+            await msg.delete()
+        except TelegramError:
+            pass
+
+
+def site_credentials(chat_id):
+    """(username, password) for a chat, or raise if not available.
+
+    Preset Credentials are used when configured and the user chose them.
+    Otherwise the encrypted vault is opened with the bot token as the key.
+    """
+    st = _prompt_stage(chat_id) or {}
+    if st.get("preset") and config.has_preset_credentials():
+        return config.SITE_USERNAME, config.SITE_PASSWORD
+    if st.get("preset") and not config.has_preset_credentials():
+        raise vault.DecryptionFailed("preset credentials are no longer configured")
+    return ledger.load_credentials(chat_id, config.TELEGRAM_BOT_TOKEN)
 
 
 # ----------------------------------------------------------------------
@@ -599,15 +900,22 @@ def main():
 
     app.add_handler(CommandHandler("start", on_start))
     app.add_handler(CommandHandler("help", on_start))
+    app.add_handler(CommandHandler("login", on_login))
+    app.add_handler(CommandHandler("logout", on_logout))
     app.add_handler(CommandHandler("log", on_log))
     app.add_handler(CommandHandler("status", on_status))
     app.add_handler(CallbackQueryHandler(cb_date, pattern=r"^dt:"))
     app.add_handler(CallbackQueryHandler(cb_ok, pattern=r"^ok:"))
+    app.add_handler(CallbackQueryHandler(on_credential_choice, pattern=r"^cred:"))
 
     from telegram.ext import MessageHandler, filters
+    # Photos first, then text. A photo is never an answer to the Credentials
+    # Prompt, and text has to reach on_text even though it is the catch-all.
     app.add_handler(MessageHandler(filters.PHOTO, on_photo))
     app.add_handler(MessageHandler(
         filters.Document.MimeType("image/"), on_photo))
+    app.add_handler(MessageHandler(
+        filters.TEXT & ~filters.COMMAND, on_text))
 
     if app.job_queue is None:
         raise SystemExit(
@@ -619,11 +927,23 @@ def main():
     app.job_queue.run_daily(backup_job, wallclock(hour=hh, minute=mm),
                             name="ledger-backup")
 
-    if not config.ALLOWED_CHAT_ID:
-        print("[relay] ALLOWED_CHAT_ID not set: the first chat to message the "
-              "bot becomes the authorised chat. Pin it in secrets.env after.")
+    loaded, total = ledger.init_secrets_from_env(config.SHARED_SECRETS)
+    if loaded:
+        print("[relay] loaded %d Shared Secret(s) from the environment" % total,
+              flush=True)
+    print("[relay] %s" % access.describe())
+    if config.ACCESS_MODE == "blacklist":
+        print("[relay] WARNING: ACCESS_MODE=blacklist — any chat that finds "
+              "this bot may drive it. See docs/adr/0006.", flush=True)
+    if config.has_preset_credentials():
+        print("[relay] preset credentials configured for %s; the bot will "
+              "offer them at the Credentials Prompt" % config.SITE_USERNAME,
+              flush=True)
+    else:
+        print("[relay] no preset credentials — you will be asked for a "
+              "username and password", flush=True)
     print("[relay] %s" % memory.describe())
-    if not memory.budget_report()["can_launch"]:
+    if not memory.budget()["can_launch"]:
         print("[relay] WARNING: not enough free memory to run the browser. "
               "Screenshots will be refused until memory frees up. "
               "Consider a larger host — see docs/adr/0004.")
