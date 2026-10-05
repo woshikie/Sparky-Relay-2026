@@ -1,8 +1,8 @@
 # Relay — day to day.
 #
-# The shell scripts this replaced were build.sh, run.sh and bot.sh. Three
-# files that each did one thing and each had to be kept in step; this is the
-# same set of operations in one place.
+# The shell scripts this replaced were build.sh, run.sh, bot.sh and a bit of
+# README prose. Three files that each did one thing, each needing a chmod, each
+# a separate thing to remember.
 
 SHELL := /bin/sh
 PY := .venv/bin/python
@@ -15,7 +15,7 @@ CONTAINER := relay
         verify shell clean distclean
 
 help: ## show this
-	@echo "Relay — make targets"
+	@echo "Relay - make targets"
 	@echo
 	@grep -E '^[a-z-]+:.*?## ' $(MAKEFILE_LIST) \
 	  | sed 's/:.*## /\t/' \
@@ -23,7 +23,7 @@ help: ## show this
 	@echo
 	@echo "  first run:  make setup  &&  vi secrets.env  &&  make check  &&  make up"
 
-setup: ## venv, python deps, geckodriver (bare metal only)
+setup: ## venv, deps, geckodriver (bare metal only)
 	./setup.sh
 
 $(PY): ## create the venv and install deps
@@ -43,8 +43,9 @@ check-verbose: $(PY) ## same, but per-test
 	$(PY) -m pytest tests/ -v --cov=. --cov-report=term-missing:skip-covered
 
 build: ## build the container image
-	@command -v $(COMPOSE) >/dev/null 2>&1 || { echo "no podman or docker" >&2; exit 1; }
+	@test -n "$(COMPOSE)" || { echo "no podman or docker found" >&2; exit 1; }
 	$(COMPOSE) build --format docker -t $(IMAGE) .
+	$(COMPOSE) images $(IMAGE) --format '{{.Repository}}:{{.Tag}}  {{.Size}}'
 
 up: build ## build and start detached
 	./run.sh up -d relay
@@ -72,9 +73,10 @@ verify: ## prove the image can read the site's OCR, without submitting
 shell: ## a shell inside the running container
 	./run.sh exec relay /bin/sh
 
-clean: ## remove caches and the local venv
-	rm -rf .pytest_cache .coverage htmlcov __pycache__ tests/__pycache__
+clean: ## remove caches, coverage output and the local ledger
+	rm -rf .pytest_cache __pycache__ tests/__pycache__
+	rm -f .coverage .coverage.*
 	rm -f ledger.sqlite3 ledger.sqlite3-wal ledger.sqlite3-shm
 
-distclean: clean ## also remove the venv and build output
+distclean: clean ## also remove the venv and downloaded binaries
 	rm -rf .venv bin
