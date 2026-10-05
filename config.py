@@ -1,5 +1,6 @@
-"""Config from secrets.env. Nothing here is a default we invented at runtime."""
+"""Config. Nothing here is a default we invented at runtime."""
 import os
+import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ENV_PATH = os.path.join(HERE, "secrets.env")
@@ -13,7 +14,12 @@ def _load():
     secrets.env file is the bare-metal convenience.
     """
     env = {}
-    if os.path.exists(ENV_PATH):
+    # RELAY_SKIP_SECRETS_FILE=1 makes the environment the only source, which
+    # check_access.py relies on: several cases assert behaviour with and
+    # without Preset Credentials, and the developer's own secrets.env would
+    # otherwise decide the result of the test.
+    skip_file = os.environ.get("RELAY_SKIP_SECRETS_FILE") == "1"
+    if not skip_file and os.path.exists(ENV_PATH):
         for line in open(ENV_PATH):
             line = line.strip()
             if line and not line.startswith("#") and "=" in line:
@@ -29,9 +35,63 @@ def _load():
 # shell cannot silently become configuration.
 KNOWN_KEYS = {
     "TELEGRAM_BOT_TOKEN", "SITE_USERNAME", "SITE_PASSWORD", "SITE_BASE",
-    "ALLOWED_CHAT_ID", "HEADLESS", "FIREFOX_BIN", "BACKUP_TIME",
+    "ACCESS_MODE", "DENY_CHAT_IDS", "SHARED_SECRETS",
+    "HEADLESS", "FIREFOX_BIN", "BACKUP_TIME",
     "KNOWN_CUTOFF", "RELAY_STATE_DIR", "LEDGER_DB", "INBOX", "LOGS",
 }
+
+ENV = _load()
+
+# Access Modes. Whichever is set decides who may drive the Relay.
+#   whitelist_claim : first chat to /start claims the Relay. Everyone else
+#                     needs to be granted. Safest.
+#   blacklist       : open to any chat not denied. PUBLIC write path.
+#   shared_secret   : must present a per-person Shared Secret at /start.
+ACCESS_MODES = ("whitelist_claim", "blacklist", "shared_secret")
+_ACCESS_MODE = (ENV.get("ACCESS_MODE") or "").strip().lower()
+
+
+def _chat_ids(raw):
+    out = []
+    for part in (raw or "").replace(";", ",").split(","):
+        part = part.strip()
+        if part:
+            try:
+                out.append(int(part))
+            except ValueError:
+                pass
+    return out
+
+
+# Refuse to start rather than guess. An unset ACCESS_MODE is the difference
+# between "only I can use this" and "anyone on the internet can write to my
+# leaderboard account", and that is not a default worth assuming.
+if not _ACCESS_MODE:
+    sys.stderr.write(
+        "\n"
+        "ACCESS_MODE is not set. Refusing to start.\n"
+        "\n"
+        "  It decides who may drive the Relay, and guessing is not safe:\n"
+        "    whitelist_claim  first chat to /start claims it (safest)\n"
+        "    blacklist       open to anyone not denied  (PUBLIC)\n"
+        "    shared_secret   must present a per-person secret at /start\n"
+        "\n"
+        "  Set it in secrets.env, e.g.   ACCESS_MODE=whitelist_claim\n\n")
+    raise SystemExit(2)
+
+if _ACCESS_MODE not in ACCESS_MODES:
+    sys.stderr.write(
+        "\n"
+        "ACCESS_MODE=%r is not a valid Access Mode.\n"
+        "  expected one of: %s\n\n" % (_ACCESS_MODE, ", ".join(ACCESS_MODES))
+    )
+    raise SystemExit(2)
+
+ACCESS_MODE = _ACCESS_MODE
+# Chats refused up front, in blacklist mode.
+DENY_CHAT_IDS = _chat_ids(ENV.get("DENY_CHAT_IDS", ""))
+# Per-person Shared Secrets, "label:secret" per line. Only hashes are stored.
+SHARED_SECRETS = ENV.get("SHARED_SECRETS", "") or None
 
 ENV = _load()
 
@@ -42,10 +102,6 @@ SITE_BASE = ENV.get("SITE_BASE", "https://example.invalid").rstrip("/")
 
 # Asia/Singapore is the competition's frame; the site itself hardcodes +08:00.
 SGT_OFFSET_HOURS = 8
-
-# Only this chat id may drive the Relay. Discovered on first message unless
-# pinned here, so pin it once you know it.
-ALLOWED_CHAT_ID = ENV.get("ALLOWED_CHAT_ID", "").strip()
 
 HEADLESS = ENV.get("HEADLESS", "1") != "0"
 
@@ -70,16 +126,24 @@ KNOWN_CUTOFF = ENV.get("KNOWN_CUTOFF", "2026-11-02T15:59:00+00:00")
 BACKUP_TIME = ENV.get("BACKUP_TIME", "03:17")
 
 
+def has_preset_credentials():
+    """True when Preset Credentials are configured.
+
+    They are an optimisation, never a requirement: the Credentials Prompt
+    works with none of them. `require()` deliberately does not demand them.
+    """
+    return bool(SITE_USERNAME and SITE_PASSWORD)
+
+
 def require():
     """Fail loudly and specifically if a secret is missing.
 
-    Says *where* it looked, because the two ways of configuring this differ: a
-    secrets.env file on a host, injected environment variables in a container.
+    Only the bot token is mandatory. The Site credentials are optional because
+    the user supplies them at runtime; ACCESS_MODE has already been validated
+    at import time.
     """
     missing = [k for k, v in (
         ("TELEGRAM_BOT_TOKEN", TELEGRAM_BOT_TOKEN),
-        ("SITE_USERNAME", SITE_USERNAME),
-        ("SITE_PASSWORD", SITE_PASSWORD),
     ) if not v]
     if not missing:
         return True
@@ -90,5 +154,8 @@ def require():
         "\n"
         "  host:      copy secrets.env.example to secrets.env and fill it in\n"
         "  container: export the variables before `compose up`, or use ./run.sh,\n"
-        "             which loads secrets.env into the environment for you"
+        "             which loads secrets.env into the environment for you\n"
+        "\n"
+        "  Note: SITE_USERNAME and SITE_PASSWORD are optional. Leave them out\n"
+        "  and the bot will ask you for them at runtime instead."
         % (", ".join(missing), ENV_PATH))
