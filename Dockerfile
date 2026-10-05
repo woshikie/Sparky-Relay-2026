@@ -32,26 +32,11 @@ ENV PYTHONUNBUFFERED=1 \
 # firefox + geckodriver come from Alpine's own repos, so they are built for
 # musl. gtk+3 and nss are pulled in by the firefox package; --no-cache keeps
 # the layer small. python3 is the system interpreter; a venv holds the deps.
-# geckodriver is fetched from Mozilla rather than taken from the repo, so the
-# checkout carries no binaries and the version is pinned in one place. Alpine's
-# own geckodriver package exists but is not versioned independently of the rest
-# of the archive.
-ARG GECKODRIVER_VERSION=0.36.0
-RUN set -eux; \
-    case "$(dpkg --print-architecture 2>/dev/null || uname -m)" in \
-      x86_64)        gecko_arch=linux64 ;; \
-      aarch64|arm64) gecko_arch=linux-aarch64 ;; \
-      *) echo "unsupported architecture" >&2; exit 1 ;; \
-    esac; \
-    mkdir -p /app/bin; \
-    curl -fsSL --retry 3 \
-      "https://github.com/mozilla/geckodriver/releases/download/v${GECKODRIVER_VERSION}/geckodriver-v${GECKODRIVER_VERSION}-${gecko_arch}.tar.gz" \
-      -o /tmp/gecko.tar.gz; \
-    tar -xzf /tmp/gecko.tar.gz -C /tmp; \
-    install -m 0755 /tmp/geckodriver /app/bin/geckodriver; \
-    rm -rf /tmp/gecko.tar.gz /tmp/geckodriver; \
-    /app/bin/geckodriver --version | head -1
-
+# Runtime packages only. Note: NOT the `firefox` apt package -- on Ubuntu that
+# is a snap shim, and snap cannot run inside a container, so `firefox --version`
+# just prints "install the snap". We install Alpine's own firefox instead, which
+# is built for musl. The cost is that it tracks Mozilla's release cadence rather
+# than pinning an ESR tarball; see docs/adr/0005-alpine-base.md.
 RUN apk add --no-cache \
       firefox \
       python3 \
@@ -61,6 +46,25 @@ RUN apk add --no-cache \
       curl \
       ca-certificates \
  && firefox --version
+
+# geckodriver, from Mozilla rather than Alpine, so the version is pinned
+# independently of the rest of the archive and the checkout carries no binary.
+# Needs curl and ca-certificates, so it comes after the apk layer.
+ARG GECKODRIVER_VERSION=0.36.0
+RUN set -eux; \
+    case "$(uname -m)" in \
+      x86_64)          gecko_arch=linux64 ;; \
+      aarch64|arm64)   gecko_arch=linux-aarch64 ;; \
+      *) echo "unsupported architecture: $(uname -m)" >&2; exit 1 ;; \
+    esac; \
+    mkdir -p /app/bin; \
+    curl -fsSL --retry 3 \
+      "https://github.com/mozilla/geckodriver/releases/download/v${GECKODRIVER_VERSION}/geckodriver-v${GECKODRIVER_VERSION}-${gecko_arch}.tar.gz" \
+      -o /tmp/gecko.tar.gz; \
+    tar -xzf /tmp/gecko.tar.gz -C /tmp; \
+    install -m 0755 /tmp/geckodriver /app/bin/geckodriver; \
+    rm -rf /tmp/gecko.tar.gz /tmp/geckodriver; \
+    /app/bin/geckodriver --version | head -1
 
 WORKDIR /app
 
