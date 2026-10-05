@@ -16,14 +16,27 @@ import sys
 import time
 from datetime import time as wallclock
 
-import access
-import config
-import datepicker
-import ledger
-import memory
-import relay_site
-import vault
-import words
+import sys
+
+import errors
+
+# config validates ACCESS_MODE at import time, and everything else imports it.
+# Doing it first, in a try, means a bad mode prints the message telling the
+# operator which line of secrets.env to fix -- rather than a traceback that
+# buries it under import frames.
+try:
+    import config
+except errors.ConfigRefused as _exc:
+    sys.stderr.write("%s\n" % _exc)
+    sys.exit(2)
+
+import access          # noqa: E402  (must follow the config guard)
+import datepicker      # noqa: E402
+import ledger          # noqa: E402
+import memory          # noqa: E402
+import relay_site      # noqa: E402
+import vault           # noqa: E402
+import words           # noqa: E402
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.constants import ParseMode
 from telegram.error import TelegramError
@@ -165,11 +178,7 @@ async def sign_in(chat_id):
     lifetime; this only resolves the credentials and logs in.
     """
     r = get_relay()
-    try:
-        creds = site_credentials(chat_id)   # raises vault.DecryptionFailed
-    except TypeError:
-        raise _NoCredentials("no credentials stored for this chat")
-    username, password = creds
+    username, password = site_credentials(chat_id)
     await asyncio.to_thread(r.login, username, password)
     return r
 
@@ -359,6 +368,7 @@ async def cb_date(update: Update, ctx):
     elif kind == "day":
         st["date"] = datetime.date.fromisoformat(rest[0])
     elif kind == "none":
+        # Padding in the calendar grid. Answer, so the client stops spinning.
         await q.answer()
         return
     else:
@@ -370,6 +380,13 @@ async def cb_date(update: Update, ctx):
     label = "%s %s, %d" % (date.strftime("%B"), ordinal(date.day), date.year)
     st["iso"] = iso
     st["label"] = label
+
+    # The number being confirmed comes from the pending record, not from the
+    # callback data: the callback only carries a date. Reading it from the
+    # record is also what makes the Confirmation impossible to drift from the
+    # number the user approved.
+    steps = st.get("steps")
+    reported = st.get("reported")
 
     # Overwrite guard: only the downward direction is challenged.
     prev = ledger.last_submission(iso)
@@ -723,8 +740,15 @@ async def ask_username(msg, chat_id):
     await msg.reply_text(words.ask_username(), parse_mode=ParseMode.MARKDOWN)
 
 
-async def ask_password(msg, chat_id):
-    _set_stage(chat_id, "password")
+async def ask_password(msg, chat_id, username=None, preset=False):
+    """Move to the password step, carrying the username forward.
+
+    The username has to survive the transition: it arrived in the previous
+    message and exists nowhere else by the time the password lands. _set_stage
+    replaces the whole dict rather than merging, so it is passed explicitly --
+    an earlier version dropped it here and the password could not be stored.
+    """
+    _set_stage(chat_id, "password", username=username, preset=preset)
     await msg.reply_text(words.ask_password(), parse_mode=ParseMode.MARKDOWN)
 
 
@@ -776,8 +800,17 @@ async def on_text(update: Update, ctx):
     # --- Access gate first: an unauthorised chat gets nothing, and its input
     # --- is never treated as a secret.
     d = access.check(chat.id, getattr(chat, "username", None))
-    if d.why == "needs_secret":
+    if d.why in ("needs_secret", "secret_throttled"):
         if not text:
+            return
+        if d.why == "secret_throttled":
+            # Still treat this as a secret attempt, so the message carrying it
+            # gets deleted, then say why it did not work. Falling through to
+            # the "nothing to do" reply instead would leave a password sitting
+            # in the chat with no explanation.
+            await _scrub(msg)
+            await msg.reply_text(words.secret_throttled(d.retry_after),
+                                 parse_mode=ParseMode.MARKDOWN)
             return
         # The rate limit is enforced inside present_secret, not here.
         r = access.present_secret(chat.id, text)
@@ -807,8 +840,7 @@ async def on_text(update: Update, ctx):
         if len(text) < 3 or len(text) > 40:
             await msg.reply_text(words.bad_username(), parse_mode=ParseMode.MARKDOWN)
             return
-        _set_stage(chat.id, "password", username=text, preset=st.get("preset", False))
-        await ask_password(msg, chat.id)
+        await ask_password(msg, chat.id, username=text, preset=st.get("preset"))
         return
 
     if st.get("stage") == "password":
@@ -852,17 +884,27 @@ async def _scrub(msg):
 
 
 def site_credentials(chat_id):
-    """(username, password) for a chat, or raise if not available.
+    """(username, password) for a chat.
 
-    Preset Credentials are used when configured and the user chose them.
-    Otherwise the encrypted vault is opened with the bot token as the key.
+    Raises _NoCredentials when the chat has not supplied any, and
+    vault.DecryptionFailed when the stored copy cannot be opened (normally
+    because the bot token was rotated). Those are different failures and get
+    different replies: "send /login" versus "your stored password is gone,
+    send it again".
+
+    Returning None here instead would surface as a TypeError from the tuple
+    unpacking in sign_in, which is not a message anyone can act on.
     """
     st = _prompt_stage(chat_id) or {}
-    if st.get("preset") and config.has_preset_credentials():
-        return config.SITE_USERNAME, config.SITE_PASSWORD
-    if st.get("preset") and not config.has_preset_credentials():
-        raise vault.DecryptionFailed("preset credentials are no longer configured")
-    return ledger.load_credentials(chat_id, config.TELEGRAM_BOT_TOKEN)
+    if st.get("preset"):
+        if config.has_preset_credentials():
+            return config.SITE_USERNAME, config.SITE_PASSWORD
+        raise vault.DecryptionFailed(
+            "preset credentials are no longer configured")
+    creds = ledger.load_credentials(chat_id, config.TELEGRAM_BOT_TOKEN)
+    if not creds:
+        raise _NoCredentials("no credentials stored for this chat")
+    return creds
 
 
 # ----------------------------------------------------------------------
@@ -891,7 +933,12 @@ async def backup_job(ctx):
 # ----------------------------------------------------------------------
 
 def main():
-    config.require()
+    try:
+        config.require()
+    except errors.ConfigRefused as e:
+        # A plain message and a non-zero exit, not a traceback.
+        sys.stderr.write("%s\n" % e)
+        raise SystemExit(2)
     ledger.init()
     app = (ApplicationBuilder()
            .token(config.TELEGRAM_BOT_TOKEN)

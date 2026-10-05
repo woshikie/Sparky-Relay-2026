@@ -221,7 +221,7 @@ def welcome(name):
 
 
 def scanning(name):
-    return "%(scan)s Reading **%s**…" % dict(scan=EMOJI["scan"], name=name)
+    return "%s Reading **%s**…" % (EMOJI["scan"], name)
 
 
 def ocr_read(steps, reported, plausible=True):

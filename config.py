@@ -1,6 +1,7 @@
 """Config. Nothing here is a default we invented at runtime."""
 import os
-import sys
+
+from errors import ConfigRefused
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ENV_PATH = os.path.join(HERE, "secrets.env")
@@ -25,6 +26,10 @@ def _load():
             if line and not line.startswith("#") and "=" in line:
                 k, v = line.split("=", 1)
                 env[k.strip()] = v.strip()
+    # Compose's `${VAR:?}` and `${VAR:-}` distinguish "unset" from "set to the
+    # empty string", and an empty env var is how a container expresses "not
+    # configured". So an empty value is ignored rather than allowed to blank a
+    # value that came from secrets.env.
     for k, v in os.environ.items():
         if v != "" and (k in env or k in KNOWN_KEYS):
             env[k] = v
@@ -67,25 +72,22 @@ def _chat_ids(raw):
 # between "only I can use this" and "anyone on the internet can write to my
 # leaderboard account", and that is not a default worth assuming.
 if not _ACCESS_MODE:
-    sys.stderr.write(
+    raise ConfigRefused(
         "\n"
         "ACCESS_MODE is not set. Refusing to start.\n"
         "\n"
         "  It decides who may drive the Relay, and guessing is not safe:\n"
         "    whitelist_claim  first chat to /start claims it (safest)\n"
-        "    blacklist       open to anyone not denied  (PUBLIC)\n"
-        "    shared_secret   must present a per-person secret at /start\n"
+        "    blacklist        open to anyone not denied  (PUBLIC)\n"
+        "    shared_secret    must present a per-person secret at /start\n"
         "\n"
-        "  Set it in secrets.env, e.g.   ACCESS_MODE=whitelist_claim\n\n")
-    raise SystemExit(2)
+        "  Set it in secrets.env, e.g.   ACCESS_MODE=whitelist_claim\n")
 
 if _ACCESS_MODE not in ACCESS_MODES:
-    sys.stderr.write(
+    raise ConfigRefused(
         "\n"
         "ACCESS_MODE=%r is not a valid Access Mode.\n"
-        "  expected one of: %s\n\n" % (_ACCESS_MODE, ", ".join(ACCESS_MODES))
-    )
-    raise SystemExit(2)
+        "  expected one of: %s\n" % (_ACCESS_MODE, ", ".join(ACCESS_MODES)))
 
 ACCESS_MODE = _ACCESS_MODE
 # Chats refused up front, in blacklist mode.

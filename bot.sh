@@ -6,10 +6,10 @@ set -eu
 
 cd "$(dirname "$0")"
 
-# config.py is the real validation. It checks that the three secrets are
-# actually present and non-empty, and exits with a message naming what is
-# missing. Checking for a secrets.env *file* here would break the container,
-# where secrets arrive as environment variables instead.
+# config.py is the real validation. It checks that the bot token is present and
+# that ACCESS_MODE names a valid mode, and refuses to start otherwise. Checking
+# for a secrets.env *file* here would break the container, where secrets arrive
+# as environment variables instead.
 if [ ! -x .venv/bin/python ]; then
   echo "venv missing -- the image should have built it; try ./build.sh" >&2
   exit 1

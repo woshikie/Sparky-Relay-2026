@@ -29,6 +29,20 @@ GECKO_LOG = os.path.join(config.LOGS, "geckodriver.log")
 # refuse to Commit a value the site would not plausibly have produced.
 MIN_STEPS, MAX_STEPS = 100, 200_000
 
+# How long to keep waiting for the page to do something, in poll steps of
+# POLL_SECONDS. Kept as module constants so tests can shrink them: the real
+# values are seconds-minutes because a cold VM is slow to hydrate, and a test
+# suite that waits 30s to prove a timeout fires is a test suite nobody runs.
+POLL_SECONDS = 0.5
+AUTHED_PROBES = 12        # /auth may bounce to /home with a live session
+FORM_PROBES = 40          # the sign-in form must render
+LOGIN_PROBES = 60         # sign-in must reach an authenticated DOM
+BUTTON_PROBES = 20        # a button we are waiting to appear
+CALENDAR_PROBES = 20      # the date picker opening
+MONTH_PROBES = 36         # paging the calendar to an arbitrary month
+OCR_PROBES = 40           # the site's OCR is in-page and not instant
+COMMIT_PROBES = 30        # the confirm panel closing after Submit
+
 DETECTED_RE = re.compile(r"Detected steps\s*([\d,. ]+)", re.I)
 
 # Anchored on real month names: a loose [A-Z][a-z]+ \d{4} also matches the page
@@ -226,7 +240,7 @@ class Relay:
         self.driver.get(self.base + "/auth")
         # A persisted profile may already hold a live Session, in which case
         # /auth bounces to /home and there is no form to fill. Check first.
-        for _ in range(12):
+        for _ in range(AUTHED_PROBES):
             if self._authed():
                 self._say("existing session still valid; no sign-in needed")
                 return
@@ -234,7 +248,7 @@ class Relay:
         # Wait for the form to actually render; the SPA hydrates after load and
         # a fixed sleep loses the race on a cold profile / cold VM.
         u = p = None
-        for _ in range(40):
+        for _ in range(FORM_PROBES):
             time.sleep(0.5)
             ins = self.driver.find_elements(By.CSS_SELECTOR, "input")
             texty = [e for e in ins if e.get_attribute("type") == "text"]
@@ -255,13 +269,13 @@ class Relay:
         u.clear(); u.send_keys(username)
         p.clear(); p.send_keys(password)
         self.driver.find_element(By.CSS_SELECTOR, "button").click()
-        for _ in range(60):
+        for _ in range(LOGIN_PROBES):
             time.sleep(0.5)
             if "/auth" not in self.driver.current_url:
                 break
         # Authenticated DOM = nav exposes /upload. URL alone is not enough:
         # it changes before the session is committed.
-        for _ in range(20):
+        for _ in range(BUTTON_PROBES):
             try:
                 hrefs = [a.get_attribute("href") or ""
                          for a in self.driver.find_elements(By.CSS_SELECTOR, "a")]
@@ -296,7 +310,7 @@ class Relay:
 
     def _reset_to_form(self):
         """Clear any confirm panel so the file input is usable again."""
-        for _ in range(20):
+        for _ in range(BUTTON_PROBES):
             t = self._body()
             if "Detected steps" not in t:
                 break
@@ -344,8 +358,8 @@ class Relay:
         self._require(len(fis) == 1, "expected exactly one file input")
         self._say("uploading %s" % os.path.basename(image_path))
         fis[0].send_keys(image_path)
-        for _ in range(40):
-            time.sleep(1)
+        for _ in range(OCR_PROBES):
+            time.sleep(POLL_SECONDS * 2)
             t = self._body()
             if "Detected steps" in t:
                 break
@@ -382,14 +396,14 @@ class Relay:
         target.click()
         self._say("date picker opened")
         # the picker being open is observable: a month header appears
-        for _ in range(20):
+        for _ in range(CALENDAR_PROBES):
             if self._calendar_header():
                 break
             time.sleep(0.5)
         else:
             raise SiteChanged("date picker did not open")
 
-        for _ in range(36):
+        for _ in range(MONTH_PROBES):
             hdr = self._calendar_header()
             if hdr is None:
                 raise SiteChanged("calendar header disappeared")
@@ -447,8 +461,8 @@ class Relay:
         self._require(btn is not None, "no Submit steps button")
         self._say("clicking Submit steps")
         btn.click()
-        for _ in range(30):
-            time.sleep(1)
+        for _ in range(COMMIT_PROBES):
+            time.sleep(POLL_SECONDS * 2)
             t = self._body()
             if "Detected steps" not in t and "Submit steps" not in t:
                 self._say("confirm panel closed -> site accepted the submit")
@@ -465,7 +479,7 @@ class Relay:
         """Best-effort rank/points read after a successful commit."""
         try:
             self.driver.get(self.base + "/home")
-            for _ in range(20):
+            for _ in range(BUTTON_PROBES):
                 time.sleep(0.5)
                 t = self._body()
                 if "House standings" in t:
@@ -480,7 +494,7 @@ class Relay:
         This mirrors the preflight SELECT the site issues before submitting.
         """
         self.driver.get(self.base + "/home")
-        for _ in range(20):
+        for _ in range(BUTTON_PROBES):
             time.sleep(0.5)
             if "House standings" in self._body():
                 break

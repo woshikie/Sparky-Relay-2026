@@ -1,0 +1,30 @@
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = "-q"
+
+[tool.coverage.run]
+# Only the app. The check_*.py scripts need a browser or a live site; they run
+# inside the image instead, and counting them would flatter the number.
+source = ["."]
+omit = [
+    "tests/*",
+    "check_*.py",
+    "*/.venv/*",
+    "setup.sh",
+    "*/__pycache__/*",
+]
+branch = true
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true
+# relay_site.py drives a real browser and is verified end to end by
+# check_container.py inside the image, not here, so the floor is not higher.
+fail_under = 70
+exclude_lines = [
+    "pragma: no cover",
+    "if __name__ == .__main__.:",
+    "raise NotImplementedError",
+    "@abstractmethod",
+]
