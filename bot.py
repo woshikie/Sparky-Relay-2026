@@ -602,16 +602,15 @@ async def on_start(update: Update, ctx):
 
     if has_credentials(chat.id):
         body = words.welcome(getattr(chat, "first_name", None))
-        markup = kb_reply()
     else:
-        # One message: the greeting, then the prompt, then the buttons for it.
+        # One message: the greeting, then the prompt. The keyboard below it is
+        # whatever this chat needs *now*, so the commands are never more than
+        # one tap away and the prompt is answered by tapping, not typing.
         body = words.welcome(getattr(chat, "first_name", None)) + "\n\n" + \
             _credential_prompt_body()
         _start_credential_stage(chat.id)
-        markup = kb_credential_choice() if config.has_preset_credentials() \
-            else kb_reply()
     await msg.reply_text(body, parse_mode=ParseMode.MARKDOWN,
-                         reply_markup=markup)
+                         reply_markup=kb_for(chat.id))
 
 
 def _credential_prompt_body():
@@ -660,7 +659,8 @@ async def on_logout(update: Update, ctx):
         return
     _clear_stage(chat.id)
     ledger.forget_credentials(chat.id)
-    await msg.reply_text(words.logged_out(), parse_mode=ParseMode.MARKDOWN)
+    await msg.reply_text(words.logged_out(), parse_mode=ParseMode.MARKDOWN,
+                         reply_markup=kb_for(chat.id))
 
 
 async def on_log(update: Update, ctx):
@@ -671,7 +671,8 @@ async def on_log(update: Update, ctx):
                                                   parse_mode=ParseMode.MARKDOWN)
         return
     await update.effective_message.reply_text(
-        words.log_lines(ledger.all_submissions()), parse_mode=ParseMode.MARKDOWN)
+        words.log_lines(ledger.all_submissions()), parse_mode=ParseMode.MARKDOWN,
+        reply_markup=kb_for(chat.id))
 
 
 async def on_status(update: Update, ctx):
@@ -718,7 +719,10 @@ async def on_status(update: Update, ctx):
            ", ".join(words.code(a["chat_id"]) for a in denied) or "none",
            len(PENDING))
     )
-    await msg.reply_text(txt, parse_mode=ParseMode.MARKDOWN)
+    # Refresh the keyboard so the buttons Telegram is showing match what the
+    # bot can actually do right now.
+    await msg.reply_text(txt, parse_mode=ParseMode.MARKDOWN,
+                         reply_markup=kb_for(chat.id))
 
 
 def authorised(ctx, chat_id):
@@ -742,18 +746,45 @@ PROMPTING = {}
 # How long a half-finished prompt is worth holding before forgetting it.
 PROMPT_TTL = 600.0
 
-# Reply-keyboard button label -> handler name. Kept next to kb_reply() so the
-# two cannot drift: a label that changes in one and not the other becomes a
-# button that silently does nothing.
+# Button labels. Centralised because a reply-keyboard button is just text: if
+# the label in the keyboard and the label in the dispatch table drift apart, the
+# button silently does nothing. tests/test_reply_keyboard.py asserts both
+# directions of that mapping.
+LABEL_SUBMIT = "📸 Submit steps"
+LABEL_LOGIN = "🔑 Sign in"
+LABEL_LOGOUT = "🚪 Sign out"
+LABEL_STATUS = "📋 Status"
+LABEL_LOG = "📜 History"
+LABEL_HELP = "❓ Help"
+LABEL_CANCEL = "❌ Cancel"
+LABEL_NEW_CREDS = "✏️ Different account"
+
+
+def label_use_preset():
+    """'Use <Original Author's username>' — the username is part of the button, so it has to come
+    from config rather than being hard-coded here."""
+    return "✅ Use %s" % config.SITE_USERNAME
+
+
+# Everything reachable by tapping, resolved fresh because one label is dynamic.
 BUTTON_COMMANDS = {
-    "📸 Submit steps": "submit",
-    "🔑 /login": "login",
-    "🚪 /logout": "logout",
-    "📋 /status": "status",
-    "📜 /log": "log",
-    "❓ /help": "help",
-    "❌ Cancel": "cancel",
+    LABEL_SUBMIT: "submit",
+    LABEL_LOGIN: "login",
+    LABEL_LOGOUT: "logout",
+    LABEL_STATUS: "status",
+    LABEL_LOG: "log",
+    LABEL_HELP: "help",
+    LABEL_CANCEL: "cancel",
+    LABEL_NEW_CREDS: "new_creds",
 }
+
+
+def button_actions():
+    """The dispatch table, including the label that depends on config."""
+    table = dict(BUTTON_COMMANDS)
+    if config.has_preset_credentials():
+        table[label_use_preset()] = "use_preset"
+    return table
 
 
 async def _run_button(ctx, msg, chat, action, stage):
@@ -761,15 +792,32 @@ async def _run_button(ctx, msg, chat, action, stage):
     if action == "submit":
         if stage and stage.get("stage") in ("username", "password"):
             await msg.reply_text(
-                words.cancel_prompt_first(), parse_mode=ParseMode.MARKDOWN)
+                words.cancel_prompt_first(), parse_mode=ParseMode.MARKDOWN,
+                reply_markup=kb_for(chat.id))
             return
         await msg.reply_text(words.send_a_screenshot(),
-                             parse_mode=ParseMode.MARKDOWN)
+                             parse_mode=ParseMode.MARKDOWN,
+                             reply_markup=kb_for(chat.id))
         return
+
+    if action == "use_preset":
+        _clear_stage(chat.id)
+        _set_stage(chat.id, "ready", username=config.SITE_USERNAME, preset=True)
+        await msg.reply_text(words.using_preset(config.SITE_USERNAME),
+                             parse_mode=ParseMode.MARKDOWN,
+                             reply_markup=kb_for(chat.id))
+        return
+
+    if action == "new_creds":
+        _set_stage(chat.id, "username")
+        await msg.reply_text(words.ask_username(), parse_mode=ParseMode.MARKDOWN,
+                             reply_markup=kb_for(chat.id))
+        return
+
     if action == "cancel":
         _clear_stage(chat.id)
         await msg.reply_text(words.cancelled(), parse_mode=ParseMode.MARKDOWN,
-                             reply_markup=kb_done())
+                             reply_markup=kb_for(chat.id))
         return
 
     handler = {
@@ -781,6 +829,19 @@ async def _run_button(ctx, msg, chat, action, stage):
     # Re-enter through the command handlers so there is one implementation of
     # each, not a second copy here that could fall behind.
     await handler(_as_update(msg, chat), ctx)
+    # A tapped command should leave the keyboard showing what comes next,
+    # which for /login is the prompt rather than the standing commands.
+    if stage is None:
+        pending = _prompt_stage(chat.id)
+        if pending and pending.get("stage") in ("username", "password"):
+            try:
+                await msg.reply_text(words.ask_password()
+                                     if pending.get("stage") == "password"
+                                     else words.ask_username(),
+                                     parse_mode=ParseMode.MARKDOWN,
+                                     reply_markup=kb_for(chat.id))
+            except TelegramError:
+                pass
 
 
 def _as_update(msg, chat):
@@ -814,7 +875,7 @@ async def ask_credentials(msg, chat_id):
         await msg.reply_text(
             words.choose_preset(config.SITE_USERNAME),
             parse_mode=ParseMode.MARKDOWN,
-            reply_markup=kb_preset())
+            reply_markup=kb_for(chat_id))
         return
     await ask_username(msg, chat_id)
 
@@ -822,7 +883,7 @@ async def ask_credentials(msg, chat_id):
 async def ask_username(msg, chat_id):
     _set_stage(chat_id, "username")
     await msg.reply_text(words.ask_username(), parse_mode=ParseMode.MARKDOWN,
-                         reply_markup=kb_prompt())
+                         reply_markup=kb_for(chat_id))
 
 
 async def ask_password(msg, chat_id, username=None, preset=False):
@@ -835,7 +896,7 @@ async def ask_password(msg, chat_id, username=None, preset=False):
     """
     _set_stage(chat_id, "password", username=username, preset=preset)
     await msg.reply_text(words.ask_password(), parse_mode=ParseMode.MARKDOWN,
-                         reply_markup=kb_prompt())
+                         reply_markup=kb_for(chat_id))
 
 
 def kb_done():
@@ -843,56 +904,84 @@ def kb_done():
     return kb_reply()
 
 
-def kb_preset():
-    return InlineKeyboardMarkup([
-        [InlineKeyboardButton("Use %s" % config.SITE_USERNAME,
-                              callback_data="cred:preset")],
-        [InlineKeyboardButton("Enter different credentials",
-                              callback_data="cred:new")],
-    ])
-
-
-def kb_credential_choice():
-    """Inline buttons for "use the preset, or give me your own"."""
-    return kb_preset()
-
-
 def kb_reply():
-    """The persistent reply keyboard: commands as ordinary buttons.
+    """The standing commands, as ordinary buttons above the input box.
 
-    A reply keyboard rather than inline ones, because these are standing
-    commands rather than answers to a question. It also means /status and /log
-    are reachable without remembering a slash.
+    A reply keyboard rather than inline, for two reasons: they are standing
+    commands rather than answers to a question, and a reply keyboard stays
+    put, so nothing has to be memorised or re-tapped from a scrolled-away
+    message.
     """
     return ReplyKeyboardMarkup(
         [
-            [KeyboardButton("📸 Submit steps"),
-             KeyboardButton("🔑 /login")],
-            [KeyboardButton("📋 /status"), KeyboardButton("📜 /log")],
-            [KeyboardButton("🚪 /logout"), KeyboardButton("❓ /help")],
+            [KeyboardButton(LABEL_SUBMIT), KeyboardButton(LABEL_LOGIN)],
+            [KeyboardButton(LABEL_STATUS), KeyboardButton(LABEL_LOG)],
+            [KeyboardButton(LABEL_LOGOUT), KeyboardButton(LABEL_HELP)],
         ],
         resize_keyboard=True,
-        is_persistent=True,     # survives a restart of the client
-        input_field_placeholder="Send a screenshot, or pick a command",
+        is_persistent=True,     # survives the client being restarted
+        input_field_placeholder="Send a screenshot, or pick one",
+    )
+
+
+def kb_credential_choice():
+    """The preset-or-not question, also as a reply keyboard.
+
+    It was inline, which meant the only visible buttons were those two and the
+    standing commands were nowhere to be seen. Inline buttons live on one
+    message and scroll away; reply buttons stay. Everything that is a standing
+    choice lives here; only the submission flow -- the date picker and the
+    confirmation -- uses inline, because those belong to one particular step.
+    """
+    return ReplyKeyboardMarkup(
+        [
+            [KeyboardButton(label_use_preset())],
+            [KeyboardButton(LABEL_NEW_CREDS), KeyboardButton(LABEL_CANCEL)],
+            [KeyboardButton(LABEL_STATUS), KeyboardButton(LABEL_HELP)],
+        ],
+        resize_keyboard=True,
+        input_field_placeholder="Pick one, or type your username",
     )
 
 
 def kb_prompt():
-    """Keyboard shown mid-prompt: the prompt itself must be typed."""
+    """Mid-prompt: the answer has to be typed, so keep the keyboard minimal."""
     return ReplyKeyboardMarkup(
-        [[KeyboardButton("❌ Cancel")]],
+        [
+            [KeyboardButton(LABEL_CANCEL)],
+            [KeyboardButton(LABEL_STATUS), KeyboardButton(LABEL_HELP)],
+        ],
         resize_keyboard=True,
-        one_time_keyboard=True,
         input_field_placeholder="Type your answer",
     )
 
 
+def kb_for(chat_id):
+    """The keyboard this chat needs right now."""
+    stage = _prompt_stage(chat_id)
+    if not stage:
+        return kb_reply()
+    name = stage.get("stage")
+    if name == "choose_preset":
+        return kb_credential_choice()
+    if name in ("username", "password"):
+        return kb_prompt()
+    return kb_reply()
+
+
 async def on_credential_choice(update: Update, ctx):
+    """Callback path for the preset choice.
+
+    The choice is now a reply keyboard, so this is only reachable from the
+    `kb_after_login` escape hatch on an older message still sitting in the chat.
+    Kept, because Telegram keeps inline buttons alive on old messages, and a tap
+    that did nothing would be worse than a slightly redundant handler.
+    """
     q = update.callback_query
     chat = update.effective_chat
     st = _prompt_stage(chat.id)
     if not st or st.get("stage") != "choose_preset":
-        await q.answer("Nothing to choose — send /login first.", show_alert=True)
+        await q.answer("Nothing to choose — tap Sign in first.", show_alert=True)
         return
     if q.data.endswith("preset"):
         # Credentials came from the environment: nothing to store, and the
@@ -900,8 +989,10 @@ async def on_credential_choice(update: Update, ctx):
         _clear_stage(chat.id)
         _set_stage(chat.id, "ready", username=config.SITE_USERNAME, preset=True)
         await q.edit_message_text(words.using_preset(config.SITE_USERNAME),
-                                  parse_mode=ParseMode.MARKDOWN,
-                                  reply_markup=kb_after_login())
+                                  parse_mode=ParseMode.MARKDOWN)
+        await q.message.reply_text(words.send_a_screenshot(),
+                                   parse_mode=ParseMode.MARKDOWN,
+                                   reply_markup=kb_for(chat.id))
         await q.answer("using preset credentials")
     else:
         await q.edit_message_reply_markup(reply_markup=None)
@@ -910,10 +1001,15 @@ async def on_credential_choice(update: Update, ctx):
 
 
 def kb_after_login():
-    return InlineKeyboardMarkup([
-        [InlineKeyboardButton("Use different credentials",
-                              callback_data="cred:new")],
-    ])
+    """Escape hatch on the standing keyboard, for reaching a different account."""
+    return ReplyKeyboardMarkup(
+        [
+            [KeyboardButton(LABEL_NEW_CREDS), KeyboardButton(LABEL_LOGOUT)],
+            [KeyboardButton(LABEL_STATUS), KeyboardButton(LABEL_HELP)],
+        ],
+        resize_keyboard=True,
+        input_field_placeholder="Send a screenshot, or pick one",
+    )
 
 
 async def on_text(update: Update, ctx):
@@ -929,8 +1025,8 @@ async def on_text(update: Update, ctx):
     text = (msg.text or "").strip()
     st = _prompt_stage(chat.id)
 
-    if text in BUTTON_COMMANDS:
-        await _run_button(ctx, msg, chat, BUTTON_COMMANDS[text], st)
+    if text in button_actions():
+        await _run_button(ctx, msg, chat, button_actions()[text], st)
         return
 
     # --- Access gate first: an unauthorised chat gets nothing, and its input
@@ -997,7 +1093,8 @@ async def on_text(update: Update, ctx):
         await _scrub(msg)
         _set_stage(chat.id, "ready", username=username, preset=False)
         await msg.reply_text(words.credentials_saved(username),
-                             parse_mode=ParseMode.MARKDOWN)
+                             parse_mode=ParseMode.MARKDOWN,
+                             reply_markup=kb_after_login())
         return
 
 
@@ -1131,7 +1228,12 @@ def main():
               "Consider a larger host — see docs/adr/0004.")
     print("[relay] starting")
     try:
-        app.run_polling(drop_pending_updates=True, close_loop=False)
+        # Do NOT drop pending updates. A restart on a small host is routine, and
+# dropping means a "/start" sent during the restart vanishes with no reply and
+# no error — which looks exactly like the bot being broken. A stale Confirm
+# button from before the restart is refused with "expired", which is the right
+# answer anyway: the pending request did not survive.
+app.run_polling(drop_pending_updates=False, close_loop=False)
     finally:
         get_relay().stop()
 
