@@ -125,6 +125,18 @@ def access(config, ledger):
 
 
 @pytest.fixture
+def memory(config):
+    """The memory module as it is *now*.
+
+    Added because a test module that does `import memory` at the top holds a
+    stale reference after _purge(), and monkeypatching that stale copy silently
+    does nothing. That is not hypothetical: it left a real Firefox running for
+    the whole of one test file, which is why the suite took 50 seconds.
+    """
+    return importlib.import_module("memory")
+
+
+@pytest.fixture
 def bot(config, ledger):
     mod = importlib.import_module("bot")
     mod.PROMPTING.clear()

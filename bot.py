@@ -127,29 +127,32 @@ def get_relay() -> relay_site.Relay:
     return _relay
 
 
-class BrowserUnavailable(Exception):
-    """The host cannot spare the RAM for the browser right now."""
-
-
 class _NoCredentials(Exception):
     """This chat has not supplied Site credentials yet."""
 
 
-@contextlib.contextmanager
+@contextlib.asynccontextmanager
 async def browser_session():
     """Yield a started Relay, then close the browser.
 
     Transient by design: the browser exists for the duration of one Screenshot
     and is torn down afterwards, so idle RAM is the bot process alone.
+
+    This must be an *async* context manager. With the plain
+    `contextlib.contextmanager` on an `async def`, every caller doing
+    `async with browser_session()` fails at runtime with
+    "'_GeneratorContextManager' object does not support the asynchronous
+    context manager protocol" -- which is what happened on the first real
+    Screenshot, after every test had passed.
     """
     async with _site_lock:
         r = get_relay()
-        try:
-            rep = await asyncio.to_thread(memory.require_memory)
-        except memory.InsufficientMemory as e:
-            raise BrowserUnavailable(str(e))
-        log_ctx = "%.0fMB free" % rep["available_mb"]
-        print("[relay] launching browser (%s)" % log_ctx, flush=True)
+        # InsufficientMemory propagates as itself: it already carries the
+        # numbers, and wrapping it in a second exception type meant callers had
+        # to catch both for one condition.
+        rep = await asyncio.to_thread(memory.require_memory)
+        print("[relay] launching browser (%.0fMB free)" % rep["available_mb"],
+              flush=True)
         try:
             await asyncio.to_thread(r.start)
             yield r
@@ -268,11 +271,7 @@ async def on_photo(update: Update, ctx):
                              parse_mode=ParseMode.MARKDOWN)
         await ask_credentials(msg, chat.id)
         return
-    except memory.InsufficientMemory:
-        await scratch.delete()
-        await msg.reply_text(words.low_memory(), parse_mode=ParseMode.MARKDOWN)
-        return
-    except BrowserUnavailable as e:
+    except memory.InsufficientMemory as e:
         await scratch.delete()
         await msg.reply_text(words.low_memory(str(e)),
                              parse_mode=ParseMode.MARKDOWN)
@@ -489,7 +488,7 @@ async def cb_ok(update: Update, ctx):
         await ask_credentials(msg, chat.id)
         await q.answer("stored credentials unreadable", show_alert=True)
         return
-    except (memory.InsufficientMemory, BrowserUnavailable) as e:
+    except memory.InsufficientMemory as e:
         PENDING.pop(key, None)
         await msg.reply_text(words.low_memory(str(e) or ""),
                              parse_mode=ParseMode.MARKDOWN)
