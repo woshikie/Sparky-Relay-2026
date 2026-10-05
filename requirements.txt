@@ -4,3 +4,8 @@
 python-telegram-bot[job-queue]==22.8
 selenium==4.50.0
 pillow==12.1.0
+
+# AES-GCM for the Credential Vault. A prompted Site password is stored
+# encrypted under a key derived from the bot token, so the nightly ledger
+# backup in Telegram is inert without that token.
+cryptography==46.0.3
