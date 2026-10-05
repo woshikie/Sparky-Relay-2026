@@ -665,19 +665,22 @@ async def on_status(update: Update, ctx):
     denied = ledger.all_denied()
     txt = (
         "**Relay status**\n\n"
-        "Site: `%s`\n"
-        "Signing in as: %s\n"
-        "Access: %s\n"
-        "Browser: headless=%s, launched per Screenshot\n"
-        "Memory: %.0fMB usable (browser needs ~%dMB) — can launch: **%s**\n"
-        "Submissions recorded: %d\n"
-        "Chats with access: %s\n"
-        "Chats denied: %s\n"
-        "Pending confirmations: %d"
-        % (config.SITE_BASE, who, access.describe(), config.HEADLESS,
+        "**Site:** `%s`\n"
+        "**Signing in as:** %s\n"
+        # access.describe() carries its own ** markers, and nesting those inside
+        # another ** pair made the whole reply unparseable, so /status returned
+        # nothing at all. Plain fragment inside the bold span instead.
+        "**Access:** %s\n"
+        "**Browser:** headless=%s, launched per Screenshot\n"
+        "**Memory:** %.0fMB usable (browser needs ~%dMB) — can launch: **%s**\n"
+        "**Submissions recorded:** %d\n"
+        "**Chats with access:** %s\n"
+        "**Chats denied:** %s\n"
+        "**Pending confirmations:** %d"
+        % (config.SITE_BASE, who, access.describe(markdown=False), config.HEADLESS,
            rep["available_mb"], rep["browser_peak_mb"],
            "yes" if rep["can_launch"] else "NO", len(subs),
-           ", ".join("`%s`(%s)" % (a["chat_id"], a["how"]) for a in granted) or "none",
+           ", ".join("`%s` (%s)" % (a["chat_id"], a["how"]) for a in granted) or "none",
            ", ".join("`%s`" % a["chat_id"] for a in denied) or "none",
            len(PENDING))
     )

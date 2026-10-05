@@ -210,13 +210,13 @@ def logged_out():
 
 def welcome(name):
     return (
-        "👋 Hello %s.\n\n"
+        "👋 Hello%s\n\n"
         "Send a screenshot of your step tracker's day view and I will:\n"
         "1. upload it and report the step count the site reads\n"
         "2. ask you for the activity date (today by default)\n"
         "3. record it once you confirm\n\n"
         "Nothing is recorded until you confirm."
-        % {"name": name or "there"}
+        % (", %s!" % name if name else "!")
     )
 
 

@@ -144,10 +144,19 @@ def undeny(chat_id):
     return True
 
 
-def describe():
-    """Human summary for /status."""
+def describe(markdown=True):
+    """Human summary for /status.
+
+    `markdown=False` returns a plain fragment for embedding inside a bold span.
+    The default carries its own ** markers, and nesting those inside another
+    ** pair is what made /status fail to parse -- the reply was silently
+    dropped, so the command looked like it did nothing.
+    """
     mode = config.ACCESS_MODE
-    line = "Access Mode: **%s**" % mode
+    if markdown:
+        line = "Access Mode: **%s**" % mode
+    else:
+        line = "Access Mode: %s" % mode
     if mode == "blacklist":
         line += "  ⚠️ anyone not denied can drive this"
     if mode == "whitelist_claim":
