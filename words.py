@@ -20,10 +20,192 @@ HELP = (
     "and I will read the step count the site reports, then ask you to confirm "
     "the date before anything is recorded.\n\n"
     "Commands:\n"
+    "/login — supply your site username and password\n"
+    "/logout — forget the stored credentials\n"
     "/log — recent Submissions\n"
-    "/status — browser, session, and config state\n"
+    "/status — access mode, credentials, and memory state\n"
     "/help — this message"
 )
+
+# --- access -------------------------------------------------------------
+
+def claimed():
+    return (
+        "🔐 **This chat now owns the Relay.**\n\n"
+        "Only chats listed in `/status` can drive it. Remove a chat from the "
+        "list to revoke its access.\n\n" + HELP
+    )
+
+
+def already_claimed():
+    return (
+        "🔐 The Relay has already been claimed by another chat.\n\n"
+        "Access Mode is `whitelist_claim`, so only the first chat to `/start` "
+        "gets in. If that should be you, revoke the existing claim first — "
+        "or switch `ACCESS_MODE` in `secrets.env`."
+    )
+
+
+def secret_prompt():
+    return (
+        "🔑 This Relay needs a Shared Secret.\n\n"
+        "Send it here and I will remember this chat. I delete the message as "
+        "soon as I read it, but a notification may already have shown — so "
+        "send it in a private chat, not a group.\n\n"
+        "Wrong guesses are rate limited, not locked out: nobody can lock you "
+        "out of your own bot this way."
+    )
+
+
+def secret_accepted(how):
+    label = (how or "").split(":", 1)[-1] or "a configured secret"
+    return "🔑 Secret accepted (`%s`). This chat now has access." % label
+
+
+def secret_rejected():
+    return (
+        "❌ That is not a valid Shared Secret.\n\n"
+        "I have deleted the message. Try again, or wait a moment if you are "
+        "being rate limited."
+    )
+
+
+def secret_throttled(wait):
+    return (
+        "⏳ Too many attempts. Try again in %d second%s.\n\n"
+        "This is a rate limit, not a lockout — you cannot be locked out."
+        % (wait, "" if wait == 1 else "s")
+    )
+
+
+def access_refused(decision):
+    why = getattr(decision, "why", "denied")
+    if why == "denied":
+        return (
+            "⛔ This chat is on the deny list.\n\n"
+            "Chat id: `%s`\n\n"
+            "Remove it from `DENY_CHAT_IDS` in secrets.env, or have the owner "
+            "run `/undeny %s`." % (_chat_id_of(decision), _chat_id_of(decision))
+        )
+    if why == "secret_throttled":
+        return secret_throttled(getattr(decision, "retry_after", 30))
+    if why == "needs_secret":
+        return secret_prompt()
+    if why == "needs_claim":
+        return already_claimed()
+    return (
+        "⛔ This chat cannot drive the Relay.\n\n"
+        "Access Mode is `%s`. Chat id: `%s`"
+        % (_mode_or_unknown(), _chat_id_of(decision))
+    )
+
+
+def _chat_id_of(decision):
+    return getattr(decision, "chat_id", "unknown")
+
+
+def _mode_or_unknown():
+    import config
+    return config.ACCESS_MODE
+
+
+# --- credentials prompt -------------------------------------------------
+
+def choose_preset(username):
+    return (
+        "🔑 I have preset credentials for **%s**.\n\n"
+        "Use those, or give me different ones? The password is never shown — "
+        "I am only telling you which account this would be."
+        % username
+    )
+
+
+def using_preset(username):
+    return (
+        "✅ Signing in as **%s** using the preset credentials.\n\n"
+        "Nothing was stored. Send a screenshot whenever you are ready, or "
+        "/login to use different ones." % username
+    )
+
+
+def ask_username():
+    return (
+        "🔑 What is your site username?\n\n"
+        "This is the name you sign in to the site with — not your Telegram "
+        "handle. Send it as a message here."
+    )
+
+
+def bad_username():
+    return (
+        "That does not look like a username. The site needs 3–40 characters. "
+        "Try again."
+    )
+
+
+def ask_password():
+    return (
+        "🔑 And your site password.\n\n"
+        "Send it as a message here and I will delete the message immediately. "
+        "A notification may still have shown, so prefer a private chat.\n\n"
+        "I store it encrypted, keyed on this bot's token."
+    )
+
+
+def credentials_saved(username):
+    return (
+        "✅ Credentials saved for **%s**.\n\n"
+        "Encrypted on disk, keyed on this bot's token. Rotating the token at "
+        "@BotFather makes the stored copy permanently unreadable — which is "
+        "the intended response to a suspected compromise.\n\n"
+        "Send a screenshot whenever you are ready. /logout to forget."
+        % username
+    )
+
+
+def credential_store_failed(detail):
+    return (
+        "❌ Could not save the credentials (`%s`).\n\n"
+        "Nothing was stored and nothing was recorded. Try /login again."
+        % detail
+    )
+
+
+def need_credentials():
+    return (
+        "🔑 I need your site credentials before I can do anything.\n\n"
+        "Send /login and I will ask for them. Nothing is recorded until you "
+        "confirm a Submission, and I cannot read your steps without them — "
+        "the site does the OCR inside the page."
+    )
+
+
+def vault_unreadable(detail):
+    return (
+        "🔑 The stored credentials could not be read (`%s`).\n\n"
+        "This normally means the bot token was rotated, which makes the old "
+        "encrypted copy unrecoverable by design.\n\n"
+        "Send /login to supply them again."
+        % detail
+    )
+
+
+def no_prompt():
+    return (
+        "Nothing to do right now. Send a screenshot, or /login if you want to "
+        "change your credentials."
+    )
+
+
+def scrub_failed():
+    return "_I could not delete the message above. It contained a secret — " \
+           "please delete it yourself._"
+
+
+def logged_out():
+    return (
+        "🔑 Credentials forgotten. Send /login when you need them again."
+    )
 
 
 def welcome(name):

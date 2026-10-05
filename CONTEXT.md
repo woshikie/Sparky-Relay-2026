@@ -74,10 +74,46 @@ There is no real mailbox; the Site's identity provider is the only consumer.
 _Avoid_: login, account email
 
 **Session**:
-A bearer token from the Site's identity provider, stored on the Relay and
-renewed on expiry. Holds the authority to write one user's Submissions — the
-Relay can never write anyone else's.
+A bearer token from the Site's identity provider, held while the Relay is
+working. The Relay can never write anyone else's Submissions.
 _Avoid_: auth token, login, credentials
+
+**Credentials Prompt**:
+The exchange in which the person using the Relay supplies a Site username and
+password. It happens lazily — on first use, not at startup — so an unattended
+restart never leaves the bot waiting on an answer nobody can see. Passwords are
+never echoed back, not in the Confirmation, not in `/status`, and not in any
+error.
+_Avoid_: login, sign-in, auth flow
+
+**Preset Credentials**:
+A username and password supplied out of band, via `secrets.env` or the
+environment. An optimisation for convenience, never a requirement: the Relay
+works with none of them. When Preset Credentials exist the Credentials Prompt
+offers them rather than demanding new ones, and shows the Preset *username* so
+the account can be confirmed before spending a browser launch on it.
+_Avoid_: env secrets, config credentials, defaults
+
+**Access Mode**:
+The rule deciding who may drive the Relay. Chosen at startup; changing it is a
+restart. See [ADR 0006](../docs/adr/0006-access-modes.md) for the modes and what
+each one costs.
+_Avoid_: auth mode, permission model, access control
+
+**Shared Secret**:
+A passphrase, supplied out of band, that a person must present at `/start`
+before the Relay will do anything for them. The passphrase, not an
+identifier — possession is the whole check, so it can be shared, rotated, and
+revoked without enumerating anyone.
+_Avoid_: invite code, access code, password (conflicts with the Site password)
+
+**Credential Vault**:
+The at-rest store for a supplied password, encrypted with a key derived from
+the bot token so that a stolen copy of the ledger — including the nightly
+backup that lands in this same Telegram chat — is inert without that token.
+Rotating the token makes the ciphertext unrecoverable, which is the intended
+response to a suspected compromise.
+_Avoid_: keychain, secret store, password cache
 
 **Identity seam**:
 The one place that would change if the Relay ever served more than one person:
