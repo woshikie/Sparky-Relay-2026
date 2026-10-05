@@ -313,6 +313,28 @@ async def on_photo(update: Update, ctx):
 
 
 async def cb_date(update: Update, ctx):
+    """Every date button routes here, so every one of them must be answered.
+
+    A callback that raises leaves the button spinning in the client for good:
+    Telegram gives no error and no reply, which is exactly what "it's stuck"
+    looks like. So the whole body runs guarded, and an unexpected failure says
+    so rather than hanging. cb_ok already worked this way; cb_date did not,
+    and a malformed payload -- a stale grid from before a restart, say --
+    reached int() unguarded.
+    """
+    q = update.callback_query
+    try:
+        await _cb_date(update, ctx)
+    except Exception as e:
+        log(ctx, "date callback error: %r" % (e,))
+        try:
+            await q.answer("something went wrong — send the screenshot again",
+                           show_alert=True)
+        except TelegramError:
+            pass
+
+
+async def _cb_date(update: Update, ctx):
     q = update.callback_query
     chat = update.effective_chat
     msg = q.message
@@ -350,19 +372,15 @@ async def cb_date(update: Update, ctx):
         await q.answer()
         return
     elif kind == "prev":
-        y, m = int(rest[0]), int(rest[1])
-        m -= 1
-        if m < 1:
-            y, m = y - 1, 12
-        await q.edit_message_reply_markup(reply_markup=kb_pick_date(y, m))
+        # The target month arrives already resolved: datepicker.shift() owns the
+        # wrap, so there is no January/December arithmetic here to get wrong.
+        await q.edit_message_reply_markup(
+            reply_markup=kb_pick_date(int(rest[0]), int(rest[1])))
         await q.answer()
         return
     elif kind == "next":
-        y, m = int(rest[0]), int(rest[1])
-        m += 1
-        if m > 12:
-            y, m = y + 1, 1
-        await q.edit_message_reply_markup(reply_markup=kb_pick_date(y, m))
+        await q.edit_message_reply_markup(
+            reply_markup=kb_pick_date(int(rest[0]), int(rest[1])))
         await q.answer()
         return
     elif kind == "day":
