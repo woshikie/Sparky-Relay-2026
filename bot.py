@@ -1229,11 +1229,11 @@ def main():
     print("[relay] starting")
     try:
         # Do NOT drop pending updates. A restart on a small host is routine, and
-# dropping means a "/start" sent during the restart vanishes with no reply and
-# no error — which looks exactly like the bot being broken. A stale Confirm
-# button from before the restart is refused with "expired", which is the right
-# answer anyway: the pending request did not survive.
-app.run_polling(drop_pending_updates=False, close_loop=False)
+        # dropping means a "/start" sent during the restart vanishes with no
+        # reply and no error -- which looks exactly like the bot being broken.
+        # A stale Confirm button from before the restart is refused as expired,
+        # which is right anyway: the pending request did not survive.
+        app.run_polling(drop_pending_updates=False, close_loop=False)
     finally:
         get_relay().stop()
 
