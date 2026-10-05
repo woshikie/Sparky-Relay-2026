@@ -38,7 +38,18 @@ services:
       SITE_USERNAME: ${SITE_USERNAME:?set SITE_USERNAME in secrets.env or your shell}
       SITE_PASSWORD: ${SITE_PASSWORD:?set SITE_PASSWORD in secrets.env or your shell}
       SITE_BASE: ${SITE_BASE:-https://example.invalid}
-      ALLOWED_CHAT_ID: ${ALLOWED_CHAT_ID:-}
+      # MANDATORY. Decides who may drive the Relay. The bot exits rather than
+      # guess: unset means the difference between "only me" and "the internet".
+      # One of: whitelist_claim, blacklist, shared_secret
+      #
+      # Quoted because the ": " inside a ${VAR:?message} would otherwise be
+      # read as a YAML mapping. Compose itself enforces the same thing with
+      # ${ACCESS_MODE:?ACCESS_MODE must be set}.
+      ACCESS_MODE: "${ACCESS_MODE:?set ACCESS_MODE in secrets.env: one of whitelist_claim, blacklist, shared_secret}"
+      # blacklist mode only: chats refused up front, comma separated.
+      DENY_CHAT_IDS: ${DENY_CHAT_IDS:-}
+      # shared_secret mode only: one "label:secret" per line.
+      SHARED_SECRETS: ${SHARED_SECRETS:-}
       BACKUP_TIME: ${BACKUP_TIME:-03:17}
       KNOWN_CUTOFF: ${KNOWN_CUTOFF:-2026-11-02T15:59:00+00:00}
       # All mutable state on the volume, so the image stays read-only-ish and a
@@ -93,7 +104,7 @@ services:
         - CMD
         - /app/.venv/bin/python
         - -c
-        - import sys, memory; sys.exit(0 if memory.budget_report()["can_launch"] else 1)
+        - import sys, memory; sys.exit(0 if memory.budget()["can_launch"] else 1)
       interval: 60s
       timeout: 15s
       retries: 3

@@ -54,10 +54,11 @@ RUN python3 -m venv /app/.venv \
  && mkdir -p /app/bin /app/data \
  && ln -sf /usr/bin/geckodriver /app/bin/geckodriver
 
-COPY bot.py config.py datepicker.py ledger.py memory.py relay_site.py words.py ./
+COPY access.py bot.py config.py datepicker.py ledger.py memory.py \
+     relay_site.py vault.py words.py ./
 # Verification helpers, so the built image can prove it can run the site's OCR
 # without needing the source tree on the host.
-COPY check_container.py check_lifecycle.py ./
+COPY check_container.py check_lifecycle.py check_access.py ./
 COPY bot.sh ./
 COPY CONTEXT.md README.md SITE-NOTES.md ./
 COPY docs ./docs
@@ -80,7 +81,7 @@ VOLUME ["/app/data"]
 # the image is built with --format docker (see build.sh). The compose file
 # repeats this check independently, which is what actually runs under podman.
 HEALTHCHECK --interval=60s --timeout=15s --start-period=20s --retries=3 \
-  CMD /app/.venv/bin/python -c "import sys, memory; print(memory.describe()); sys.exit(0 if memory.budget_report()['can_launch'] else 1)"
+  CMD /app/.venv/bin/python -c "import sys, memory; print(memory.describe()); sys.exit(0 if memory.budget()['can_launch'] else 1)"
 
 STOPSIGNAL SIGTERM
 ENTRYPOINT ["/app/bot.sh"]
