@@ -97,10 +97,15 @@ class NoStepsFound(Exception):
 
 
 class Relay:
-    def __init__(self, base, headless=True, verbose=True):
+    def __init__(self, base, headless=True, verbose=True, progress=None):
         self.base = base.rstrip("/")
         self.headless = headless
         self.verbose = verbose
+        # An optional object with .note(step) / .finish(), called from this
+        # thread. It must not block: this runs while Firefox is working. See
+        # progress.py -- the step names are defined there, not here, so the
+        # checklist and the code that fills it in cannot drift.
+        self.progress = progress
         self.driver = None
         self.log = []
 
@@ -110,6 +115,19 @@ class Relay:
         self.log.append(msg)
         if self.verbose:
             print("[relay] %s" % msg, flush=True)
+
+    def _step(self, key):
+        """Tell the progress reporter that `key` has started.
+
+        Deliberately fire-and-forget and never allowed to raise: reporting is
+        decoration, and a failure to decorate must not fail the submission.
+        """
+        if self.progress is None:
+            return
+        try:
+            self.progress.note(key)
+        except Exception:
+            self.progress = None
 
     def _opts(self):
         o = Options()
@@ -153,6 +171,7 @@ class Relay:
         except memory.InsufficientMemory as e:
             self._say("NOT launching the browser: %s" % e)
             raise
+        self._step("browser")
         os.makedirs(PROFILE, exist_ok=True)
         os.makedirs(os.path.dirname(GECKO_LOG), exist_ok=True)
         os.makedirs(config.INBOX, exist_ok=True)
@@ -163,6 +182,7 @@ class Relay:
 
     def stop(self):
         if self.driver:
+            self._step("closing")
             try:
                 self.driver.quit()
             except Exception:
@@ -236,6 +256,7 @@ class Relay:
     def login(self, username, password):
         if not self.driver:
             self.start()
+        self._step("signin")
         self._say("opening sign-in")
         self.driver.get(self.base + "/auth")
         # A persisted profile may already hold a live Session, in which case
@@ -263,6 +284,7 @@ class Relay:
         # React attaches the submit handler. Clicking in that window is a
         # silent no-op -- we saw exactly this when benchmarking Chromium.
         # Wait for React to actually own the node before typing.
+        self._step("site")
         self._wait_hydrated(u)
         self._say("page hydrated")
 
@@ -356,6 +378,7 @@ class Relay:
         time.sleep(1.5)
         fis = self.driver.find_elements(By.CSS_SELECTOR, "input[type=file]")
         self._require(len(fis) == 1, "expected exactly one file input")
+        self._step("upload")
         self._say("uploading %s" % os.path.basename(image_path))
         fis[0].send_keys(image_path)
         for _ in range(OCR_PROBES):
@@ -376,6 +399,7 @@ class Relay:
             raise SiteChanged("could not parse the Detected steps value")
         raw = m.group(1).strip()
         steps = int(re.sub(r"[^\d]", "", raw))
+        self._step("read")
         self._say("site reported %s steps" % raw)
         return steps, raw
 

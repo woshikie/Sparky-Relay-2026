@@ -31,9 +31,11 @@ except errors.ConfigRefused as _exc:
     sys.exit(2)
 
 import access          # noqa: E402  (must follow the config guard)
+import console         # noqa: E402
 import datepicker      # noqa: E402
 import ledger          # noqa: E402
 import memory          # noqa: E402
+import progress as progress_mod  # noqa: E402
 import relay_site      # noqa: E402
 import vault           # noqa: E402
 import words           # noqa: E402
@@ -120,10 +122,17 @@ _site_lock = asyncio.Lock()
 _relay = None
 
 
-def get_relay() -> relay_site.Relay:
+def get_relay(progress=None) -> relay_site.Relay:
+    """The single Relay, with a progress reporter if one is supplied.
+
+    The reporter is attached per Screenshot rather than at construction: the
+    Relay outlives any one upload, so holding a reference to a Telegram message
+    here would keep editing a message from a submission three days ago.
+    """
     global _relay
     if _relay is None:
         _relay = relay_site.Relay(config.SITE_BASE, headless=config.HEADLESS)
+    _relay.progress = progress
     return _relay
 
 
@@ -132,7 +141,7 @@ class _NoCredentials(Exception):
 
 
 @contextlib.asynccontextmanager
-async def browser_session():
+async def browser_session(progress=None):
     """Yield a started Relay, then close the browser.
 
     Transient by design: the browser exists for the duration of one Screenshot
@@ -146,7 +155,7 @@ async def browser_session():
     Screenshot, after every test had passed.
     """
     async with _site_lock:
-        r = get_relay()
+        r = get_relay(progress)
         # InsufficientMemory propagates as itself: it already carries the
         # numbers, and wrapping it in a second exception type meant callers had
         # to catch both for one condition.
@@ -158,7 +167,11 @@ async def browser_session():
             yield r
         finally:
             print("[relay] closing browser", flush=True)
+            if progress is not None:
+                progress.finish("closing")
             await asyncio.to_thread(r.stop)
+            if progress is not None:
+                progress.finish()
             mem_after = memory.mem_mb()
             if mem_after:
                 print("[relay] %.0fMB available after close" % mem_after,
@@ -175,13 +188,16 @@ async def site_login(ctx, force=False):
     raise RuntimeError("site_login(ctx) is superseded by browser_session()")
 
 
-async def sign_in(chat_id):
+async def sign_in(chat_id, progress=None):
     """Sign the Relay in for this chat, or raise something we can explain.
 
     Called inside an open browser_session(), so the caller owns the browser
     lifetime; this only resolves the credentials and logs in.
+
+    `progress` is threaded through rather than read off the Relay so a caller
+    cannot silently get a reporter that belongs to an earlier Screenshot.
     """
-    r = get_relay()
+    r = get_relay(progress)
     username, password = site_credentials(chat_id)
     await asyncio.to_thread(r.login, username, password)
     return r
@@ -235,29 +251,28 @@ async def on_photo(update: Update, ctx):
         await msg.reply_text(words.access_refused(d), parse_mode=ParseMode.MARKDOWN)
         return
 
+    # One message, edited as the work happens. It used to be a fixed four-frame
+    # animation that finished in 1.4s -- before the browser had even launched --
+    # so the long part, which is all of it, happened in silence.
     scratch = await msg.reply_text(words.scanning(
         getattr(chat, "username", None) or "your screenshot"),
         parse_mode=ParseMode.MARKDOWN)
-    for frame in ("\U0001F5D3️", "\U0001F4F7", "\U0001F4E6", "\U0001F4C5"):
-        try:
-            await scratch.edit_text("%s Processing…" % frame)
-            await asyncio.sleep(0.35)
-        except TelegramError:
-            pass
+    prog = await progress_mod.Progress(scratch).start()
 
     path = await save_photo(update, ctx)
     if not path:
-        await scratch.edit_text("That does not look like an image. Send a "
-                                "screenshot of your tracker's day view.")
+        await prog.close("That does not look like an image. Send a "
+                         "screenshot of your tracker's day view.")
         return
 
     # Read the number. The browser closes as soon as we have it: on a 1GB host
     # holding ~640MB open while the user decides on a date is not affordable.
     try:
-        async with browser_session() as r:
-            await sign_in(chat.id)
+        async with browser_session(prog) as r:
+            await sign_in(chat.id, prog)
             steps, reported = await asyncio.to_thread(r.upload, path)
     except _NoCredentials:
+        await prog.stop()
         await scratch.delete()
         await msg.reply_text(words.need_credentials(),
                              parse_mode=ParseMode.MARKDOWN)
@@ -266,26 +281,31 @@ async def on_photo(update: Update, ctx):
     except vault.DecryptionFailed as e:
         # Almost always a rotated bot token: the vault key no longer opens the
         # stored entry. The old password is unrecoverable by design.
+        await prog.stop()
         await scratch.delete()
         await msg.reply_text(words.vault_unreadable(str(e)),
                              parse_mode=ParseMode.MARKDOWN)
         await ask_credentials(msg, chat.id)
         return
     except memory.InsufficientMemory as e:
+        await prog.stop()
         await scratch.delete()
         await msg.reply_text(words.low_memory(str(e)),
                              parse_mode=ParseMode.MARKDOWN)
         return
     except relay_site.NoStepsFound:
+        await prog.stop()
         await scratch.delete()
         await msg.reply_text(words.no_steps(), parse_mode=ParseMode.MARKDOWN)
         return
     except relay_site.SiteChanged as e:
+        await prog.stop()
         await scratch.delete()
         await msg.reply_text(words.site_changed(str(e)),
                              parse_mode=ParseMode.MARKDOWN)
         return
     except Exception as e:
+        await prog.stop()
         await scratch.delete()
         await msg.reply_text("❌ Upload failed: `%s`" % str(e)[:200],
                              parse_mode=ParseMode.MARKDOWN)
@@ -293,8 +313,9 @@ async def on_photo(update: Update, ctx):
         return
 
     plausible = relay_site.MIN_STEPS <= steps <= relay_site.MAX_STEPS
-    await scratch.edit_text(words.ocr_read(steps, reported, plausible),
-                            parse_mode=ParseMode.MARKDOWN)
+    # The last edit is the one the user reads, so it is never throttled.
+    await prog.close(words.ocr_read(steps, reported, plausible),
+                     parse_mode=ParseMode.MARKDOWN)
     if not plausible:
         await msg.reply_text(words.implausible(reported), parse_mode=ParseMode.MARKDOWN)
         return
@@ -1183,6 +1204,9 @@ async def backup_job(ctx):
 # ----------------------------------------------------------------------
 
 def main():
+    # First thing, so the refusal below is timestamped too -- a bot that dies
+    # on a config error is exactly when you want the timestamp.
+    console.install()
     try:
         config.require()
     except errors.ConfigRefused as e:

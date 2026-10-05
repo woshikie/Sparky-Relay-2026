@@ -263,7 +263,14 @@ def welcome(name):
 
 
 def scanning(name):
-    return "%s Reading **%s**…" % (EMOJI["scan"], name)
+    """Announce that the Screenshot arrived.
+
+    `name` is escaped: a Telegram username may contain `_`, which is an italic
+    delimiter in Telegram's legacy Markdown, so an unescaped one makes Telegram
+    reject the whole message with no local error. Same class of bug as
+    `whitelist_claim` taking out /status.
+    """
+    return "%s Reading **%s**…" % (EMOJI["scan"], md(name))
 
 
 def ocr_read(steps, reported, plausible=True):
