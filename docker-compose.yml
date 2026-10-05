@@ -1,0 +1,103 @@
+# Relay — container run, podman or docker.
+#
+#   ./build.sh                            build the image
+#   set -a; . ./secrets.env; set +a       load secrets into the environment
+#   podman compose up -d relay            detached
+#   podman compose logs -f relay
+#   podman compose down
+#
+# The `set -a; . ./secrets.env` line is required, not optional: secrets reach the
+# container as environment variables because podman-compose 1.6.0 silently
+# ignores `env_file:`. Without them this file fails fast with a clear message
+# rather than starting a container that cannot sign in.
+#
+# The container is memory-capped on purpose. The site's OCR runs in the page and
+# measured peak for the browser tree is ~640MB, so the cap has to leave room for
+# the bot (~44MB) and the OS. A cap that is too low does not fail cleanly: the
+# kernel OOM-kills Firefox mid-run and the bot reports a vague upload error.
+# See docs/adr/0004-browser-lifecycle-on-1gb-host.md.
+
+services:
+  relay:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: sparky-relay-2026:latest
+    container_name: relay
+    restart: unless-stopped
+
+    # Secrets are injected as environment variables, not read from a file inside
+    # the container. `env_file:` is silently ignored by podman-compose 1.6.0
+    # (a known gap) and the bot then exits with "secrets.env missing", which is
+    # a confusing way to find out. Environment variables work on both engines.
+    #
+    # `podman compose --env-file secrets.env up -d` does not work either: that
+    # flag configures *variable substitution* in this file, not container env.
+    environment:
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:?set TELEGRAM_BOT_TOKEN in secrets.env or your shell}
+      SITE_USERNAME: ${SITE_USERNAME:?set SITE_USERNAME in secrets.env or your shell}
+      SITE_PASSWORD: ${SITE_PASSWORD:?set SITE_PASSWORD in secrets.env or your shell}
+      SITE_BASE: ${SITE_BASE:-https://example.invalid}
+      ALLOWED_CHAT_ID: ${ALLOWED_CHAT_ID:-}
+      BACKUP_TIME: ${BACKUP_TIME:-03:17}
+      KNOWN_CUTOFF: ${KNOWN_CUTOFF:-2026-11-02T15:59:00+00:00}
+      # All mutable state on the volume, so the image stays read-only-ish and a
+      # rebuild does not lose the ledger.
+      RELAY_STATE_DIR: /app/data
+      LEDGER_DB: /app/data/ledger.sqlite3
+      HEADLESS: "1"
+      FIREFOX_BIN: /usr/bin/firefox
+      # Keep the engine single-process: fewer processes, less shared memory.
+      MOZ_HEADLESS: "1"
+      MOZ_DISABLE_CONTENT_SANDBOX: "1"
+      # Rootless podman keeps its own cgroup namespace, so /proc/1/cgroup can
+      # name the host cgroup and never mention a container. Tell the app.
+      container: podman
+
+    volumes:
+      - relay-data:/app/data
+      # Samples, read-only, for the in-container verification script. Not
+      # needed at runtime; override to use your own:
+      #   podman run -v /path/to/screens:/samples:ro ...
+      - ./samples:/samples:ro
+
+    # Firefox needs more than the 64MB of /dev/shm a container gets by
+    # default, or it dies on startup with a bus error.
+    shm_size: "256mb"
+
+    # ~950MB: browser 640MB peak + bot 44MB + headroom, and low enough that a
+    # runaway loop is bounded rather than taking the host down with it.
+    mem_limit: 950m
+    mem_reservation: 400m
+
+    # Rootless podman maps this through to systemd scopes; harmless otherwise.
+    pids_limit: 512
+
+    # No ports: the bot is a Telegram long-poller, it does not serve anything.
+    # Give it a restart backoff so a crash loop does not spin.
+    stop_grace_period: 30s
+    stop_signal: SIGTERM
+
+    # NOT journald: on a workstation with no systemd-journald running, the
+    # journald driver silently discards everything, so `compose logs` shows
+    # nothing and the bot looks mute. json-file keeps the tail available
+    # everywhere, at the cost of some disk.
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+    healthcheck:
+      test:
+        - CMD
+        - /app/.venv/bin/python
+        - -c
+        - import sys, memory; sys.exit(0 if memory.budget_report()["can_launch"] else 1)
+      interval: 60s
+      timeout: 15s
+      retries: 3
+      start_period: 30s
+
+volumes:
+  relay-data:

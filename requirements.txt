@@ -1,0 +1,6 @@
+# The job-queue extra is not optional: the nightly ledger backup is scheduled
+# through it, and without it Application.job_queue is None and the bot dies at
+# startup with an AttributeError rather than a useful message.
+python-telegram-bot[job-queue]==22.8
+selenium==4.50.0
+pillow==12.1.0

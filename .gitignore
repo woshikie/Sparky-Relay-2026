@@ -1,0 +1,30 @@
+# Secrets — never commit
+secrets.env
+
+# Local runtime state
+.venv/
+venv/
+ledger.sqlite3
+ledger.sqlite3-wal
+ledger.sqlite3-shm
+inbox/
+logs/
+.browserprofile/
+botprofile/
+
+# Downloaded by setup.sh
+bin/
+geckodriver
+geckodriver.tar.gz
+
+# Screenshots
+*.jpg
+*.jpeg
+*.png
+
+__pycache__/
+*.pyc
+.DS_Store
+
+# Build output / verification
+build/
