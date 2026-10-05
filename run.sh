@@ -1,15 +1,17 @@
 #!/usr/bin/env bash
-# Convenience wrapper: load secrets, then hand over to the compose provider.
+# Run the Relay, loading secrets from secrets.env first.
 #
 #   ./run.sh up -d      start detached
 #   ./run.sh logs -f    follow logs
 #   ./run.sh down       stop and remove
 #   ./run.sh ps
 #
+# `make` wraps this for the common cases (make up, make logs, ...).
+#
 # Why this exists: the compose file takes secrets as environment variables
-# (podman-compose 1.6.0 ignores `env_file:`), so they have to be exported
-# before compose interpolates the file. Forgetting that yields a container that
-# exits immediately, which is an unhelpful way to discover it.
+# because podman-compose 1.6.0 ignores `env_file:`. So they have to be
+# exported before compose interpolates the file, and forgetting that gives a
+# container that exits immediately with "missing configuration".
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -32,6 +34,4 @@ else
   exit 1
 fi
 
-# 2>/dev/null drops podman-compose's "executing external provider" banner,
-# which would otherwise land in the middle of the bot's own output.
-exec $ENGINE compose "$@" 2> >(grep -v "external compose provider" >&2)
+exec $ENGINE compose "$@"

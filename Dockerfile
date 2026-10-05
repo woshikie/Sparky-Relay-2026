@@ -32,17 +32,35 @@ ENV PYTHONUNBUFFERED=1 \
 # firefox + geckodriver come from Alpine's own repos, so they are built for
 # musl. gtk+3 and nss are pulled in by the firefox package; --no-cache keeps
 # the layer small. python3 is the system interpreter; a venv holds the deps.
+# geckodriver is fetched from Mozilla rather than taken from the repo, so the
+# checkout carries no binaries and the version is pinned in one place. Alpine's
+# own geckodriver package exists but is not versioned independently of the rest
+# of the archive.
+ARG GECKODRIVER_VERSION=0.36.0
+RUN set -eux; \
+    case "$(dpkg --print-architecture 2>/dev/null || uname -m)" in \
+      x86_64)        gecko_arch=linux64 ;; \
+      aarch64|arm64) gecko_arch=linux-aarch64 ;; \
+      *) echo "unsupported architecture" >&2; exit 1 ;; \
+    esac; \
+    mkdir -p /app/bin; \
+    curl -fsSL --retry 3 \
+      "https://github.com/mozilla/geckodriver/releases/download/v${GECKODRIVER_VERSION}/geckodriver-v${GECKODRIVER_VERSION}-${gecko_arch}.tar.gz" \
+      -o /tmp/gecko.tar.gz; \
+    tar -xzf /tmp/gecko.tar.gz -C /tmp; \
+    install -m 0755 /tmp/geckodriver /app/bin/geckodriver; \
+    rm -rf /tmp/gecko.tar.gz /tmp/geckodriver; \
+    /app/bin/geckodriver --version | head -1
+
 RUN apk add --no-cache \
       firefox \
-      geckodriver \
       python3 \
       py3-pip \
       py3-virtualenv \
       py3-pillow \
       curl \
       ca-certificates \
- && firefox --version \
- && geckodriver --version | head -1
+ && firefox --version
 
 WORKDIR /app
 
@@ -51,20 +69,18 @@ COPY requirements.txt ./
 RUN python3 -m venv /app/.venv \
  && /app/.venv/bin/pip install --no-cache-dir --upgrade pip \
  && /app/.venv/bin/pip install --no-cache-dir -r requirements.txt \
- && mkdir -p /app/bin /app/data \
- && ln -sf /usr/bin/geckodriver /app/bin/geckodriver
+ && mkdir -p /app/data
 
-COPY access.py bot.py config.py datepicker.py ledger.py memory.py \
+COPY access.py bot.py config.py datepicker.py errors.py ledger.py memory.py \
      relay_site.py vault.py words.py ./
-# Verification helpers, so the built image can prove it can run the site's OCR
+# Verification helpers, so the built image can prove it can read the site's OCR
 # without needing the source tree on the host.
-COPY check_container.py check_lifecycle.py check_access.py ./
+COPY check_container.py check_lifecycle.py ./
 COPY bot.sh ./
 COPY CONTEXT.md README.md SITE-NOTES.md ./
 COPY docs ./docs
 
-RUN chmod +x /app/bot.sh \
- && ln -sf /usr/bin/geckodriver /app/bin/geckodriver
+RUN chmod +x /app/bot.sh
 
 # A browser parsing images from Telegram is exactly the thing that should not
 # be root. Alpine's adduser is BusyBox: -D no password, -H no home dir.
