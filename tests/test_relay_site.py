@@ -18,7 +18,7 @@ import datetime
 
 import pytest
 
-from relay import site as relay_site
+from relay.site import driver as relay_site
 
 
 # ------------------------------------------------------------------- fakes

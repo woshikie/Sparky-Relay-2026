@@ -8,7 +8,7 @@ import sys
 import time
 
 from relay import config, memory
-from relay import site as relay_site
+from relay.site import driver as relay_site
 from relay.store import ledger
 
 HERE = os.path.dirname(os.path.abspath(__file__))

@@ -9,7 +9,7 @@ import re
 import time
 
 from relay import config, memory
-from relay import site as relay_site
+from relay.site import driver as relay_site
 from relay.store import ledger
 
 DETECT = re.compile(r"Detected steps\s*([\d,. ]+)", re.I)

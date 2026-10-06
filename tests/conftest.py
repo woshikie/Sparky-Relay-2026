@@ -36,7 +36,8 @@ os.environ.setdefault("RELAY_STATE_DIR", tempfile.mkdtemp(prefix="relay-pytest-"
 MODULES = ("relay", "relay.telegram", "relay.store",
            "relay.config", "relay.telegram.access", "relay.store.ledger",
            "relay.store.vault", "bot", "relay.telegram.words",
-           "relay.memory", "relay.telegram.datepicker", "relay.site")
+           "relay.memory", "relay.telegram.datepicker", "relay.site",
+           "relay.site.driver", "relay.site.parsing")
 
 
 # The bot's fixtures are imported as bare names, so the repo root has to be on

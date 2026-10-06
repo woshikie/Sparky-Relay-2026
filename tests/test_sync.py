@@ -33,8 +33,14 @@ def bot():
 
 @pytest.fixture
 def relay_site():
-    """Not `from relay import site` at the top: _purge() makes that stale."""
-    return importlib.import_module("relay.site")
+    """Not `from relay.site import driver` at the top: _purge() makes stale."""
+    return importlib.import_module("relay.site.driver")
+
+
+@pytest.fixture
+def parsing():
+    """The pure functions, apart from the browser that uses them."""
+    return importlib.import_module("relay.site.parsing")
 
 
 # ------------------------------------------------------------ parse_day
@@ -46,8 +52,8 @@ def relay_site():
     ("29 Feb 2028", datetime.date(2028, 2, 29)),   # a leap day
     ("15 December 2026", datetime.date(2026, 12, 15)),  # full month name
 ])
-def test_a_date_parses(relay_site, text, want):
-    assert relay_site.parse_day(text) == want
+def test_a_date_parses(parsing, text, want):
+    assert parsing.parse_day(text) == want
 
 
 @pytest.mark.parametrize("text", [
@@ -58,12 +64,12 @@ def test_a_date_parses(relay_site, text, want):
     "Daily steps",          # the other <p> in the same <li>
     "5 Oct 2026 (today)",
 ])
-def test_a_date_that_does_not_fit_returns_none(relay_site, text):
-    assert relay_site.parse_day(text) is None, text
+def test_a_date_that_does_not_fit_returns_none(parsing, text):
+    assert parsing.parse_day(text) is None, text
 
 
-def test_a_garbage_month_returns_none(relay_site):
-    assert relay_site.parse_day("5 Xyz 2026") is None
+def test_a_garbage_month_returns_none(parsing):
+    assert parsing.parse_day("5 Xyz 2026") is None
 
 
 # ---------------------------------------------------------- parse_steps
@@ -76,8 +82,8 @@ def test_a_garbage_month_returns_none(relay_site):
     ("+4272 steps", 4272),          # no comma
     ("+4,272 STEPS", 4272),         # case
 ])
-def test_a_step_count_parses(relay_site, text, want):
-    assert relay_site.parse_steps(text) == want
+def test_a_step_count_parses(parsing, text, want):
+    assert parsing.parse_steps(text) == want
 
 
 @pytest.mark.parametrize("text", [
@@ -86,14 +92,14 @@ def test_a_step_count_parses(relay_site, text, want):
     "Daily steps",
     "24,860",                       # the total, which is not a day
 ])
-def test_a_step_count_that_does_not_fit_returns_none(relay_site, text):
-    assert relay_site.parse_steps(text) is None, text
+def test_a_step_count_that_does_not_fit_returns_none(parsing, text):
+    assert parsing.parse_steps(text) is None, text
 
 
-def test_the_two_parsers_agree_on_a_real_row(relay_site):
+def test_the_two_parsers_agree_on_a_real_row(parsing):
     """The pair that matters: a date and a badge from the same <li>."""
-    day = relay_site.parse_day("5 Oct 2026")
-    steps = relay_site.parse_steps("+4,272 steps")
+    day = parsing.parse_day("5 Oct 2026")
+    steps = parsing.parse_steps("+4,272 steps")
     assert (day, steps) == (datetime.date(2026, 10, 5), 4272)
 
 

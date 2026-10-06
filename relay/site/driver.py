@@ -9,6 +9,7 @@ import re
 import time
 
 from relay import config, memory
+from relay.site.parsing import parse_day, parse_steps
 from selenium import webdriver
 from selenium.common.exceptions import StaleElementReferenceException
 from selenium.webdriver.common.by import By
@@ -18,8 +19,9 @@ from selenium.webdriver.firefox.service import Service
 HERE = os.path.dirname(os.path.abspath(__file__))
 # The project root, not the module directory: the geckodriver binary is a
 # deployment artefact (setup.sh fetches it to bin/, the image copies it to
-# /app/bin), and it must not move every time this module does.
-ROOT = os.path.dirname(HERE)
+# /app/bin), and it must not move every time this module does. Two levels up,
+# because this file lives at relay/site/driver.py.
+ROOT = os.path.dirname(os.path.dirname(HERE))
 # State that must survive a restart lives under config.LEDGER_DB's directory, so
 # in a container it is the mounted volume rather than the (read-only) image.
 STATE_DIR = config.STATE_DIR
@@ -32,56 +34,6 @@ GECKO_LOG = os.path.join(config.LOGS, "geckodriver.log")
 # Mirrors the client-side plausibility band we found in ocrParser. Used to
 # refuse to Commit a value the site would not plausibly have produced.
 MIN_STEPS, MAX_STEPS = 100, 200_000
-
-# The dashboard writes dates as "5 Oct 2026" -- day, abbreviated month, year,
-# with no leading zero on the day.
-DAY_RE = re.compile(r"^(\d{1,2})\s+([A-Za-z]{3,9})\s+(\d{4})$")
-# Month name -> number, abbreviated and full both. Named MONTH_NUM because MONTHS
-# is already taken lower down: a tuple of full names, used by the date-picker
-# parsing. Shadowing it would break set_date() and the calendar header read.
-#
-# Accepting the full names as well as the abbreviations is not just tolerance:
-# the dashboard has been seen writing "5 Oct 2026", and a site that switches to
-# "5 October 2026" should still sync rather than silently record nothing.
-MONTH_NUM = {m.lower(): i for i, m in enumerate(
-    ("Jan", "Feb", "Mar", "Apr", "May", "Jun",
-     "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"), start=1)}
-MONTH_NUM.update({m.lower(): i for i, m in enumerate(
-    ("January", "February", "March", "April", "May", "June",
-     "July", "August", "September", "October", "November", "December"),
-    start=1)})
-# The step badge reads "+4,272 steps".
-STEPS_RE = re.compile(r"^\+?([\d,]+)\s*steps?$", re.I)
-
-
-def parse_day(text):
-    """'5 Oct 2026' -> datetime.date(2026, 10, 5), or None.
-
-    Returns None rather than raising, because this is parsing a page: a row we
-    do not understand is skipped, not a reason to fail the whole sync.
-    """
-    m = DAY_RE.match((text or "").strip())
-    if not m:
-        return None
-    day, mon, year = m.group(1), m.group(2).lower(), m.group(3)
-    month = MONTH_NUM.get(mon)
-    if month is None:
-        return None
-    try:
-        return datetime.date(int(year), month, int(day))
-    except ValueError:
-        return None
-
-
-def parse_steps(text):
-    """'+4,272 steps' -> 4272, or None."""
-    m = STEPS_RE.match((text or "").strip())
-    if not m:
-        return None
-    try:
-        return int(m.group(1).replace(",", ""))
-    except ValueError:
-        return None
 
 # How long to keep waiting for the page to do something, in poll steps of
 # POLL_SECONDS. Kept as module constants so tests can shrink them: the real

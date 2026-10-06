@@ -1,0 +1,72 @@
+"""Reading the dashboard back, without a browser.
+
+Everything in here is pure: strings in, dates and numbers out. It lives apart
+from driver.py on purpose, because a regex that stops matching the Site's
+markup fails silently -- read_days() just returns fewer rows -- and the thing
+most likely to break must be the thing easiest to test.
+
+The DOM this is written against, from the live dashboard:
+
+    <ul class="space-y-2">
+      <li class="surface-card flex items-center justify-between p-3 text-sm">
+        <div class="min-w-0 flex-1">
+          <p class="font-semibold text-foreground">5 Oct 2026</p>
+          <p class="text-xs text-muted-foreground">Daily steps</p>
+        </div>
+        <span class="ml-3 ...">+4,272 steps</span>
+      </li>
+    </ul>
+"""
+import datetime
+import re
+
+
+# The dashboard writes dates as "5 Oct 2026" -- day, abbreviated month, year,
+# with no leading zero on the day.
+DAY_RE = re.compile(r"^(\d{1,2})\s+([A-Za-z]{3,9})\s+(\d{4})$")
+# Month name -> number, abbreviated and full both. Named MONTH_NUM because
+# driver.py already has MONTHS: a tuple of full names, used by the date-picker
+# parsing. Same name in one module would shadow it and break set_date().
+#
+# Accepting the full names as well as the abbreviations is not just tolerance:
+# the dashboard has been seen writing "5 Oct 2026", and a site that switches to
+# "5 October 2026" should still sync rather than silently record nothing.
+MONTH_NUM = {m.lower(): i for i, m in enumerate(
+    ("Jan", "Feb", "Mar", "Apr", "May", "Jun",
+     "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"), start=1)}
+MONTH_NUM.update({m.lower(): i for i, m in enumerate(
+    ("January", "February", "March", "April", "May", "June",
+     "July", "August", "September", "October", "November", "December"),
+    start=1)})
+# The step badge reads "+4,272 steps".
+STEPS_RE = re.compile(r"^\+?([\d,]+)\s*steps?$", re.I)
+
+
+def parse_day(text):
+    """'5 Oct 2026' -> datetime.date(2026, 10, 5), or None.
+
+    Returns None rather than raising, because this is parsing a page: a row we
+    do not understand is skipped, not a reason to fail the whole sync.
+    """
+    m = DAY_RE.match((text or "").strip())
+    if not m:
+        return None
+    day, mon, year = m.group(1), m.group(2).lower(), m.group(3)
+    month = MONTH_NUM.get(mon)
+    if month is None:
+        return None
+    try:
+        return datetime.date(int(year), month, int(day))
+    except ValueError:
+        return None
+
+
+def parse_steps(text):
+    """'+4,272 steps' -> 4272, or None."""
+    m = STEPS_RE.match((text or "").strip())
+    if not m:
+        return None
+    try:
+        return int(m.group(1).replace(",", ""))
+    except ValueError:
+        return None

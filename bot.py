@@ -36,7 +36,7 @@ from relay.telegram import datepicker      # noqa: E402
 from relay.store import ledger          # noqa: E402
 from relay import memory          # noqa: E402
 from relay import progress as progress_mod  # noqa: E402
-from relay import site as relay_site      # noqa: E402
+from relay.site import driver as relay_site      # noqa: E402
 from relay.store import vault           # noqa: E402
 from relay.telegram import words           # noqa: E402
 from telegram import (InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton,
