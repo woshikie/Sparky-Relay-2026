@@ -18,6 +18,7 @@ from telegram.ext import ContextTypes
 
 import relay.store.ledger as ledger
 import relay.telegram.access as access
+import relay.telegram.codec as codec
 import relay.telegram.failures as failures
 import relay.telegram.pending as pending_mod
 import relay.telegram.session as session_mod
@@ -63,8 +64,7 @@ async def _cb_date(update: Update, ctx: ContextTypes.DEFAULT_TYPE | None) -> Non
     if not authorised(ctx, chat.id):
         await q.answer("not authorised", show_alert=True)
         return
-    data = q.data or ""
-    _, kind, *rest = data.split(":")
+    _, kind, rest = codec.decode(q.data)
 
     st: pending_mod.Pending | None = None
     if msg.reply_to_message is not None:
@@ -184,8 +184,13 @@ async def cb_ok(update: Update, ctx: ContextTypes.DEFAULT_TYPE | None) -> None:
     if not authorised(ctx, chat.id):
         await q.answer("not authorised", show_alert=True)
         return
-    data = q.data or ""
-    action = data.split(":")[1]
+    try:
+        _, action, _ = codec.decode(q.data)
+    except ValueError:
+        await q.answer(
+            "something went wrong \u2014 send the screenshot again", show_alert=True
+        )
+        return
 
     found = pending_mod.latest_for_chat(chat.id)
     if found is None:

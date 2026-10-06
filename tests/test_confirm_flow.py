@@ -390,3 +390,43 @@ def test_the_commit_reports_what_the_site_said(pending, monkeypatch, session):
     row = led.last_submission("2026-10-04")
     assert row and row["steps"] == 6532
     assert "Recorded 6,532 steps" in q.message.said
+
+
+def test_a_malformed_confirm_payload_is_answered_not_dropped(pending):
+    """decode() raises on "ok:"; cb_ok answers instead of spinning.
+
+    A callback that raises leaves the button spinning in the client for
+    good, so this is the one cb_ok branch that must not raise.
+    """
+    q = FakeQuery("ok:", chat_id=1)
+    upd = type("U", (), {})()
+    upd.callback_query = q
+    upd.effective_chat = q.effective_chat
+    upd.effective_message = q.effective_message
+    run(pending.cb_ok(upd, None))
+    assert "something went wrong" in q.answers[0][0]
+
+
+def test_codec_round_trips_every_built_shape():
+    """Builders and handlers agree because they share the codec."""
+    from relay.telegram import codec
+
+    assert codec.decode(codec.date("today")) == ("dt", "today", [])
+    assert codec.decode(codec.date("pick", 2026, 10)) == ("dt", "pick", ["2026", "10"])
+    assert codec.decode(codec.date("day", "2026-10-04")) == (
+        "dt",
+        "day",
+        ["2026-10-04"],
+    )
+    assert codec.decode(codec.confirm("go")) == ("ok", "go", [])
+
+
+def test_codec_rejects_malformed_payloads():
+    from relay.telegram import codec
+
+    for bad in (None, "", "nodivider", "dt:"):
+        try:
+            codec.decode(bad)
+        except ValueError:
+            continue
+        raise AssertionError("accepted %r" % (bad,))

@@ -59,7 +59,7 @@ async def on_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE | None) -> Non
     if not d:
         if d.why == "needs_claim":
             # First-run claim: whoever got here first owns the Relay.
-            if access.claim(chat.id):
+            if access.claim(chat.id, getattr(chat, "username", None)):
                 await msg.reply_text(
                     words.claimed(),
                     parse_mode=ParseMode.MARKDOWN,
@@ -349,7 +349,7 @@ async def on_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE | None) -> None
             )
             return
         # The rate limit is enforced inside present_secret, not here.
-        r = access.present_secret(chat.id, text)
+        r = access.present_secret(chat.id, text, getattr(chat, "username", None))
         # The message carried a secret: remove it from the chat immediately.
         await scrub(msg)
         if r:

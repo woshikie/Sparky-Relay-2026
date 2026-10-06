@@ -24,6 +24,8 @@ from typing import cast
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
+import relay.telegram.codec as codec
+
 MONTH_NAMES = (
     "January",
     "February",
@@ -40,9 +42,8 @@ MONTH_NAMES = (
 )
 WEEKDAYS = ("Mo", "Tu", "We", "Th", "Fr", "Sa", "Su")
 
-# `datepicker` and `cb_date` must agree on this. Asserted in the tests, because
-# the failure is a silent no-op rather than an error.
-PREFIX = "dt"
+# The prefix lives in the codec now, next to every other wire shape.
+# Imported, not repeated: datepicker.PREFIX still resolves for the tests.
 
 
 def shift(year: int, month: int, delta: int) -> tuple[int, int]:
@@ -101,39 +102,39 @@ def keyboard(
 
     kb = [
         [
-            InlineKeyboardButton("«", callback_data="%s:prev:%d:%d" % (PREFIX, py, pm)),
+            InlineKeyboardButton("«", callback_data=codec.date("prev", py, pm)),
             # The month itself. Without it there is no way to tell which month the
             # grid is showing, which is the one thing a calendar has to say.
             InlineKeyboardButton(
-                month_title(year, month), callback_data="%s:none" % PREFIX
+                month_title(year, month), callback_data=codec.date("none")
             ),
-            InlineKeyboardButton("»", callback_data="%s:next:%d:%d" % (PREFIX, ny, nm)),
+            InlineKeyboardButton("»", callback_data=codec.date("next", ny, nm)),
         ]
     ]
     kb.append(
-        [InlineKeyboardButton(w, callback_data="%s:none" % PREFIX) for w in WEEKDAYS]
+        [InlineKeyboardButton(w, callback_data=codec.date("none")) for w in WEEKDAYS]
     )
     for row in month_grid(year, month, today)[0]:
         line = []
         for c in row:
             if c is None:
-                line.append(InlineKeyboardButton(" ", callback_data="%s:none" % PREFIX))
+                line.append(InlineKeyboardButton(" ", callback_data=codec.date("none")))
             elif selectable(c, today):
                 line.append(
                     InlineKeyboardButton(
-                        str(c.day), callback_data="%s:day:%s" % (PREFIX, c.isoformat())
+                        str(c.day), callback_data=codec.date("day", c.isoformat())
                     )
                 )
             else:
                 # Future days stay visible but inert, so the shape of the
                 # month is still legible. A hidden cell would leave a gap.
                 line.append(
-                    InlineKeyboardButton(str(c.day), callback_data="%s:none" % PREFIX)
+                    InlineKeyboardButton(str(c.day), callback_data=codec.date("none"))
                 )
         kb.append(line)
     kb.append(
         [
-            InlineKeyboardButton("Today", callback_data="%s:today" % PREFIX),
+            InlineKeyboardButton("Today", callback_data=codec.date("today")),
         ]
     )
     return InlineKeyboardMarkup(kb)

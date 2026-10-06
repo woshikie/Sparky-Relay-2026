@@ -413,20 +413,7 @@ def sync_secrets_from_env(spec: str | None) -> list[str]:
     """
     if spec is None:
         return []
-    entries = []
-    for line in spec.splitlines():
-        line = line.strip()
-        if not line or line.startswith("#"):
-            continue
-        if ":" in line:
-            label, secret = line.split(":", 1)
-            label, secret = label.strip(), secret.strip()
-        else:
-            secret = line
-            label = "secret-%s" % line[:8]
-        if not secret:
-            continue
-        entries.append((label, secret))
+    entries = _parse_secret_spec(spec)
     with conn() as c:
         c.execute("DELETE FROM shared_secrets")
     for label, secret in entries:

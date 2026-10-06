@@ -57,18 +57,19 @@ def _denied_by_config(chat_id: int) -> bool:
 def check(chat_id: int, username: str | None = None) -> Decision:
     """May this chat drive the Relay? Always call this, never inline the rule."""
     chat_id = int(chat_id)
-    ledger.remember_user(chat_id, username)
 
     if _denied_by_config(chat_id):
         return Decision(False, "denied", chat_id=chat_id)
 
     existing = ledger.has_access(chat_id)
     if existing:
+        ledger.remember_user(chat_id, username)
         return Decision(True, "granted", how=existing, chat_id=chat_id)
 
     if config.ACCESS_MODE == "blacklist":
         # Open by design. No grant row: access is implicit and re-checking the
         # deny list each time is what makes revocation take effect.
+        ledger.remember_user(chat_id, username)
         return Decision(True, "blacklist", chat_id=chat_id)
 
     if config.ACCESS_MODE == "whitelist_claim":
@@ -86,25 +87,33 @@ def check(chat_id: int, username: str | None = None) -> Decision:
     return Decision(False, "unknown_mode", chat_id=chat_id)
 
 
-ledger.SECRET_WINDOW = 30.0
-
-
 def _last_try(chat_id: int) -> float:
     return ledger.last_secret_attempt(chat_id)
 
 
-def claim(chat_id: int) -> bool:
-    """First-run claim. Returns True if this chat just claimed it."""
+def claim(chat_id: int, username: str | None = None) -> bool:
+    """First-run claim. Returns True if this chat just claimed it.
+
+    One statement: the INSERT only fires when the table is empty, so two
+    simultaneous first /starts cannot both be told they won. (In today's
+    single event loop the old SELECT-then-INSERT could not interleave; this
+    is simpler as well as safer.)
+    """
     with ledger.conn() as c:
-        n = c.execute("SELECT COUNT(*) AS n FROM access").fetchone()["n"]
-        if n > 0:
-            # Someone already holds it. Refuse rather than hand it over.
-            return False
-    ledger.grant(chat_id, "claim")
-    return True
+        row = c.execute(
+            "INSERT INTO access (chat_id, how, granted_at) "
+            "SELECT ?, ?, ? WHERE NOT EXISTS (SELECT 1 FROM access)",
+            (chat_id, "claim", ledger.now()),
+        )
+        claimed = row.rowcount == 1
+    if claimed:
+        ledger.remember_user(chat_id, username)
+    return claimed
 
 
-def present_secret(chat_id: int, candidate: str) -> Decision:
+def present_secret(
+    chat_id: int, candidate: str, username: str | None = None
+) -> Decision:
     """Check a Shared Secret. Returns a Decision.
 
     The rate limit is enforced here, at the single point where a candidate is
@@ -131,6 +140,7 @@ def present_secret(chat_id: int, candidate: str) -> Decision:
     if label:
         ledger.note_secret_attempt(chat_id, ok=True)
         ledger.grant(chat_id, "secret:%s" % label)
+        ledger.remember_user(chat_id, username)
         return Decision(True, "granted", how="secret:%s" % label)
     ledger.note_secret_attempt(chat_id, ok=False)
     return Decision(False, "secret_wrong", chat_id=chat_id)

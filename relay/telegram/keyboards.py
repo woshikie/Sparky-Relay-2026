@@ -16,6 +16,7 @@ from telegram import (
     ReplyKeyboardMarkup,
 )
 
+import relay.telegram.codec as codec
 from relay import config
 from relay.clock import sg_today
 from relay.telegram.datepicker import keyboard as month_grid
@@ -32,16 +33,18 @@ def kb_date_default(steps: int, reported: str) -> InlineKeyboardMarkup:
         [
             [
                 InlineKeyboardButton(
-                    "Today (%s)" % t.strftime("%d %b"), callback_data="dt:today"
+                    "Today (%s)" % t.strftime("%d %b"),
+                    callback_data=codec.date("today"),
                 ),
                 InlineKeyboardButton(
-                    "Yesterday (%s)" % y.strftime("%d %b"), callback_data="dt:yday"
+                    "Yesterday (%s)" % y.strftime("%d %b"),
+                    callback_data=codec.date("yday"),
                 ),
             ],
             [
                 InlineKeyboardButton(
                     "\U0001f4c5 Open datepicker",
-                    callback_data="dt:pick:%d:%d" % (t.year, t.month),
+                    callback_data=codec.date("pick", t.year, t.month),
                 ),
             ],
         ]
@@ -52,11 +55,15 @@ def kb_confirm(steps: int, reported: str, iso: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [
             [
-                InlineKeyboardButton("✅ Confirm %s" % reported, callback_data="ok:go"),
+                InlineKeyboardButton(
+                    "✅ Confirm %s" % reported, callback_data=codec.confirm("go")
+                ),
             ],
             [
-                InlineKeyboardButton("Change date", callback_data="dt:back"),
-                InlineKeyboardButton("\U0001f5d1 Cancel", callback_data="ok:cancel"),
+                InlineKeyboardButton("Change date", callback_data=codec.date("back")),
+                InlineKeyboardButton(
+                    "\U0001f5d1 Cancel", callback_data=codec.confirm("cancel")
+                ),
             ],
         ]
     )
@@ -67,12 +74,13 @@ def kb_overwrite(new_steps: int, old_steps: int, iso: str) -> InlineKeyboardMark
         [
             [
                 InlineKeyboardButton(
-                    "\U0001f504 Overwrite anyway", callback_data="ok:go"
+                    "\U0001f504 Overwrite anyway", callback_data=codec.confirm("go")
                 ),
             ],
             [
                 InlineKeyboardButton(
-                    "Keep my %s" % f"{old_steps:,}", callback_data="ok:cancel"
+                    "Keep my %s" % f"{old_steps:,}",
+                    callback_data=codec.confirm("cancel"),
                 ),
             ],
         ]
