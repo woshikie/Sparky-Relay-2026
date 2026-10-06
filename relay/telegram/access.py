@@ -13,6 +13,7 @@ ACCESS_MODE is mandatory. An unset value exits at import time rather than
 defaulting, because the difference between the safest and the most open mode is
 who can write to a live leaderboard account.
 """
+
 import time
 
 import relay.store.ledger as ledger
@@ -69,8 +70,9 @@ def check(chat_id, username=None):
     if config.ACCESS_MODE == "shared_secret":
         if ledger.secret_throttled(chat_id):
             wait = ledger.SECRET_WINDOW - (time.time() - _last_try(chat_id))
-            return Decision(False, "secret_throttled", chat_id=chat_id,
-                            retry_after=int(wait) + 1)
+            return Decision(
+                False, "secret_throttled", chat_id=chat_id, retry_after=int(wait) + 1
+            )
         return Decision(False, "needs_secret", chat_id=chat_id)
 
     # Unreachable: config validates the mode at import.
@@ -113,9 +115,11 @@ def present_secret(chat_id, candidate):
     """
     if ledger.secret_throttled(chat_id):
         wait = ledger.SECRET_WINDOW - (
-            time.time() - ledger.last_secret_attempt(chat_id))
-        return Decision(False, "secret_throttled", chat_id=chat_id,
-                        retry_after=int(wait) + 1)
+            time.time() - ledger.last_secret_attempt(chat_id)
+        )
+        return Decision(
+            False, "secret_throttled", chat_id=chat_id, retry_after=int(wait) + 1
+        )
     label = ledger.check_secret(candidate)
     if label:
         ledger.note_secret_attempt(chat_id, ok=True)
@@ -165,6 +169,5 @@ def describe(markdown=True):
     if config.ACCESS_MODE == "whitelist_claim":
         line += "  (first /start claims it)"
     if config.ACCESS_MODE == "shared_secret":
-        line += "  (%d secret(s) configured)" % len(
-            ledger.list_secret_labels())
+        line += "  (%d secret(s) configured)" % len(ledger.list_secret_labels())
     return line

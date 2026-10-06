@@ -17,6 +17,7 @@ The DOM this is written against, from the live dashboard:
       </li>
     </ul>
 """
+
 import datetime
 import re
 
@@ -30,13 +31,48 @@ DAY_RE = re.compile(r"^(\d{1,2})\s+([A-Za-z]{3,9})\s+(\d{4})$")
 # Accepting the full names as well as the abbreviations is not just tolerance:
 # the dashboard has been seen writing "5 Oct 2026", and a site that switches to
 # "5 October 2026" should still sync rather than silently record nothing.
-MONTH_NUM = {m.lower(): i for i, m in enumerate(
-    ("Jan", "Feb", "Mar", "Apr", "May", "Jun",
-     "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"), start=1)}
-MONTH_NUM.update({m.lower(): i for i, m in enumerate(
-    ("January", "February", "March", "April", "May", "June",
-     "July", "August", "September", "October", "November", "December"),
-    start=1)})
+MONTH_NUM = {
+    m.lower(): i
+    for i, m in enumerate(
+        (
+            "Jan",
+            "Feb",
+            "Mar",
+            "Apr",
+            "May",
+            "Jun",
+            "Jul",
+            "Aug",
+            "Sep",
+            "Oct",
+            "Nov",
+            "Dec",
+        ),
+        start=1,
+    )
+}
+MONTH_NUM.update(
+    {
+        m.lower(): i
+        for i, m in enumerate(
+            (
+                "January",
+                "February",
+                "March",
+                "April",
+                "May",
+                "June",
+                "July",
+                "August",
+                "September",
+                "October",
+                "November",
+                "December",
+            ),
+            start=1,
+        )
+    }
+)
 # The step badge reads "+4,272 steps".
 STEPS_RE = re.compile(r"^\+?([\d,]+)\s*steps?$", re.I)
 
@@ -91,5 +127,4 @@ def parse_profile(board_text):
         house = m.group(1)
     if total_steps is None and total_points is None and house is None:
         return None
-    return {"total_steps": total_steps, "total_points": total_points,
-            "house": house}
+    return {"total_steps": total_steps, "total_points": total_points, "house": house}

@@ -3,6 +3,7 @@
 Wraps the site in headless Firefox and exposes the upload flow as three steps:
 upload + read the Detected Steps, set the Activity Date, commit.
 """
+
 import os
 import re
 import time
@@ -26,10 +27,8 @@ ROOT = os.path.dirname(os.path.dirname(HERE))
 # State that must survive a restart lives under config.LEDGER_DB's directory, so
 # in a container it is the mounted volume rather than the (read-only) image.
 STATE_DIR = config.STATE_DIR
-PROFILE = os.environ.get("BROWSER_PROFILE",
-                         os.path.join(STATE_DIR, ".browserprofile"))
-GECKO = os.environ.get("GECKODRIVER_PATH",
-                       os.path.join(ROOT, "bin", "geckodriver"))
+PROFILE = os.environ.get("BROWSER_PROFILE", os.path.join(STATE_DIR, ".browserprofile"))
+GECKO = os.environ.get("GECKODRIVER_PATH", os.path.join(ROOT, "bin", "geckodriver"))
 GECKO_LOG = os.path.join(config.LOGS, "geckodriver.log")
 
 # Mirrors the client-side plausibility band we found in ocrParser. Used to
@@ -41,25 +40,38 @@ MIN_STEPS, MAX_STEPS = 100, 200_000
 # values are seconds-minutes because a cold VM is slow to hydrate, and a test
 # suite that waits 30s to prove a timeout fires is a test suite nobody runs.
 POLL_SECONDS = 0.5
-AUTHED_PROBES = 12        # /auth may bounce to /home with a live session
-FORM_PROBES = 40          # the sign-in form must render
-LOGIN_PROBES = 60         # sign-in must reach an authenticated DOM
-BUTTON_PROBES = 20        # a button we are waiting to appear
-CALENDAR_PROBES = 20      # the date picker opening
-MONTH_PROBES = 36         # paging the calendar to an arbitrary month
-OCR_PROBES = 40           # the site's OCR is in-page and not instant
-COMMIT_PROBES = 30        # the confirm panel closing after Submit
+AUTHED_PROBES = 12  # /auth may bounce to /home with a live session
+FORM_PROBES = 40  # the sign-in form must render
+LOGIN_PROBES = 60  # sign-in must reach an authenticated DOM
+BUTTON_PROBES = 20  # a button we are waiting to appear
+CALENDAR_PROBES = 20  # the date picker opening
+MONTH_PROBES = 36  # paging the calendar to an arbitrary month
+OCR_PROBES = 40  # the site's OCR is in-page and not instant
+COMMIT_PROBES = 30  # the confirm panel closing after Submit
 
 DETECTED_RE = re.compile(r"Detected steps\s*([\d,. ]+)", re.I)
 
 # Anchored on real month names: a loose [A-Z][a-z]+ \d{4} also matches the page
 # title "Olympics 2026", which is not the calendar header.
-MONTHS = ["January", "February", "March", "April", "May", "June", "July",
-          "August", "September", "October", "November", "December"]
+MONTHS = [
+    "January",
+    "February",
+    "March",
+    "April",
+    "May",
+    "June",
+    "July",
+    "August",
+    "September",
+    "October",
+    "November",
+    "December",
+]
 MONTH_ALT = "|".join(MONTHS)
 HEADER_RE = re.compile(r"\b(%s)\s+(\d{4})\b" % MONTH_ALT)
 DATE_LABEL_RE = re.compile(
-    r"\b(%s)\s+(\d{1,2})(?:st|nd|rd|th)?,?\s+(\d{4})\b" % MONTH_ALT, re.I)
+    r"\b(%s)\s+(\d{1,2})(?:st|nd|rd|th)?,?\s+(\d{4})\b" % MONTH_ALT, re.I
+)
 
 
 def _in_container():
@@ -169,12 +181,12 @@ class Relay:
         if self.driver:
             return
         if not os.path.exists(GECKO):
-            raise RuntimeError(
-                "geckodriver not found at %s\n  run: ./setup.sh" % GECKO)
+            raise RuntimeError("geckodriver not found at %s\n  run: ./setup.sh" % GECKO)
         if not os.path.exists(config.FIREFOX_BIN):
             raise RuntimeError(
                 "firefox not found at %s\n  set FIREFOX_BIN in secrets.env"
-                % config.FIREFOX_BIN)
+                % config.FIREFOX_BIN
+            )
         try:
             rep = memory.require_memory()
             self._say("memory ok: %.0fMB free" % rep["available_mb"])
@@ -216,8 +228,9 @@ class Relay:
 
     def _calendar_header(self):
         """The month/year caption inside the open date picker, or None."""
-        for el in self.driver.find_elements(By.CSS_SELECTOR,
-                                             "div, button, span, h2, caption"):
+        for el in self.driver.find_elements(
+            By.CSS_SELECTOR, "div, button, span, h2, caption"
+        ):
             txt = self._text(el)
             if txt and HEADER_RE.fullmatch(txt):
                 return txt
@@ -228,8 +241,10 @@ class Relay:
     def _authed(self):
         """True when the nav exposes /upload, i.e. a live Site Session."""
         try:
-            hrefs = [a.get_attribute("href") or ""
-                     for a in self.driver.find_elements(By.CSS_SELECTOR, "a")]
+            hrefs = [
+                a.get_attribute("href") or ""
+                for a in self.driver.find_elements(By.CSS_SELECTOR, "a")
+            ]
         except Exception:
             return False
         return any("/upload" in h for h in hrefs)
@@ -249,7 +264,9 @@ class Relay:
                     "if (!el) return false;"
                     "for (const k of Object.keys(el)) {"
                     "  if (k.indexOf('__react') === 0) return true;"
-                    "} return false;", el)
+                    "} return false;",
+                    el,
+                )
             except StaleElementReferenceException:
                 owned = False
             if owned:
@@ -257,8 +274,7 @@ class Relay:
             time.sleep(0.5)
         # Not fatal: the submit may still be a native form post. Say so and let
         # the click be tried, rather than refusing to log in at all.
-        self._say("warning: no React marker on the form after 30s; "
-                  "proceeding anyway")
+        self._say("warning: no React marker on the form after 30s; proceeding anyway")
         return False
 
     def login(self, username, password):
@@ -309,8 +325,10 @@ class Relay:
         # it changes before the session is committed.
         for _ in range(BUTTON_PROBES):
             try:
-                hrefs = [a.get_attribute("href") or ""
-                         for a in self.driver.find_elements(By.CSS_SELECTOR, "a")]
+                hrefs = [
+                    a.get_attribute("href") or ""
+                    for a in self.driver.find_elements(By.CSS_SELECTOR, "a")
+                ]
             except Exception:
                 hrefs = []
             if any("/upload" in h for h in hrefs):
@@ -353,8 +371,9 @@ class Relay:
             self._say("cleared a previous confirm panel")
             time.sleep(1.5)
         # the fresh form is present when the mode toggle is back
-        self._wait_btn("Steps", exact=True,
-                       what="upload form did not come back after clearing")
+        self._wait_btn(
+            "Steps", exact=True, what="upload form did not come back after clearing"
+        )
 
     def _btn(self, label, exact=False):
         want = (label or "").strip().lower()
@@ -459,7 +478,8 @@ class Relay:
 
         clicked = False
         for el in self.driver.find_elements(
-                By.CSS_SELECTOR, "button, td, [role=gridcell]"):
+            By.CSS_SELECTOR, "button, td, [role=gridcell]"
+        ):
             if self._text(el) == str(date_obj.day):
                 try:
                     if el.is_displayed():
@@ -478,12 +498,12 @@ class Relay:
         m = DATE_LABEL_RE.search(label)
         if not m:
             raise SiteChanged("could not read the date back (showing %r)" % label)
-        got = (MONTHS.index(m.group(1).title()) + 1, int(m.group(2)),
-               int(m.group(3)))
+        got = (MONTHS.index(m.group(1).title()) + 1, int(m.group(2)), int(m.group(3)))
         want = (date_obj.month, date_obj.day, date_obj.year)
         if got != want:
-            raise SiteChanged("date did not stick: wanted %s, control shows %r"
-                              % (want, label))
+            raise SiteChanged(
+                "date did not stick: wanted %s, control shows %r" % (want, label)
+            )
         return label
 
     # ---------- step 3: commit ----------
@@ -571,8 +591,7 @@ class Relay:
                 break
 
         out = []
-        for li in self.driver.find_elements(By.CSS_SELECTOR,
-                                             "ul.space-y-2 > li"):
+        for li in self.driver.find_elements(By.CSS_SELECTOR, "ul.space-y-2 > li"):
             ps = li.find_elements(By.CSS_SELECTOR, "p")
             spans = li.find_elements(By.CSS_SELECTOR, "span")
             if not ps or not spans:

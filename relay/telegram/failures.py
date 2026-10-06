@@ -23,6 +23,7 @@ credentials. The returned triple is the callback answer: text (or None for a
 silent ack), whether it shows as an alert, and a log line (or None).
 
 """
+
 from telegram.constants import ParseMode
 
 from relay import memory
@@ -41,7 +42,7 @@ CATCH_ALL = {
     "Upload": "❌ Upload failed: `%s`",
     "Sync": " Sync failed: `%s`",
     "Commit": "❌ Could not record: `%s`\n\nNothing was saved — send the "
-              "screenshot again when ready.",
+    "screenshot again when ready.",
 }
 
 
@@ -53,31 +54,34 @@ async def explain(msg, exc, operation, start_prompt=None):
     out of the log.
     """
     if isinstance(exc, _NoCredentials):
-        await msg.reply_text(words_mod.need_credentials(),
-                             parse_mode=ParseMode.MARKDOWN)
+        await msg.reply_text(
+            words_mod.need_credentials(), parse_mode=ParseMode.MARKDOWN
+        )
         if start_prompt is not None:
             await start_prompt()
         return "credentials needed", True, None
     if isinstance(exc, vault_mod.DecryptionFailed):
         # Almost always a rotated bot token: the vault key no longer opens the
         # stored entry. The old password is unrecoverable by design.
-        await msg.reply_text(words_mod.vault_unreadable(str(exc)),
-                             parse_mode=ParseMode.MARKDOWN)
+        await msg.reply_text(
+            words_mod.vault_unreadable(str(exc)), parse_mode=ParseMode.MARKDOWN
+        )
         if start_prompt is not None:
             await start_prompt()
         return "stored credentials unreadable", True, None
     if isinstance(exc, memory.InsufficientMemory):
-        await msg.reply_text(words_mod.low_memory(str(exc)),
-                             parse_mode=ParseMode.MARKDOWN)
+        await msg.reply_text(
+            words_mod.low_memory(str(exc)), parse_mode=ParseMode.MARKDOWN
+        )
         return "not enough memory", True, None
     if isinstance(exc, relay_site.NoStepsFound):
         await msg.reply_text(words_mod.no_steps(), parse_mode=ParseMode.MARKDOWN)
         return "the site read nothing this time", True, None
     if isinstance(exc, relay_site.SiteChanged):
-        await msg.reply_text(words_mod.site_changed(str(exc)),
-                             parse_mode=ParseMode.MARKDOWN)
+        await msg.reply_text(
+            words_mod.site_changed(str(exc)), parse_mode=ParseMode.MARKDOWN
+        )
         return None, False, None
     headline = CATCH_ALL.get(operation, CATCH_ALL["Commit"])
-    await msg.reply_text(headline % str(exc)[:200],
-                         parse_mode=ParseMode.MARKDOWN)
+    await msg.reply_text(headline % str(exc)[:200], parse_mode=ParseMode.MARKDOWN)
     return None, False, "%s error: %r" % (operation.lower(), exc)

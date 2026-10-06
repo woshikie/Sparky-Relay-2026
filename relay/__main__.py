@@ -1,4 +1,5 @@
 """Entry point: python -m relay."""
+
 import sys
 
 from relay import errors

@@ -13,6 +13,7 @@ survives is to not hold it open. Measured alternatives, for the record:
 So: launch per Screenshot, close after Commit, and refuse to start if the host
 cannot fit it. See docs/adr/0004-browser-lifecycle-on-1gb-host.md.
 """
+
 import os
 
 # Peak observed for the whole Firefox tree while the OCR runs, plus headroom
@@ -76,7 +77,8 @@ class InsufficientMemory(Exception):
         self.report = report
         super().__init__(
             "need %dMB free to run the browser, have %dMB"
-            % (report["min_free_mb"], int(report["available_mb"] or 0)))
+            % (report["min_free_mb"], int(report["available_mb"] or 0))
+        )
 
 
 def require_memory():
@@ -144,8 +146,9 @@ MB = 1024.0 * 1024.0
 def _cgroup_root():
     """Where this process's memory files live (cgroup v2 and v1 differ)."""
     for p in ("/sys/fs/cgroup", "/sys/fs/cgroup/memory"):
-        if os.path.exists(os.path.join(p, "memory.max")) or \
-           os.path.exists(os.path.join(p, "memory.limit_in_bytes")):
+        if os.path.exists(os.path.join(p, "memory.max")) or os.path.exists(
+            os.path.join(p, "memory.limit_in_bytes")
+        ):
             return p
     return "/sys/fs/cgroup"
 
@@ -180,7 +183,7 @@ def _cgroup_limits_mb():
         try:
             with open(os.path.join(base, "memory.limit_in_bytes")) as f:
                 lim = int(f.read().strip())
-            if lim < (1 << 62):      # v1 sentinel meaning "unlimited"
+            if lim < (1 << 62):  # v1 sentinel meaning "unlimited"
                 out["limit_mb"] = lim / MB
             with open(os.path.join(base, "memory.usage_in_bytes")) as f:
                 out["current_mb"] = int(f.read().strip()) / MB
@@ -253,12 +256,21 @@ def describe():
     if rep.get("cgroup"):
         # Show committed (anon) rather than current: current includes reclaimable
         # file cache and would understate the headroom we actually have.
-        return ("RAM budget: %.0fMB usable (cgroup limit %.0fMB, %.0fMB "
-                "committed of %.0fMB charged) | browser peak ~%dMB | "
-                "can launch: %s"
-                % (rep["available_mb"], rep["cgroup_limit_mb"] or 0,
-                   rep["cgroup_committed_mb"] or 0,
-                   rep["cgroup_current_mb"] or 0, rep["browser_peak_mb"], ok))
-    return ("RAM: %.0fMB total, %.0fMB available | browser peak ~%dMB "
-            "| can launch: %s"
-            % (rep["total_mb"], rep["available_mb"], rep["browser_peak_mb"], ok))
+        return (
+            "RAM budget: %.0fMB usable (cgroup limit %.0fMB, %.0fMB "
+            "committed of %.0fMB charged) | browser peak ~%dMB | "
+            "can launch: %s"
+            % (
+                rep["available_mb"],
+                rep["cgroup_limit_mb"] or 0,
+                rep["cgroup_committed_mb"] or 0,
+                rep["cgroup_current_mb"] or 0,
+                rep["browser_peak_mb"],
+                ok,
+            )
+        )
+    return (
+        "RAM: %.0fMB total, %.0fMB available | browser peak ~%dMB "
+        "| can launch: %s"
+        % (rep["total_mb"], rep["available_mb"], rep["browser_peak_mb"], ok)
+    )

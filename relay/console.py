@@ -18,6 +18,7 @@ how the geckodriver output ends up interleaved with ours.
 The wrapper buffers partial lines, because a single print() is not guaranteed
 to arrive in one write() and prefixing half a line would be worse than useless.
 """
+
 import sys
 import time
 
@@ -44,7 +45,7 @@ class TimestampedStream:
         self._inner = inner
         self._clock = clock
         self._start = clock()
-        self._prefix = prefix          # for tests; defaults to stamp()
+        self._prefix = prefix  # for tests; defaults to stamp()
         self._partial = ""
 
     def _prefix_for(self):
@@ -66,8 +67,7 @@ class TimestampedStream:
         for line in lines:
             # An empty line stays empty: geckodriver and friends emit blanks,
             # and prefixing them adds noise rather than information.
-            out.append(line if line == "" else "%s  %s" % (self._prefix_for(),
-                                                           line))
+            out.append(line if line == "" else "%s  %s" % (self._prefix_for(), line))
         return self._inner.write("\n".join(out) + "\n")
 
     def _flush_partial(self):

@@ -4,6 +4,7 @@ Runs in the live container so it exercises the same paths the bot does: the
 cgroup memory budget, the container detection, and the on-demand browser.
 Submits nothing.
 """
+
 import os
 import re
 import time
@@ -43,8 +44,11 @@ def main():
             print("\n%s %s" % ("OK  " if good else "BAD ", fname), flush=True)
             print("    site read    : %s (want %d)" % (reported, truth), flush=True)
             print("    elapsed      : %.1fs" % (time.time() - t0), flush=True)
-            print("    host free    : %.0fMB before, %.0fMB during"
-                  % (before or 0, during or 0), flush=True)
+            print(
+                "    host free    : %.0fMB before, %.0fMB during"
+                % (before or 0, during or 0),
+                flush=True,
+            )
         except Exception as e:
             ok = False
             print("\nFAIL %s: %r" % (fname, e), flush=True)

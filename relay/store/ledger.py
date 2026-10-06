@@ -9,6 +9,7 @@ Three jobs beyond the Submission ledger:
 3. Access decisions: who may drive the Relay, under whichever Access Mode is
    configured.
 """
+
 import os
 import sqlite3
 import time
@@ -114,6 +115,7 @@ def init():
 
 # ---------- submissions ----------
 
+
 def last_submission(activity_date):
     with conn() as c:
         r = c.execute(
@@ -132,6 +134,7 @@ def all_submissions():
 
 # ---------- site days ----------
 
+
 def record_site_days(rows):
     """Store what the site reports. `rows` is [(date, steps), ...].
 
@@ -148,7 +151,8 @@ def record_site_days(rows):
                 " ON CONFLICT(activity_date) DO UPDATE SET"
                 "   steps=excluded.steps, reported=excluded.reported,"
                 "   synced_at=excluded.synced_at",
-                (iso, int(steps), f"{int(steps):,}", stamp))
+                (iso, int(steps), f"{int(steps):,}", stamp),
+            )
     return len(rows)
 
 
@@ -200,6 +204,7 @@ def record(activity_date, steps, reported=None, site_label=None, msg_id=None):
 
 # ---------- credentials ----------
 
+
 def save_credentials(chat_id, username, password, token, preset=False):
     with conn() as c:
         c.execute(
@@ -212,8 +217,14 @@ def save_credentials(chat_id, username, password, token, preset=False):
                  fingerprint=excluded.fingerprint,
                  preset=excluded.preset,
                  updated_at=excluded.updated_at""",
-            (chat_id, username, vault.seal(token, password),
-             vault.fingerprint(token, username), 1 if preset else 0, now()),
+            (
+                chat_id,
+                username,
+                vault.seal(token, password),
+                vault.fingerprint(token, username),
+                1 if preset else 0,
+                now(),
+            ),
         )
 
 
@@ -237,7 +248,8 @@ def credentials_stored(chat_id):
     with conn() as c:
         r = c.execute(
             "SELECT username, preset, fingerprint, updated_at FROM credentials "
-            "WHERE chat_id=?", (chat_id,)
+            "WHERE chat_id=?",
+            (chat_id,),
         ).fetchone()
     return dict(r) if r else None
 
@@ -255,6 +267,7 @@ def forget_all_credentials():
 
 
 # ---------- access control ----------
+
 
 def grant(chat_id, how):
     with conn() as c:
@@ -303,9 +316,11 @@ def all_denied():
 
 # ---------- shared secrets ----------
 
+
 def add_secret(label, secret):
     """Store a per-person Shared Secret. Only a hash is kept."""
     import hashlib
+
     h = hashlib.sha256(("relay-shared-secret:" + secret).encode("utf-8")).hexdigest()
     with conn() as c:
         c.execute(
@@ -320,6 +335,7 @@ def check_secret(candidate):
     """True if candidate matches any stored Shared Secret. Returns the label."""
     import hashlib
     import hmac
+
     h = hashlib.sha256(("relay-shared-secret:" + candidate).encode("utf-8")).hexdigest()
     with conn() as c:
         for r in c.execute("SELECT label, secret_hash FROM shared_secrets"):
@@ -330,8 +346,10 @@ def check_secret(candidate):
 
 def list_secret_labels():
     with conn() as c:
-        return [r["label"] for r in
-                c.execute("SELECT label FROM shared_secrets ORDER BY label")]
+        return [
+            r["label"]
+            for r in c.execute("SELECT label FROM shared_secrets ORDER BY label")
+        ]
 
 
 def remove_secret(label):
@@ -431,8 +449,9 @@ def secret_throttled(chat_id, window=None, max_fails=1):
 
 def last_secret_attempt(chat_id):
     with conn() as c:
-        r = c.execute("SELECT last_try FROM secret_attempts WHERE chat_id=?",
-                      (chat_id,)).fetchone()
+        r = c.execute(
+            "SELECT last_try FROM secret_attempts WHERE chat_id=?", (chat_id,)
+        ).fetchone()
     return r["last_try"] if r else 0.0
 
 
@@ -455,6 +474,7 @@ def note_secret_attempt(chat_id, ok):
 
 # ---------- telegram identity ----------
 
+
 def remember_user(chat_id, username=None):
     with conn() as c:
         c.execute(
@@ -466,5 +486,7 @@ def remember_user(chat_id, username=None):
 
 def known_users():
     with conn() as c:
-        return [dict(r) for r in c.execute(
-            "SELECT * FROM telegram_users ORDER BY first_seen")]
+        return [
+            dict(r)
+            for r in c.execute("SELECT * FROM telegram_users ORDER BY first_seen")
+        ]

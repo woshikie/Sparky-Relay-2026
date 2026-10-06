@@ -5,6 +5,7 @@ PENDING holds the Screenshots awaiting confirmation, keyed by
 always challenged, an upgrade never is. authorised() lives here because the
 callbacks are its only callers.
 """
+
 import asyncio
 import datetime
 from contextlib import suppress
@@ -31,6 +32,7 @@ from relay.telegram.prompts import ask_credentials
 # Pending Screenshot state, keyed by (chat_id, message_id) of the Confirmation.
 PENDING = {}
 
+
 async def cb_date(update: Update, ctx):
     """Every date button routes here, so every one of them must be answered.
 
@@ -47,8 +49,9 @@ async def cb_date(update: Update, ctx):
     except Exception as e:
         session_mod.log(ctx, "date callback error: %r" % (e,))
         with suppress(TelegramError):
-            await q.answer("something went wrong — send the screenshot again",
-                           show_alert=True)
+            await q.answer(
+                "something went wrong — send the screenshot again", show_alert=True
+            )
 
 
 async def _cb_date(update: Update, ctx):
@@ -61,14 +64,16 @@ async def _cb_date(update: Update, ctx):
     data = q.data or ""
     _, kind, *rest = data.split(":")
 
-    st = PENDING.get((chat.id, msg.reply_to_message.message_id
-                      if msg.reply_to_message else None))
+    st = PENDING.get(
+        (chat.id, msg.reply_to_message.message_id if msg.reply_to_message else None)
+    )
     if st is None:
         # attach to the most recent pending for this chat
         cands = [k for k in PENDING if k[0] == chat.id]
         if not cands:
-            await q.answer("This request expired — send the screenshot again.",
-                           show_alert=True)
+            await q.answer(
+                "This request expired — send the screenshot again.", show_alert=True
+            )
             await q.edit_message_text("Expired. Send the screenshot again.")
             return
         st = PENDING[max(cands, key=lambda k: k[1])]
@@ -78,26 +83,30 @@ async def _cb_date(update: Update, ctx):
     elif kind == "yday":
         st["date"] = sg_today() - datetime.timedelta(days=1)
     elif kind == "back":
-        await q.edit_message_reply_markup(reply_markup=kb_date_default(
-            st["steps"], st["reported"]))
+        await q.edit_message_reply_markup(
+            reply_markup=kb_date_default(st["steps"], st["reported"])
+        )
         await q.answer()
         return
     elif kind == "pick":
         y, m = int(rest[0]), int(rest[1])
-        await q.edit_message_text("\U0001F4C5 Pick the activity date.",
-                                  reply_markup=kb_pick_date(y, m))
+        await q.edit_message_text(
+            "\U0001f4c5 Pick the activity date.", reply_markup=kb_pick_date(y, m)
+        )
         await q.answer()
         return
     elif kind == "prev":
         # The target month arrives already resolved: datepicker.shift() owns the
         # wrap, so there is no January/December arithmetic here to get wrong.
         await q.edit_message_reply_markup(
-            reply_markup=kb_pick_date(int(rest[0]), int(rest[1])))
+            reply_markup=kb_pick_date(int(rest[0]), int(rest[1]))
+        )
         await q.answer()
         return
     elif kind == "next":
         await q.edit_message_reply_markup(
-            reply_markup=kb_pick_date(int(rest[0]), int(rest[1])))
+            reply_markup=kb_pick_date(int(rest[0]), int(rest[1]))
+        )
         await q.answer()
         return
     elif kind == "day":
@@ -133,19 +142,22 @@ async def _cb_date(update: Update, ctx):
         await q.edit_message_text(
             words.overwrite_warning(steps, prev["steps"], label),
             parse_mode=ParseMode.MARKDOWN,
-            reply_markup=kb_overwrite(steps, prev["steps"], iso))
+            reply_markup=kb_overwrite(steps, prev["steps"], iso),
+        )
         await q.answer("this would lower your recorded steps", show_alert=True)
         return
     if prev and steps > prev["steps"]:
         await q.edit_message_text(
             words.overwrite_upgrade(steps, prev["steps"], label),
-            parse_mode=ParseMode.MARKDOWN)
+            parse_mode=ParseMode.MARKDOWN,
+        )
         await q.answer()
 
     await q.edit_message_text(
         words.confirming(steps, reported, label, iso),
         parse_mode=ParseMode.MARKDOWN,
-        reply_markup=kb_confirm(steps, reported, iso))
+        reply_markup=kb_confirm(steps, reported, iso),
+    )
     await q.answer()
 
 
@@ -166,8 +178,9 @@ async def cb_ok(update: Update, ctx):
 
     cands = [k for k in PENDING if k[0] == chat.id]
     if not cands:
-        await q.answer("This request expired — send the screenshot again.",
-                       show_alert=True)
+        await q.answer(
+            "This request expired — send the screenshot again.", show_alert=True
+        )
         await q.edit_message_text("Expired. Send the screenshot again.")
         return
     key = max(cands, key=lambda k: k[1])
@@ -188,7 +201,8 @@ async def cb_ok(update: Update, ctx):
     label = st["label"]
     with suppress(TelegramError):
         await q.edit_message_text(
-            "⏳ Recording %s steps for %s…" % (st["reported"], label))
+            "⏳ Recording %s steps for %s…" % (st["reported"], label)
+        )
 
     # The browser was closed after reading the number, so re-open it, re-upload
     # the same Screenshot, then set the date and Commit in one go. This is a
@@ -203,9 +217,10 @@ async def cb_ok(update: Update, ctx):
             steps2, reported2 = await asyncio.to_thread(r.upload, st["path"])
             if steps2 != st["steps"]:
                 PENDING.pop(key, None)
-                await msg.reply_text(words.ocr_changed(
-                    st["reported"], reported2, label),
-                    parse_mode=ParseMode.MARKDOWN)
+                await msg.reply_text(
+                    words.ocr_changed(st["reported"], reported2, label),
+                    parse_mode=ParseMode.MARKDOWN,
+                )
                 await q.answer("the site's read changed", show_alert=True)
                 return
             await asyncio.to_thread(r.set_date, date)
@@ -213,21 +228,30 @@ async def cb_ok(update: Update, ctx):
     except Exception as e:
         PENDING.pop(key, None)
         alert, alarm, log_line = await failures.explain(
-            msg, e, operation="Commit",
-            start_prompt=lambda: ask_credentials(msg, chat.id))
+            msg,
+            e,
+            operation="Commit",
+            start_prompt=lambda: ask_credentials(msg, chat.id),
+        )
         if log_line:
             session_mod.log(ctx, log_line)
         await q.answer(alert, show_alert=alarm)
         return
 
-    ledger.record(iso, st["steps"], reported=st["reported"], site_label=label,
-                  msg_id=msg.message_id)
+    ledger.record(
+        iso,
+        st["steps"],
+        reported=st["reported"],
+        site_label=label,
+        msg_id=msg.message_id,
+    )
     PENDING.pop(key, None)
 
     with suppress(TelegramError):
         await msg.reply_text(
             words.recorded(st["reported"], label, iso, site_text),
-            parse_mode=ParseMode.MARKDOWN)
+            parse_mode=ParseMode.MARKDOWN,
+        )
 
     # House standing: a second browser launch, best effort, clearly separate
     # from the result. Skipped if memory is short — it is decoration.
@@ -237,9 +261,9 @@ async def cb_ok(update: Update, ctx):
         if board:
             profile = parse_profile(board)
             if profile:
-                line = words.rank_line(profile["total_steps"],
-                                       profile["total_points"],
-                                       profile["house"])
+                line = words.rank_line(
+                    profile["total_steps"], profile["total_points"], profile["house"]
+                )
                 if line:
                     await msg.reply_text(line, parse_mode=ParseMode.MARKDOWN)
     except Exception:

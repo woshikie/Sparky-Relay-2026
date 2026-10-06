@@ -17,6 +17,7 @@ deliberately keeps the reporting *out* of the path of the work:
 Edits are throttled and every failure is swallowed: Telegram rate-limits edits
 to a message, and a submission must never fail because a progress line did.
 """
+
 import asyncio
 import time
 
@@ -54,8 +55,8 @@ class Progress:
         self._msg = message
         self._clock = clock
         self._loop = loop or asyncio.get_event_loop()
-        self._done = []            # keys, in the order they were reached
-        self._current = None       # key being worked on now
+        self._done = []  # keys, in the order they were reached
+        self._current = None  # key being worked on now
         self._started = self._clock()
         self._last_edit = 0.0
         self._last_text = None

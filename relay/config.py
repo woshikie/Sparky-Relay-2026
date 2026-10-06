@@ -1,4 +1,5 @@
 """Config. Nothing here is a default we invented at runtime."""
+
 import os
 from contextlib import suppress
 
@@ -41,10 +42,21 @@ def _load():
 # Keys we will accept from the environment, so an unrelated variable in the
 # shell cannot silently become configuration.
 KNOWN_KEYS = {
-    "TELEGRAM_BOT_TOKEN", "SITE_USERNAME", "SITE_PASSWORD", "SITE_BASE",
-    "ACCESS_MODE", "DENY_CHAT_IDS", "SHARED_SECRETS",
-    "HEADLESS", "FIREFOX_BIN", "BACKUP_TIME",
-    "KNOWN_CUTOFF", "RELAY_STATE_DIR", "LEDGER_DB", "INBOX", "LOGS",
+    "TELEGRAM_BOT_TOKEN",
+    "SITE_USERNAME",
+    "SITE_PASSWORD",
+    "SITE_BASE",
+    "ACCESS_MODE",
+    "DENY_CHAT_IDS",
+    "SHARED_SECRETS",
+    "HEADLESS",
+    "FIREFOX_BIN",
+    "BACKUP_TIME",
+    "KNOWN_CUTOFF",
+    "RELAY_STATE_DIR",
+    "LEDGER_DB",
+    "INBOX",
+    "LOGS",
 }
 
 ENV = _load()
@@ -81,13 +93,15 @@ if not _ACCESS_MODE:
         "    blacklist        open to anyone not denied  (PUBLIC)\n"
         "    shared_secret    must present a per-person secret at /start\n"
         "\n"
-        "  Set it in secrets.env, e.g.   ACCESS_MODE=whitelist_claim\n")
+        "  Set it in secrets.env, e.g.   ACCESS_MODE=whitelist_claim\n"
+    )
 
 if _ACCESS_MODE not in ACCESS_MODES:
     raise ConfigRefused(
         "\n"
         "ACCESS_MODE=%r is not a valid Access Mode.\n"
-        "  expected one of: %s\n" % (_ACCESS_MODE, ", ".join(ACCESS_MODES)))
+        "  expected one of: %s\n" % (_ACCESS_MODE, ", ".join(ACCESS_MODES))
+    )
 
 ACCESS_MODE = _ACCESS_MODE
 # Chats refused up front, in blacklist mode.
@@ -144,9 +158,7 @@ def require():
     the user supplies them at runtime; ACCESS_MODE has already been validated
     at import time.
     """
-    missing = [k for k, v in (
-        ("TELEGRAM_BOT_TOKEN", TELEGRAM_BOT_TOKEN),
-    ) if not v]
+    missing = [k for k, v in (("TELEGRAM_BOT_TOKEN", TELEGRAM_BOT_TOKEN),) if not v]
     if not missing:
         return True
     raise SystemExit(
@@ -160,4 +172,5 @@ def require():
         "\n"
         "  Note: SITE_USERNAME and SITE_PASSWORD are optional. Leave them out\n"
         "  and the bot will ask you for them at runtime instead."
-        % (", ".join(missing), ENV_PATH))
+        % (", ".join(missing), ENV_PATH)
+    )

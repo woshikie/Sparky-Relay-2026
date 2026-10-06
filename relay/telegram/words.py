@@ -45,18 +45,18 @@ def code(text):
 
 
 EMOJI = {
-    "start": "\U0001F3AF",
-    "scan": "\U0001F50D",
-    "ocr": "\U0001F9E0",
-    "date": "\U0001F4C5",
+    "start": "\U0001f3af",
+    "scan": "\U0001f50d",
+    "ocr": "\U0001f9e0",
+    "date": "\U0001f4c5",
     "ok": "✅",
     "no": "❌",
     "warn": "⚠️",
-    "overwrite": "\U0001F504",
-    "rank": "\U0001F3C5",
-    "backup": "\U0001F4BE",
-    "log": "\U0001F4DC",
-    "sync": "\U0001F504",
+    "overwrite": "\U0001f504",
+    "rank": "\U0001f3c5",
+    "backup": "\U0001f4be",
+    "log": "\U0001f4dc",
+    "sync": "\U0001f504",
 }
 
 HELP = (
@@ -72,6 +72,7 @@ HELP = (
 )
 
 # --- access -------------------------------------------------------------
+
 
 def claimed():
     return (
@@ -150,17 +151,18 @@ def _chat_id_of(decision):
 
 def _mode_or_unknown():
     from relay import config
+
     return config.ACCESS_MODE
 
 
 # --- credentials prompt -------------------------------------------------
 
+
 def choose_preset(username):
     return (
         "🔑 I have preset credentials for **%s**.\n\n"
         "Use those, or give me different ones? The password is never shown — "
-        "I am only telling you which account this would be."
-        % username
+        "I am only telling you which account this would be." % username
     )
 
 
@@ -202,16 +204,14 @@ def credentials_saved(username):
         "Encrypted on disk, keyed on this bot's token. Rotating the token at "
         "@BotFather makes the stored copy permanently unreadable — which is "
         "the intended response to a suspected compromise.\n\n"
-        "Send a screenshot whenever you are ready. /logout to forget."
-        % username
+        "Send a screenshot whenever you are ready. /logout to forget." % username
     )
 
 
 def credential_store_failed(detail):
     return (
         "❌ Could not save the credentials (`%s`).\n\n"
-        "Nothing was stored and nothing was recorded. Try /login again."
-        % detail
+        "Nothing was stored and nothing was recorded. Try /login again." % detail
     )
 
 
@@ -229,8 +229,7 @@ def vault_unreadable(detail):
         "🔑 The stored credentials could not be read (`%s`).\n\n"
         "This normally means the bot token was rotated, which makes the old "
         "encrypted copy unrecoverable by design.\n\n"
-        "Send /login to supply them again."
-        % detail
+        "Send /login to supply them again." % detail
     )
 
 
@@ -242,14 +241,14 @@ def no_prompt():
 
 
 def scrub_failed():
-    return "_I could not delete the message above. It contained a secret — " \
-           "please delete it yourself._"
+    return (
+        "_I could not delete the message above. It contained a secret — "
+        "please delete it yourself._"
+    )
 
 
 def logged_out():
-    return (
-        "🔑 Credentials forgotten. Send /login when you need them again."
-    )
+    return "🔑 Credentials forgotten. Send /login when you need them again."
 
 
 def welcome(name):
@@ -259,8 +258,7 @@ def welcome(name):
         "1. upload it and report the step count the site reads\n"
         "2. ask you for the activity date (today by default)\n"
         "3. record it once you confirm\n\n"
-        "Nothing is recorded until you confirm."
-        % (", %s!" % name if name else "!")
+        "Nothing is recorded until you confirm." % (", %s!" % name if name else "!")
     )
 
 
@@ -277,8 +275,8 @@ def scanning(name):
 
 def ocr_read(steps, reported, plausible=True):
     head = "%(ocr)s The site read **%(s)s** steps." % {
-         'ocr': EMOJI["ocr"],
-         's': reported,
+        "ocr": EMOJI["ocr"],
+        "s": reported,
     }
     if plausible:
         return head
@@ -293,9 +291,10 @@ def choose_date(steps, reported, default_label):
     return (
         "%(date)s Which day do these **%(s)s** steps belong to?\n\n"
         "_Defaults to today. Pick a different date if this is yesterday's "
-        "screenshot._" % {
-             'date': EMOJI["date"],
-             's': reported,
+        "screenshot._"
+        % {
+            "date": EMOJI["date"],
+            "s": reported,
         }
     )
 
@@ -306,10 +305,10 @@ def confirming(steps, reported, date_label, iso):
         "Site read: `%(s)s`\n"
         "Activity date: `%(iso)s`"
         % {
-             'ok': EMOJI["ok"],
-             's': reported,
-             'dl': date_label,
-             'iso': iso,
+            "ok": EMOJI["ok"],
+            "s": reported,
+            "dl": date_label,
+            "iso": iso,
         }
     )
 
@@ -323,25 +322,22 @@ def overwrite_warning(new_steps, old_steps, date_label):
         "replace your %(old)s and the old screenshot would be deleted.\n\n"
         "Overwrite anyway?"
         % {
-             'ow': EMOJI["overwrite"],
-             'old': f"{old_steps:,}",
-             'dl': date_label,
-             'new': f"{new_steps:,}",
-             'diff': f"{diff:,}",
+            "ow": EMOJI["overwrite"],
+            "old": f"{old_steps:,}",
+            "dl": date_label,
+            "new": f"{new_steps:,}",
+            "diff": f"{diff:,}",
         }
     )
 
 
 def overwrite_upgrade(new_steps, old_steps, date_label):
-    return (
-        "%(ow)s **Update for %(dl)s:** %(old)s → %(new)s steps."
-        % {
-             'ow': EMOJI["overwrite"],
-             'dl': date_label,
-             'old': f"{old_steps:,}",
-             'new': f"{new_steps:,}",
-        }
-    )
+    return "%(ow)s **Update for %(dl)s:** %(old)s → %(new)s steps." % {
+        "ow": EMOJI["overwrite"],
+        "dl": date_label,
+        "old": f"{old_steps:,}",
+        "new": f"{new_steps:,}",
+    }
 
 
 def no_steps():
@@ -403,10 +399,11 @@ def login_failed(reason):
 def recorded(reported, date_label, iso, site_text=None):
     txt = (
         "%(ok)s **Recorded %(s)s steps for %(dl)s.**\n\n"
-        "The site confirmed the Submission." % {
-             'ok': EMOJI["ok"],
-             's': reported,
-             'dl': date_label,
+        "The site confirmed the Submission."
+        % {
+            "ok": EMOJI["ok"],
+            "s": reported,
+            "dl": date_label,
         }
     )
     if site_text:
@@ -438,7 +435,7 @@ def cancel_prompt_first():
 
 
 def cancelled():
-    return "\U0001F5D1️ Discarded. Nothing was recorded."
+    return "\U0001f5d1️ Discarded. Nothing was recorded."
 
 
 def rank_line(total_steps, total_points, house=None, position=None):
@@ -458,8 +455,7 @@ def unauthorized(chat_id):
     return (
         "⛔ This chat is not authorised to use the Relay.\n\n"
         "Chat id: `%s`\n\n"
-        "Add it to `ALLOWED_CHAT_ID` in `secrets.env` to allow it."
-        % chat_id
+        "Add it to `ALLOWED_CHAT_ID` in `secrets.env` to allow it." % chat_id
     )
 
 
@@ -468,12 +464,15 @@ def log_lines(subs):
         return "%s No Submissions recorded yet." % EMOJI["log"]
     out = [EMOJI["log"] + " **Recent Submissions**", ""]
     for s in subs[:15]:
-        out.append("`%s`  **%s** steps   _%s_" % (
-            s["activity_date"], "{:,}".format(s["steps"]), s["recorded_at"]))
+        out.append(
+            "`%s`  **%s** steps   _%s_"
+            % (s["activity_date"], "{:,}".format(s["steps"]), s["recorded_at"])
+        )
     return "\n".join(out)
 
 
 # ---------- sync ----------
+
 
 def syncing():
     return "%s Reading the site's own record. This submits nothing." % EMOJI["sync"]
@@ -485,10 +484,12 @@ def sync_empty():
     Distinct from a successful sync of zero, which would look the same as a
     site with nothing on it -- and would leave the overwrite guard blind.
     """
-    return ("%s The site showed no days I could read.\n\n"
-            "Nothing was stored, so the overwrite guard is unchanged. "
-            "If you have days on the site, the dashboard may have changed -- "
-            "send a screenshot and we will see." % EMOJI["sync"])
+    return (
+        "%s The site showed no days I could read.\n\n"
+        "Nothing was stored, so the overwrite guard is unchanged. "
+        "If you have days on the site, the dashboard may have changed -- "
+        "send a screenshot and we will see." % EMOJI["sync"]
+    )
 
 
 def sync_report(days, written):
@@ -498,12 +499,13 @@ def sync_report(days, written):
     than left implied, because the site's list is "Recent submissions" and is
     bounded by whatever it chooses to show.
     """
-    out = [EMOJI["sync"] + " **Synced %d day%s from the site**"
-           % (written, "" if written == 1 else "s"), ""]
+    out = [
+        EMOJI["sync"]
+        + " **Synced %d day%s from the site**" % (written, "" if written == 1 else "s"),
+        "",
+    ]
     for day, steps in days[:15]:
-        out.append("`%s`  **%s** steps" % (
-            day.strftime("%Y-%m-%d"), f"{steps:,}"))
+        out.append("`%s`  **%s** steps" % (day.strftime("%Y-%m-%d"), f"{steps:,}"))
     out.append("")
-    out.append("_Read through the site's own dashboard. "
-              "Nothing was submitted._")
+    out.append("_Read through the site's own dashboard. Nothing was submitted._")
     return "\n".join(out)

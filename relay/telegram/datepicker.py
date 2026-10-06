@@ -17,12 +17,24 @@ someone taps:
   * prev/next carry the *target* month already resolved. Shifting was left to
     the handler, so the wrap from January to December lived in a second file.
 """
+
 import calendar
 import datetime
 
-MONTH_NAMES = ("January", "February", "March", "April", "May", "June",
-               "July", "August", "September", "October", "November",
-               "December")
+MONTH_NAMES = (
+    "January",
+    "February",
+    "March",
+    "April",
+    "May",
+    "June",
+    "July",
+    "August",
+    "September",
+    "October",
+    "November",
+    "December",
+)
 WEEKDAYS = ("Mo", "Tu", "We", "Th", "Fr", "Sa", "Su")
 
 # `datepicker` and `cb_date` must agree on this. Asserted in the tests, because
@@ -59,7 +71,7 @@ def month_grid(year, month, today=None):
         cells.append(datetime.date(year, month, d))
     while len(cells) % 7:
         cells.append(None)
-    return [cells[i:i + 7] for i in range(0, len(cells), 7)], today
+    return [cells[i : i + 7] for i in range(0, len(cells), 7)], today
 
 
 def selectable(day, today):
@@ -82,40 +94,46 @@ def keyboard(year, month, today=None):
     py, pm = shift(year, month, -1)
     ny, nm = shift(year, month, 1)
 
-    kb = [[
-        InlineKeyboardButton("«", callback_data="%s:prev:%d:%d" % (PREFIX, py, pm)),
-        # The month itself. Without it there is no way to tell which month the
-        # grid is showing, which is the one thing a calendar has to say.
-        InlineKeyboardButton(month_title(year, month),
-                             callback_data="%s:none" % PREFIX),
-        InlineKeyboardButton("»",
-                             callback_data="%s:next:%d:%d" % (PREFIX, ny, nm)),
-    ]]
-    kb.append([InlineKeyboardButton(w, callback_data="%s:none" % PREFIX)
-               for w in WEEKDAYS])
+    kb = [
+        [
+            InlineKeyboardButton("«", callback_data="%s:prev:%d:%d" % (PREFIX, py, pm)),
+            # The month itself. Without it there is no way to tell which month the
+            # grid is showing, which is the one thing a calendar has to say.
+            InlineKeyboardButton(
+                month_title(year, month), callback_data="%s:none" % PREFIX
+            ),
+            InlineKeyboardButton("»", callback_data="%s:next:%d:%d" % (PREFIX, ny, nm)),
+        ]
+    ]
+    kb.append(
+        [InlineKeyboardButton(w, callback_data="%s:none" % PREFIX) for w in WEEKDAYS]
+    )
     for row in month_grid(year, month, today)[0]:
         line = []
         for c in row:
             if c is None:
-                line.append(InlineKeyboardButton(" ",
-                                                 callback_data="%s:none" % PREFIX))
+                line.append(InlineKeyboardButton(" ", callback_data="%s:none" % PREFIX))
             elif selectable(c, today):
-                line.append(InlineKeyboardButton(
-                    str(c.day),
-                    callback_data="%s:day:%s" % (PREFIX, c.isoformat())))
+                line.append(
+                    InlineKeyboardButton(
+                        str(c.day), callback_data="%s:day:%s" % (PREFIX, c.isoformat())
+                    )
+                )
             else:
                 # Future days stay visible but inert, so the shape of the
                 # month is still legible. A hidden cell would leave a gap.
-                line.append(InlineKeyboardButton(str(c.day),
-                                                 callback_data="%s:none" % PREFIX))
+                line.append(
+                    InlineKeyboardButton(str(c.day), callback_data="%s:none" % PREFIX)
+                )
         kb.append(line)
-    kb.append([
-        InlineKeyboardButton("Today", callback_data="%s:today" % PREFIX),
-    ])
+    kb.append(
+        [
+            InlineKeyboardButton("Today", callback_data="%s:today" % PREFIX),
+        ]
+    )
     return InlineKeyboardMarkup(kb)
 
 
 def callback_captions(markup):
     """Every callback_data in the markup, for tests and for routing checks."""
-    return [b.callback_data
-            for row in markup.inline_keyboard for b in row]
+    return [b.callback_data for row in markup.inline_keyboard for b in row]

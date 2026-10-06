@@ -13,6 +13,7 @@ unrecoverable rather than merely inconvenient.
 
 This is deliberately not a general secrets manager. One algorithm, one purpose.
 """
+
 import base64
 import hashlib
 import hmac
@@ -37,7 +38,7 @@ _SCRYPT_N = 1 << 14
 _SCRYPT_R = 8
 _SCRYPT_P = 1
 _KEY_LEN = 32
-_SALT = b"relay-credential-vault"   # fixed: the token is the only secret here
+_SALT = b"relay-credential-vault"  # fixed: the token is the only secret here
 _NONCE_LEN = 12
 
 
@@ -79,22 +80,24 @@ def open_sealed(token, blob):
         if int(version.lstrip("v")) != VAULT_VERSION:
             raise DecryptionFailed("vault entry written by a different version")
         key = _derive(token)
-        return AESGCM(key).decrypt(
-            base64.b64decode(nonce_b64),
-            base64.b64decode(ct_b64),
-            None,
-        ).decode("utf-8")
+        return (
+            AESGCM(key)
+            .decrypt(
+                base64.b64decode(nonce_b64),
+                base64.b64decode(ct_b64),
+                None,
+            )
+            .decode("utf-8")
+        )
     except DecryptionFailed:
         raise
     except InvalidTag as err:
         # Wrong key (token rotated) or the bytes were altered. Same response
         # either way: we cannot tell, and saying otherwise would leak whether
         # a guess was close.
-        raise DecryptionFailed(
-            "cannot decrypt: wrong key or altered data") from err
+        raise DecryptionFailed("cannot decrypt: wrong key or altered data") from err
     except Exception as err:
-        raise DecryptionFailed(
-            "cannot decrypt: malformed vault entry") from err
+        raise DecryptionFailed("cannot decrypt: malformed vault entry") from err
 
 
 def can_open(token, blob):
@@ -111,6 +114,5 @@ def fingerprint(token, username):
     Lets /status show "credentials for <Original Author's username> are present" without decrypting,
     and lets a new token be compared against a stored entry without exposing it.
     """
-    h = hmac.new(token.encode("utf-8"), b"relay-fingerprint",
-                 hashlib.sha256).digest()
+    h = hmac.new(token.encode("utf-8"), b"relay-fingerprint", hashlib.sha256).digest()
     return hmac.new(h, username.encode("utf-8"), hashlib.sha256).hexdigest()[:16]

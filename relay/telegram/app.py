@@ -3,6 +3,7 @@
 Kept apart from the handlers so importing a handler never constructs an
 Application, and importing this module never starts polling.
 """
+
 from datetime import time as wallclock
 
 from telegram.ext import (
@@ -33,6 +34,7 @@ from relay.telegram.prompts import on_credential_choice, on_login, on_logout
 # main
 # ----------------------------------------------------------------------
 
+
 def main():
     # First thing, so a refusal is timestamped too -- a bot that dies on a
     # config error is exactly when you want the timestamp.
@@ -46,10 +48,12 @@ def main():
     console.install()
     config.require()
     ledger.init()
-    app = (ApplicationBuilder()
-           .token(config.TELEGRAM_BOT_TOKEN)
-           .post_init(on_ready)
-           .build())
+    app = (
+        ApplicationBuilder()
+        .token(config.TELEGRAM_BOT_TOKEN)
+        .post_init(on_ready)
+        .build()
+    )
 
     app.add_handler(CommandHandler("start", on_start))
     app.add_handler(CommandHandler("help", on_start))
@@ -65,40 +69,53 @@ def main():
     # Photos first, then text. A photo is never an answer to the Credentials
     # Prompt, and text has to reach on_text even though it is the catch-all.
     app.add_handler(MessageHandler(filters.PHOTO, on_photo))
-    app.add_handler(MessageHandler(
-        filters.Document.MimeType("image/"), on_photo))
+    app.add_handler(MessageHandler(filters.Document.MimeType("image/"), on_photo))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_text))
 
     if app.job_queue is None:
         raise SystemExit(
             "job-queue support is missing.\n"
             "  install it:  pip install 'python-telegram-bot[job-queue]'\n"
-            "  the nightly ledger backup is scheduled through the job queue.")
+            "  the nightly ledger backup is scheduled through the job queue."
+        )
     hh, mm = [int(x) for x in config.BACKUP_TIME.split(":")]
     # wallclock, not the time module: `time(hour=..., minute=...)` is a class.
-    app.job_queue.run_daily(backup_job, wallclock(hour=hh, minute=mm),
-                            name="ledger-backup")
+    app.job_queue.run_daily(
+        backup_job, wallclock(hour=hh, minute=mm), name="ledger-backup"
+    )
 
     loaded, total = ledger.init_secrets_from_env(config.SHARED_SECRETS)
     if loaded:
-        print("[relay] loaded %d Shared Secret(s) from the environment" % total,
-              flush=True)
+        print(
+            "[relay] loaded %d Shared Secret(s) from the environment" % total,
+            flush=True,
+        )
     print("[relay] %s" % access.describe())
     if config.ACCESS_MODE == "blacklist":
-        print("[relay] WARNING: ACCESS_MODE=blacklist — any chat that finds "
-              "this bot may drive it. See docs/adr/0006.", flush=True)
+        print(
+            "[relay] WARNING: ACCESS_MODE=blacklist — any chat that finds "
+            "this bot may drive it. See docs/adr/0006.",
+            flush=True,
+        )
     if config.has_preset_credentials():
-        print("[relay] preset credentials configured for %s; the bot will "
-              "offer them at the Credentials Prompt" % config.SITE_USERNAME,
-              flush=True)
+        print(
+            "[relay] preset credentials configured for %s; the bot will "
+            "offer them at the Credentials Prompt" % config.SITE_USERNAME,
+            flush=True,
+        )
     else:
-        print("[relay] no preset credentials — you will be asked for a "
-              "username and password", flush=True)
+        print(
+            "[relay] no preset credentials — you will be asked for a "
+            "username and password",
+            flush=True,
+        )
     print("[relay] %s" % memory.describe())
     if not memory.budget()["can_launch"]:
-        print("[relay] WARNING: not enough free memory to run the browser. "
-              "Screenshots will be refused until memory frees up. "
-              "Consider a larger host — see docs/adr/0004.")
+        print(
+            "[relay] WARNING: not enough free memory to run the browser. "
+            "Screenshots will be refused until memory frees up. "
+            "Consider a larger host — see docs/adr/0004."
+        )
     print("[relay] starting")
     try:
         # Do NOT drop pending updates. A restart on a small host is routine, and

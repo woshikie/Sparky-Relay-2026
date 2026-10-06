@@ -3,6 +3,7 @@
 Proves: launch -> login -> read the site's Detected Steps -> close, and that
 memory returns to baseline. Submits nothing.
 """
+
 import os
 import sys
 import time
@@ -43,8 +44,11 @@ def main():
             mark = "OK " if steps == truth else "MISMATCH"
             if steps != truth:
                 ok = False
-            print("%s %s -> %s (want %d) in %.1fs | %.0fMB free during"
-                  % (mark, fname, reported, truth, dt, peak), flush=True)
+            print(
+                "%s %s -> %s (want %d) in %.1fs | %.0fMB free during"
+                % (mark, fname, reported, truth, dt, peak),
+                flush=True,
+            )
         except Exception as e:
             ok = False
             print("FAIL %s: %r" % (fname, e), flush=True)
@@ -55,8 +59,11 @@ def main():
                 time.sleep(0.5)
                 if avail() and avail() > baseline - 60:
                     break
-            print("   after close: %.0fMB available (baseline %.0fMB)"
-                  % (avail(), baseline), flush=True)
+            print(
+                "   after close: %.0fMB available (baseline %.0fMB)"
+                % (avail(), baseline),
+                flush=True,
+            )
 
     # idempotency: stop() with no driver must not explode
     r.stop()
@@ -64,7 +71,7 @@ def main():
 
     # start() must refuse when memory is short
     orig = memory.MIN_FREE_MB
-    memory.MIN_FREE_MB = 10 ** 9
+    memory.MIN_FREE_MB = 10**9
     try:
         r.start()
         print("FAIL: started despite impossible memory requirement", flush=True)
@@ -75,8 +82,7 @@ def main():
     finally:
         memory.MIN_FREE_MB = orig
 
-    print("\n%s" % ("ALL CHECKS PASSED" if ok else "SOME CHECKS FAILED"),
-          flush=True)
+    print("\n%s" % ("ALL CHECKS PASSED" if ok else "SOME CHECKS FAILED"), flush=True)
     return 0 if ok else 1
 
 

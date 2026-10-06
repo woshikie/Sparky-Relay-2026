@@ -5,6 +5,7 @@ held in PROMPTING with a TTL, because the answer arrives in a later message
 than the question. kb_for() is the single decision point for which keyboard a
 chat sees, so no path can send a keyboard that does not fit the prompt.
 """
+
 import time
 
 from telegram import Update
@@ -51,8 +52,7 @@ async def on_login(update: Update, ctx):
     msg = update.effective_message
     d = access.check(chat.id, getattr(chat, "username", None))
     if not d:
-        await msg.reply_text(words.access_refused(d),
-                             parse_mode=ParseMode.MARKDOWN)
+        await msg.reply_text(words.access_refused(d), parse_mode=ParseMode.MARKDOWN)
         return
     _clear_stage(chat.id)
     await ask_credentials(msg, chat.id)
@@ -64,13 +64,13 @@ async def on_logout(update: Update, ctx):
     msg = update.effective_message
     d = access.check(chat.id, getattr(chat, "username", None))
     if not d:
-        await msg.reply_text(words.access_refused(d),
-                             parse_mode=ParseMode.MARKDOWN)
+        await msg.reply_text(words.access_refused(d), parse_mode=ParseMode.MARKDOWN)
         return
     _clear_stage(chat.id)
     ledger.forget_credentials(chat.id)
-    await msg.reply_text(words.logged_out(), parse_mode=ParseMode.MARKDOWN,
-                         reply_markup=kb_for(chat.id))
+    await msg.reply_text(
+        words.logged_out(), parse_mode=ParseMode.MARKDOWN, reply_markup=kb_for(chat.id)
+    )
 
 
 # ----------------------------------------------------------------------
@@ -83,6 +83,7 @@ PROMPTING = {}
 
 # How long a half-finished prompt is worth holding before forgetting it.
 PROMPT_TTL = 600.0
+
 
 def _prompt_stage(chat_id):
     st = PROMPTING.get(chat_id)
@@ -108,15 +109,19 @@ async def ask_credentials(msg, chat_id):
         await msg.reply_text(
             words.choose_preset(config.SITE_USERNAME),
             parse_mode=ParseMode.MARKDOWN,
-            reply_markup=kb_for(chat_id))
+            reply_markup=kb_for(chat_id),
+        )
         return
     await ask_username(msg, chat_id)
 
 
 async def ask_username(msg, chat_id):
     _set_stage(chat_id, "username")
-    await msg.reply_text(words.ask_username(), parse_mode=ParseMode.MARKDOWN,
-                         reply_markup=kb_for(chat_id))
+    await msg.reply_text(
+        words.ask_username(),
+        parse_mode=ParseMode.MARKDOWN,
+        reply_markup=kb_for(chat_id),
+    )
 
 
 async def ask_password(msg, chat_id, username=None, preset=False):
@@ -128,8 +133,11 @@ async def ask_password(msg, chat_id, username=None, preset=False):
     an earlier version dropped it here and the password could not be stored.
     """
     _set_stage(chat_id, "password", username=username, preset=preset)
-    await msg.reply_text(words.ask_password(), parse_mode=ParseMode.MARKDOWN,
-                         reply_markup=kb_for(chat_id))
+    await msg.reply_text(
+        words.ask_password(),
+        parse_mode=ParseMode.MARKDOWN,
+        reply_markup=kb_for(chat_id),
+    )
 
 
 def kb_for(chat_id):
@@ -164,11 +172,14 @@ async def on_credential_choice(update: Update, ctx):
         # vault is not involved at all.
         _clear_stage(chat.id)
         _set_stage(chat.id, "ready", username=config.SITE_USERNAME, preset=True)
-        await q.edit_message_text(words.using_preset(config.SITE_USERNAME),
-                                  parse_mode=ParseMode.MARKDOWN)
-        await q.message.reply_text(words.send_a_screenshot(),
-                                   parse_mode=ParseMode.MARKDOWN,
-                                   reply_markup=kb_for(chat.id))
+        await q.edit_message_text(
+            words.using_preset(config.SITE_USERNAME), parse_mode=ParseMode.MARKDOWN
+        )
+        await q.message.reply_text(
+            words.send_a_screenshot(),
+            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=kb_for(chat.id),
+        )
         await q.answer("using preset credentials")
     else:
         await q.edit_message_reply_markup(reply_markup=None)
@@ -187,8 +198,7 @@ async def _scrub(msg):
         await msg.delete()
     except TelegramError:
         try:
-            await msg.reply_text(words.scrub_failed(),
-                                 parse_mode=ParseMode.MARKDOWN)
+            await msg.reply_text(words.scrub_failed(), parse_mode=ParseMode.MARKDOWN)
             await msg.delete()
         except TelegramError:
             pass
@@ -210,8 +220,7 @@ def site_credentials(chat_id):
     if st.get("preset"):
         if config.has_preset_credentials():
             return config.SITE_USERNAME, config.SITE_PASSWORD
-        raise vault.DecryptionFailed(
-            "preset credentials are no longer configured")
+        raise vault.DecryptionFailed("preset credentials are no longer configured")
     creds = ledger.load_credentials(chat_id, config.TELEGRAM_BOT_TOKEN)
     if not creds:
         raise _NoCredentials("no credentials stored for this chat")

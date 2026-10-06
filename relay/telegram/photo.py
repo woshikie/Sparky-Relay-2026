@@ -4,6 +4,7 @@ The browser closes as soon as the number is read: holding ~640MB open while
 the user decides on a date is not affordable on a 1GB host. Commit re-opens
 it later and re-reads, and the two reads must agree.
 """
+
 import asyncio
 import io
 import os
@@ -32,6 +33,7 @@ MAX_EDGE = 1200
 # image intake
 # ----------------------------------------------------------------------
 
+
 async def save_photo(update: Update, ctx) -> str:
     """Download the largest available photo to disk. Returns the path."""
     msg = update.effective_message
@@ -53,8 +55,7 @@ async def save_photo(update: Update, ctx) -> str:
     w, h = im.size
     scale = min(1.0, MAX_EDGE / float(max(w, h)))
     if scale < 1.0:
-        im = im.resize((max(1, int(w * scale)), max(1, int(h * scale))),
-                       Image.LANCZOS)
+        im = im.resize((max(1, int(w * scale)), max(1, int(h * scale))), Image.LANCZOS)
     outdir = config.INBOX
     os.makedirs(outdir, exist_ok=True)
     path = os.path.join(outdir, "%d-%d.jpg" % (msg.chat_id, msg.message_id))
@@ -64,6 +65,7 @@ async def save_photo(update: Update, ctx) -> str:
 
 
 # ----------------------------------------------------------------------
+
 
 async def on_photo(update: Update, ctx):
     chat = update.effective_chat
@@ -76,15 +78,18 @@ async def on_photo(update: Update, ctx):
     # One message, edited as the work happens. It used to be a fixed four-frame
     # animation that finished in 1.4s -- before the browser had even launched --
     # so the long part, which is all of it, happened in silence.
-    scratch = await msg.reply_text(words.scanning(
-        getattr(chat, "username", None) or "your screenshot"),
-        parse_mode=ParseMode.MARKDOWN)
+    scratch = await msg.reply_text(
+        words.scanning(getattr(chat, "username", None) or "your screenshot"),
+        parse_mode=ParseMode.MARKDOWN,
+    )
     prog = await progress_mod.Progress(scratch).start()
 
     path = await save_photo(update, ctx)
     if not path:
-        await prog.close("That does not look like an image. Send a "
-                         "screenshot of your tracker's day view.")
+        await prog.close(
+            "That does not look like an image. Send a "
+            "screenshot of your tracker's day view."
+        )
         return
 
     # Read the number. The browser closes as soon as we have it: on a 1GB host
@@ -97,23 +102,29 @@ async def on_photo(update: Update, ctx):
         await prog.stop()
         await scratch.delete()
         _alert, _alarm, log_line = await failures.explain(
-            msg, e, operation="Upload",
-            start_prompt=lambda: ask_credentials(msg, chat.id))
+            msg,
+            e,
+            operation="Upload",
+            start_prompt=lambda: ask_credentials(msg, chat.id),
+        )
         if log_line:
             session_mod.log(ctx, log_line)
         return
 
     plausible = relay_site.MIN_STEPS <= steps <= relay_site.MAX_STEPS
     # The last edit is the one the user reads, so it is never throttled.
-    await prog.close(words.ocr_read(steps, reported, plausible),
-                     parse_mode=ParseMode.MARKDOWN)
+    await prog.close(
+        words.ocr_read(steps, reported, plausible), parse_mode=ParseMode.MARKDOWN
+    )
     if not plausible:
         await msg.reply_text(words.implausible(reported), parse_mode=ParseMode.MARKDOWN)
         return
 
-    await msg.reply_text(words.choose_date(steps, reported, ""),
-                         parse_mode=ParseMode.MARKDOWN,
-                         reply_markup=kb_date_default(steps, reported))
+    await msg.reply_text(
+        words.choose_date(steps, reported, ""),
+        parse_mode=ParseMode.MARKDOWN,
+        reply_markup=kb_date_default(steps, reported),
+    )
 
     PENDING[(chat.id, msg.message_id)] = {
         "path": path,

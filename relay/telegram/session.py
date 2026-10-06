@@ -6,6 +6,7 @@ entry and closes on exit, and refuses outright when memory is short. The
 Relay itself is a singleton because the profile -- and therefore the Site
 Session -- belongs to the process, not to any one Screenshot.
 """
+
 import asyncio
 import contextlib
 import os
@@ -22,7 +23,8 @@ def log(ctx, msg):
     if DBG and ctx is not None:
         with suppress(Exception):
             ctx.job_queue.run_once(
-                lambda _c: None, 0)  # no-op; keeps job_queue referenced
+                lambda _c: None, 0
+            )  # no-op; keeps job_queue referenced
     print("[relay] %s" % msg, flush=True)
 
 
@@ -67,8 +69,9 @@ async def browser_session(progress=None):
         # numbers, and wrapping it in a second exception type meant callers had
         # to catch both for one condition.
         rep = await asyncio.to_thread(memory.require_memory)
-        print("[relay] launching browser (%.0fMB free)" % rep["available_mb"],
-              flush=True)
+        print(
+            "[relay] launching browser (%.0fMB free)" % rep["available_mb"], flush=True
+        )
         try:
             await asyncio.to_thread(r.start)
             yield r
@@ -81,8 +84,7 @@ async def browser_session(progress=None):
                 progress.finish()
             mem_after = memory.mem_mb()
             if mem_after:
-                print("[relay] %.0fMB available after close" % mem_after,
-                      flush=True)
+                print("[relay] %.0fMB available after close" % mem_after, flush=True)
 
 
 async def site_login(ctx, force=False):

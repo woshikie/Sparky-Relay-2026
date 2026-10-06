@@ -6,6 +6,7 @@ particular step (the date grid, the confirmation). A reply-keyboard button is
 just text arriving as a message, so the labels live here next to the dispatch
 table: if the two drift apart, the button silently does nothing.
 """
+
 import datetime
 
 from telegram import (
@@ -23,40 +24,59 @@ from relay.telegram.datepicker import keyboard as month_grid
 # keyboards
 # ----------------------------------------------------------------------
 
+
 def kb_date_default(steps, reported):
     t = sg_today()
     y = t - datetime.timedelta(days=1)
-    return InlineKeyboardMarkup([[
-        InlineKeyboardButton(
-            "Today (%s)" % t.strftime("%d %b"),
-            callback_data="dt:today"),
-        InlineKeyboardButton(
-            "Yesterday (%s)" % y.strftime("%d %b"),
-            callback_data="dt:yday"),
-    ], [
-        InlineKeyboardButton(
-            "\U0001F4C5 Open datepicker",
-            callback_data="dt:pick:%d:%d" % (t.year, t.month)),
-    ]])
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton(
+                    "Today (%s)" % t.strftime("%d %b"), callback_data="dt:today"
+                ),
+                InlineKeyboardButton(
+                    "Yesterday (%s)" % y.strftime("%d %b"), callback_data="dt:yday"
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    "\U0001f4c5 Open datepicker",
+                    callback_data="dt:pick:%d:%d" % (t.year, t.month),
+                ),
+            ],
+        ]
+    )
 
 
 def kb_confirm(steps, reported, iso):
-    return InlineKeyboardMarkup([[
-        InlineKeyboardButton("✅ Confirm %s" % reported, callback_data="ok:go"),
-    ], [
-        InlineKeyboardButton("Change date", callback_data="dt:back"),
-        InlineKeyboardButton("\U0001F5D1 Cancel", callback_data="ok:cancel"),
-    ]])
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton("✅ Confirm %s" % reported, callback_data="ok:go"),
+            ],
+            [
+                InlineKeyboardButton("Change date", callback_data="dt:back"),
+                InlineKeyboardButton("\U0001f5d1 Cancel", callback_data="ok:cancel"),
+            ],
+        ]
+    )
 
 
 def kb_overwrite(new_steps, old_steps, iso):
-    return InlineKeyboardMarkup([[
-        InlineKeyboardButton("\U0001F504 Overwrite anyway", callback_data="ok:go"),
-    ], [
-        InlineKeyboardButton(
-            "Keep my %s" % f"{old_steps:,}",
-            callback_data="ok:cancel"),
-    ]])
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton(
+                    "\U0001f504 Overwrite anyway", callback_data="ok:go"
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    "Keep my %s" % f"{old_steps:,}", callback_data="ok:cancel"
+                ),
+            ],
+        ]
+    )
 
 
 def kb_pick_date(year, month):
@@ -132,7 +152,7 @@ def kb_reply():
             [KeyboardButton(LABEL_SYNC)],
         ],
         resize_keyboard=True,
-        is_persistent=True,     # survives the client being restarted
+        is_persistent=True,  # survives the client being restarted
         input_field_placeholder="Send a screenshot, or pick one",
     )
 

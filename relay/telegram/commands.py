@@ -4,6 +4,7 @@ on_text lives here rather than in prompts.py so the dependency points one
 way: the router dispatches to prompt stages and to command handlers alike,
 and sitting next to the handlers avoids a prompts<->commands cycle.
 """
+
 import asyncio
 import io
 from contextlib import suppress
@@ -39,6 +40,7 @@ from relay.telegram.prompts import (
 
 # ----------------------------------------------------------------------
 
+
 async def on_start(update: Update, ctx):
     """Entry point. Access Mode decides whether anything else happens.
 
@@ -55,22 +57,30 @@ async def on_start(update: Update, ctx):
         if d.why == "needs_claim":
             # First-run claim: whoever got here first owns the Relay.
             if access.claim(chat.id):
-                await msg.reply_text(words.claimed(),
-                                     parse_mode=ParseMode.MARKDOWN,
-                                     reply_markup=kb_reply())
+                await msg.reply_text(
+                    words.claimed(),
+                    parse_mode=ParseMode.MARKDOWN,
+                    reply_markup=kb_reply(),
+                )
             else:
-                await msg.reply_text(words.already_claimed(),
-                                     parse_mode=ParseMode.MARKDOWN,
-                                     reply_markup=kb_reply())
+                await msg.reply_text(
+                    words.already_claimed(),
+                    parse_mode=ParseMode.MARKDOWN,
+                    reply_markup=kb_reply(),
+                )
             return
         if d.why == "needs_secret":
-            await msg.reply_text(words.secret_prompt(),
-                                 parse_mode=ParseMode.MARKDOWN,
-                                 reply_markup=kb_reply())
+            await msg.reply_text(
+                words.secret_prompt(),
+                parse_mode=ParseMode.MARKDOWN,
+                reply_markup=kb_reply(),
+            )
             return
-        await msg.reply_text(words.access_refused(d),
-                             parse_mode=ParseMode.MARKDOWN,
-                             reply_markup=kb_reply())
+        await msg.reply_text(
+            words.access_refused(d),
+            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=kb_reply(),
+        )
         return
 
     if has_credentials(chat.id):
@@ -79,23 +89,30 @@ async def on_start(update: Update, ctx):
         # One message: the greeting, then the prompt. The keyboard below it is
         # whatever this chat needs *now*, so the commands are never more than
         # one tap away and the prompt is answered by tapping, not typing.
-        body = words.welcome(getattr(chat, "first_name", None)) + "\n\n" + \
-            _credential_prompt_body()
+        body = (
+            words.welcome(getattr(chat, "first_name", None))
+            + "\n\n"
+            + _credential_prompt_body()
+        )
         _start_credential_stage(chat.id)
-    await msg.reply_text(body, parse_mode=ParseMode.MARKDOWN,
-                         reply_markup=kb_for(chat.id))
+    await msg.reply_text(
+        body, parse_mode=ParseMode.MARKDOWN, reply_markup=kb_for(chat.id)
+    )
 
 
 async def on_log(update: Update, ctx):
     chat = update.effective_chat
     d = access.check(chat.id, getattr(chat, "username", None))
     if not d:
-        await update.effective_message.reply_text(words.access_refused(d),
-                                                  parse_mode=ParseMode.MARKDOWN)
+        await update.effective_message.reply_text(
+            words.access_refused(d), parse_mode=ParseMode.MARKDOWN
+        )
         return
     await update.effective_message.reply_text(
-        words.log_lines(ledger.all_submissions()), parse_mode=ParseMode.MARKDOWN,
-        reply_markup=kb_for(chat.id))
+        words.log_lines(ledger.all_submissions()),
+        parse_mode=ParseMode.MARKDOWN,
+        reply_markup=kb_for(chat.id),
+    )
 
 
 async def on_sync(update: Update, ctx):
@@ -116,8 +133,7 @@ async def on_sync(update: Update, ctx):
         await msg.reply_text(words.access_refused(d), parse_mode=ParseMode.MARKDOWN)
         return
     if not has_credentials(chat.id):
-        await msg.reply_text(words.need_credentials(),
-                             parse_mode=ParseMode.MARKDOWN)
+        await msg.reply_text(words.need_credentials(), parse_mode=ParseMode.MARKDOWN)
         await ask_credentials(msg, chat.id)
         return
 
@@ -131,8 +147,8 @@ async def on_sync(update: Update, ctx):
         await prog.stop()
         await scratch.delete()
         _alert, _alarm, log_line = await failures.explain(
-            msg, e, operation="Sync",
-            start_prompt=lambda: ask_credentials(msg, chat.id))
+            msg, e, operation="Sync", start_prompt=lambda: ask_credentials(msg, chat.id)
+        )
         if log_line:
             session_mod.log(ctx, log_line)
         return
@@ -144,8 +160,7 @@ async def on_sync(update: Update, ctx):
         return
 
     written = ledger.record_site_days(days)
-    await prog.close(words.sync_report(days, written),
-                     parse_mode=ParseMode.MARKDOWN)
+    await prog.close(words.sync_report(days, written), parse_mode=ParseMode.MARKDOWN)
 
 
 async def on_status(update: Update, ctx):
@@ -183,19 +198,29 @@ async def on_status(update: Update, ctx):
         "**Chats with access:** %s\n"
         "**Chats denied:** %s\n"
         "**Pending confirmations:** %d"
-        % (words.code(config.SITE_BASE), who,
-           access.describe(markdown=False), config.HEADLESS,
-           rep["available_mb"], rep["browser_peak_mb"],
-           "yes" if rep["can_launch"] else "NO", len(subs),
-           ", ".join("%s (%s)" % (words.code(a["chat_id"]),
-                                  words.md(a["how"])) for a in granted) or "none",
-           ", ".join(words.code(a["chat_id"]) for a in denied) or "none",
-           len(PENDING))
+        % (
+            words.code(config.SITE_BASE),
+            who,
+            access.describe(markdown=False),
+            config.HEADLESS,
+            rep["available_mb"],
+            rep["browser_peak_mb"],
+            "yes" if rep["can_launch"] else "NO",
+            len(subs),
+            ", ".join(
+                "%s (%s)" % (words.code(a["chat_id"]), words.md(a["how"]))
+                for a in granted
+            )
+            or "none",
+            ", ".join(words.code(a["chat_id"]) for a in denied) or "none",
+            len(PENDING),
+        )
     )
     # Refresh the keyboard so the buttons Telegram is showing match what the
     # bot can actually do right now.
-    await msg.reply_text(txt, parse_mode=ParseMode.MARKDOWN,
-                         reply_markup=kb_for(chat.id))
+    await msg.reply_text(
+        txt, parse_mode=ParseMode.MARKDOWN, reply_markup=kb_for(chat.id)
+    )
 
 
 async def _run_button(ctx, msg, chat, action, stage):
@@ -203,37 +228,52 @@ async def _run_button(ctx, msg, chat, action, stage):
     if action == "submit":
         if stage and stage.get("stage") in ("username", "password"):
             await msg.reply_text(
-                words.cancel_prompt_first(), parse_mode=ParseMode.MARKDOWN,
-                reply_markup=kb_for(chat.id))
+                words.cancel_prompt_first(),
+                parse_mode=ParseMode.MARKDOWN,
+                reply_markup=kb_for(chat.id),
+            )
             return
-        await msg.reply_text(words.send_a_screenshot(),
-                             parse_mode=ParseMode.MARKDOWN,
-                             reply_markup=kb_for(chat.id))
+        await msg.reply_text(
+            words.send_a_screenshot(),
+            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=kb_for(chat.id),
+        )
         return
 
     if action == "use_preset":
         _clear_stage(chat.id)
         _set_stage(chat.id, "ready", username=config.SITE_USERNAME, preset=True)
-        await msg.reply_text(words.using_preset(config.SITE_USERNAME),
-                             parse_mode=ParseMode.MARKDOWN,
-                             reply_markup=kb_for(chat.id))
+        await msg.reply_text(
+            words.using_preset(config.SITE_USERNAME),
+            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=kb_for(chat.id),
+        )
         return
 
     if action == "new_creds":
         _set_stage(chat.id, "username")
-        await msg.reply_text(words.ask_username(), parse_mode=ParseMode.MARKDOWN,
-                             reply_markup=kb_for(chat.id))
+        await msg.reply_text(
+            words.ask_username(),
+            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=kb_for(chat.id),
+        )
         return
 
     if action == "cancel":
         _clear_stage(chat.id)
-        await msg.reply_text(words.cancelled(), parse_mode=ParseMode.MARKDOWN,
-                             reply_markup=kb_for(chat.id))
+        await msg.reply_text(
+            words.cancelled(),
+            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=kb_for(chat.id),
+        )
         return
 
     handler = {
-        "login": on_login, "logout": on_logout,
-        "status": on_status, "log": on_log, "help": on_start,
+        "login": on_login,
+        "logout": on_logout,
+        "status": on_status,
+        "log": on_log,
+        "help": on_start,
         "sync": on_sync,
     }.get(action)
     if handler is None:
@@ -247,11 +287,13 @@ async def _run_button(ctx, msg, chat, action, stage):
         pending = _prompt_stage(chat.id)
         if pending and pending.get("stage") in ("username", "password"):
             with suppress(TelegramError):
-                await msg.reply_text(words.ask_password()
-                                     if pending.get("stage") == "password"
-                                     else words.ask_username(),
-                                     parse_mode=ParseMode.MARKDOWN,
-                                     reply_markup=kb_for(chat.id))
+                await msg.reply_text(
+                    words.ask_password()
+                    if pending.get("stage") == "password"
+                    else words.ask_username(),
+                    parse_mode=ParseMode.MARKDOWN,
+                    reply_markup=kb_for(chat.id),
+                )
 
 
 def _as_update(msg, chat):
@@ -290,23 +332,25 @@ async def on_text(update: Update, ctx):
             # the "nothing to do" reply instead would leave a password sitting
             # in the chat with no explanation.
             await _scrub(msg)
-            await msg.reply_text(words.secret_throttled(d.retry_after),
-                                 parse_mode=ParseMode.MARKDOWN)
+            await msg.reply_text(
+                words.secret_throttled(d.retry_after), parse_mode=ParseMode.MARKDOWN
+            )
             return
         # The rate limit is enforced inside present_secret, not here.
         r = access.present_secret(chat.id, text)
         # The message carried a secret: remove it from the chat immediately.
         await _scrub(msg)
         if r:
-            await msg.reply_text(words.secret_accepted(r.how),
-                                 parse_mode=ParseMode.MARKDOWN)
+            await msg.reply_text(
+                words.secret_accepted(r.how), parse_mode=ParseMode.MARKDOWN
+            )
             await ask_credentials(msg, chat.id)
         elif r.why == "secret_throttled":
-            await msg.reply_text(words.secret_throttled(r.retry_after),
-                                 parse_mode=ParseMode.MARKDOWN)
+            await msg.reply_text(
+                words.secret_throttled(r.retry_after), parse_mode=ParseMode.MARKDOWN
+            )
         else:
-            await msg.reply_text(words.secret_rejected(),
-                                 parse_mode=ParseMode.MARKDOWN)
+            await msg.reply_text(words.secret_rejected(), parse_mode=ParseMode.MARKDOWN)
         return
 
     if not st:
@@ -330,26 +374,31 @@ async def on_text(update: Update, ctx):
         username = st.get("username")
         # Store encrypted, then drop it. The plaintext is not kept anywhere.
         try:
-            ledger.save_credentials(chat.id, username, text,
-                                    config.TELEGRAM_BOT_TOKEN,
-                                    preset=False)
+            ledger.save_credentials(
+                chat.id, username, text, config.TELEGRAM_BOT_TOKEN, preset=False
+            )
         except Exception as e:
-            await msg.reply_text(words.credential_store_failed(str(e)[:120]),
-                                 parse_mode=ParseMode.MARKDOWN)
+            await msg.reply_text(
+                words.credential_store_failed(str(e)[:120]),
+                parse_mode=ParseMode.MARKDOWN,
+            )
             return
         finally:
             _clear_stage(chat.id)
         await _scrub(msg)
         _set_stage(chat.id, "ready", username=username, preset=False)
-        await msg.reply_text(words.credentials_saved(username),
-                             parse_mode=ParseMode.MARKDOWN,
-                             reply_markup=kb_after_login())
+        await msg.reply_text(
+            words.credentials_saved(username),
+            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=kb_after_login(),
+        )
         return
 
 
 # ----------------------------------------------------------------------
 # scheduled
 # ----------------------------------------------------------------------
+
 
 async def backup_job(ctx):
     """Nightly ledger backup, delivered to Telegram itself."""
@@ -362,10 +411,12 @@ async def backup_job(ctx):
     stamp = sg_now().strftime("%Y-%m-%d")
     fname = "relay-ledger-%s.sqlite3" % stamp
     await ctx.bot.send_document(
-        chat_id=chat_ids[0], document=io.BytesIO(data), filename=fname,
-        caption="%s Ledger backup — %d Submission(s)." % (
-            words.EMOJI["backup"],
-            len(ledger.all_submissions())))
+        chat_id=chat_ids[0],
+        document=io.BytesIO(data),
+        filename=fname,
+        caption="%s Ledger backup — %d Submission(s)."
+        % (words.EMOJI["backup"], len(ledger.all_submissions())),
+    )
 
 
 # ----------------------------------------------------------------------
