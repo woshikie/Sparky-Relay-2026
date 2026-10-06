@@ -761,3 +761,89 @@ def test_a_password_that_fails_to_store_still_clears_the_stage(bot, access,
     upd = FakeUpdate(chat_id=33, text="testpass123")
     run(bot.on_text(upd, None))
     assert bot._prompt_stage(33) is None
+
+
+# ------------------------------------------------------------- _scrub
+
+def test_a_scrub_that_cannot_delete_says_so(bot):
+    """A bot can delete in a private chat; when it cannot, say so rather than
+    leaving a password in the chat with no explanation."""
+    from telegram.error import TelegramError
+
+    class Undeletable(FakeMessage):
+        async def delete(self):
+            raise TelegramError("message can't be deleted")
+
+        async def reply_text(self, text, **kw):
+            self.replies.append((text, None))
+            return self
+
+    msg = Undeletable()
+    run(bot._scrub(msg))
+    assert "could not" in msg.said.lower() or "delete" in msg.said.lower()
+
+
+def test_a_scrub_that_cannot_delete_or_reply_is_silent(bot):
+    """Both failing must not raise: the secret is already in the chat."""
+    from telegram.error import TelegramError
+
+    class Hopeless(FakeMessage):
+        async def delete(self):
+            raise TelegramError("nope")
+
+        async def reply_text(self, text, **kw):
+            raise TelegramError("nope")
+
+    run(bot._scrub(Hopeless()))
+
+
+def test_a_scrub_that_deletes_cleanly_says_nothing(bot):
+    msg = FakeMessage()
+    run(bot._scrub(msg))
+    assert msg.deleted
+    assert msg.replies == []
+
+
+# ------------------------------------------------------ site_credentials
+
+def test_a_preset_that_is_no_longer_configured_is_refused(bot, monkeypatch):
+    """The stage says preset, but the config no longer has one.
+
+    This is the rotated-config case: the chat was set up when a preset existed,
+    and the operator has since removed it. The answer must be the specific
+    'preset is gone' error, not a generic 'no credentials'.
+    """
+    import vault
+    bot._set_stage(1, "username", preset=True)
+    assert bot.config.has_preset_credentials() is False
+    with pytest.raises(vault.DecryptionFailed):
+        bot.site_credentials(1)
+    bot._clear_stage(1)
+
+
+# ------------------------------------------------------------ backup_job
+
+def test_the_backup_is_delivered_to_telegram_itself(bot, ledger, tmp_path):
+    """The nightly backup goes to Telegram, so it survives the host."""
+    bot.ledger.remember_user(1, "testuser")
+    bot.ledger.record("2026-10-03", 2831, "2,831", "October 3rd, 2026", 52)
+
+    sent = []
+
+    class FakeBot:
+        async def send_document(self, **kw):
+            sent.append(kw)
+
+    class FakeCtx:
+        bot = FakeBot()
+
+    run(bot.backup_job(FakeCtx()))
+    assert len(sent) == 1
+    assert sent[0]["chat_id"] == 1
+    assert "relay-ledger" in sent[0]["filename"]
+    assert "1 Submission" in sent[0]["caption"]
+
+
+def test_the_backup_with_no_users_does_nothing(bot):
+    """No users means no delivery, not an error."""
+    run(bot.backup_job(type("C", (), {"bot": type("B", (), {})()})()))
