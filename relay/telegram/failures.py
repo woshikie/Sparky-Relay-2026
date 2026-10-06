@@ -14,13 +14,14 @@ its own cleanup before calling in:
             start_prompt=lambda: ask_credentials(msg, chat.id))
         if log_line:
             session_mod.log(ctx, log_line)
-        return
 
+Return:
 `operation` names the step for the catch-all ("Upload", "Sync", "Commit") and
 for the log line. `start_prompt` is a zero-arg coroutine that begins the
 Credentials Prompt, used by the two failures that are fixed by supplying
 credentials. The returned triple is the callback answer: text (or None for a
 silent ack), whether it shows as an alert, and a log line (or None).
+
 """
 from telegram.constants import ParseMode
 

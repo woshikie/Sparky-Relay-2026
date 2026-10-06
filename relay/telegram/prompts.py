@@ -11,13 +11,12 @@ from telegram import Update
 from telegram.constants import ParseMode
 from telegram.error import TelegramError
 
-from relay import config
 import relay.store.ledger as ledger
 import relay.store.vault as vault
 import relay.telegram.access as access
 import relay.telegram.words as words
-from relay.telegram.keyboards import (kb_credential_choice, kb_prompt,
-                                        kb_reply)
+from relay import config
+from relay.telegram.keyboards import kb_credential_choice, kb_prompt, kb_reply
 
 
 class _NoCredentials(Exception):

@@ -8,12 +8,16 @@ table: if the two drift apart, the button silently does nothing.
 """
 import datetime
 
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton, ReplyKeyboardMarkup
+from telegram import (
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    KeyboardButton,
+    ReplyKeyboardMarkup,
+)
 
 from relay import config
 from relay.clock import sg_today
 from relay.telegram.datepicker import keyboard as month_grid
-
 
 # ----------------------------------------------------------------------
 # keyboards
@@ -43,7 +47,7 @@ def kb_overwrite(new_steps, old_steps, iso):
     return InlineKeyboardMarkup([[
         InlineKeyboardButton("\U0001F504 Overwrite anyway", callback_data="ok:go"),
     ], [
-        InlineKeyboardButton("Keep my %s" % "{:,}".format(old_steps), callback_data="ok:cancel"),
+        InlineKeyboardButton("Keep my %s" % f"{old_steps:,}", callback_data="ok:cancel"),
     ]])
 
 
@@ -70,7 +74,8 @@ LABEL_NEW_CREDS = "✏️ Different account"
 
 def label_use_preset():
     """'Use <Original Author's username>' — the username is part of the button, so it has to come
-    from config rather than being hard-coded here."""
+    from config rather than being hard-coded here.
+    """
     return "✅ Use %s" % config.SITE_USERNAME
 
 

@@ -20,7 +20,6 @@ The DOM this is written against, from the live dashboard:
 import datetime
 import re
 
-
 # The dashboard writes dates as "5 Oct 2026" -- day, abbreviated month, year,
 # with no leading zero on the day.
 DAY_RE = re.compile(r"^(\d{1,2})\s+([A-Za-z]{3,9})\s+(\d{4})$")

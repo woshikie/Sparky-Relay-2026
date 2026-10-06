@@ -13,16 +13,19 @@ from telegram.constants import ParseMode
 from telegram.error import TelegramError
 
 import relay.store.ledger as ledger
-from relay.clock import sg_today
-from relay.site.parsing import parse_profile
 import relay.telegram.access as access
-import relay.telegram.words as words
-from relay.telegram.keyboards import (kb_confirm, kb_date_default,
-                                        kb_overwrite, kb_pick_date)
-from relay.telegram.prompts import ask_credentials
 import relay.telegram.failures as failures
 import relay.telegram.session as session_mod
-
+import relay.telegram.words as words
+from relay.clock import sg_today
+from relay.site.parsing import parse_profile
+from relay.telegram.keyboards import (
+    kb_confirm,
+    kb_date_default,
+    kb_overwrite,
+    kb_pick_date,
+)
+from relay.telegram.prompts import ask_credentials
 
 # Pending Screenshot state, keyed by (chat_id, message_id) of the Confirmation.
 PENDING = {}

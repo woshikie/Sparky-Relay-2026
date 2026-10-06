@@ -13,8 +13,8 @@ import os
 import sqlite3
 import time
 
-from relay import config
 import relay.store.vault as vault
+from relay import config
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 DB = config.LEDGER_DB
@@ -148,7 +148,7 @@ def record_site_days(rows):
                 " ON CONFLICT(activity_date) DO UPDATE SET"
                 "   steps=excluded.steps, reported=excluded.reported,"
                 "   synced_at=excluded.synced_at",
-                (iso, int(steps), "{:,}".format(int(steps)), stamp))
+                (iso, int(steps), f"{int(steps):,}", stamp))
     return len(rows)
 
 

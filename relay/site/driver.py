@@ -7,13 +7,14 @@ import os
 import re
 import time
 
-from relay import config, memory
-from relay.site.parsing import parse_day, parse_steps
 from selenium import webdriver
 from selenium.common.exceptions import StaleElementReferenceException
 from selenium.webdriver.common.by import By
 from selenium.webdriver.firefox.options import Options
 from selenium.webdriver.firefox.service import Service
+
+from relay import config, memory
+from relay.site.parsing import parse_day, parse_steps
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 # The project root, not the module directory: the geckodriver binary is a
@@ -52,8 +53,7 @@ DETECTED_RE = re.compile(r"Detected steps\s*([\d,. ]+)", re.I)
 
 # Anchored on real month names: a loose [A-Z][a-z]+ \d{4} also matches the page
 # title "Olympics 2026", which is not the calendar header.
-MONTHS = ("January February March April May June July August September "
-          "October November December").split()
+MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"]
 MONTH_ALT = "|".join(MONTHS)
 HEADER_RE = re.compile(r"\b(%s)\s+(\d{4})\b" % MONTH_ALT)
 DATE_LABEL_RE = re.compile(

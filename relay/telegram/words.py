@@ -9,8 +9,9 @@ Two rules for anything in here:
 2. Literal markup in the templates is fine and deliberate. Only interpolated
    values need escaping.
 """
+
 from telegram.helpers import escape_markdown
-import datetime
+
 
 def md(text):
     """Escape a value for interpolation into a Telegram Markdown message.
@@ -311,9 +312,9 @@ def overwrite_warning(new_steps, old_steps, date_label):
         "That usually means a blurry or partial screenshot. Recording it would "
         "replace your %(old)s and the old screenshot would be deleted.\n\n"
         "Overwrite anyway?"
-        % dict(ow=EMOJI["overwrite"], old="{:,}".format(old_steps),
-               dl=date_label, new="{:,}".format(new_steps),
-               diff="{:,}".format(diff))
+        % dict(ow=EMOJI["overwrite"], old=f"{old_steps:,}",
+               dl=date_label, new=f"{new_steps:,}",
+               diff=f"{diff:,}")
     )
 
 
@@ -321,7 +322,7 @@ def overwrite_upgrade(new_steps, old_steps, date_label):
     return (
         "%(ow)s **Update for %(dl)s:** %(old)s → %(new)s steps."
         % dict(ow=EMOJI["overwrite"], dl=date_label,
-               old="{:,}".format(old_steps), new="{:,}".format(new_steps))
+               old=f"{old_steps:,}", new=f"{new_steps:,}")
     )
 
 
@@ -425,9 +426,9 @@ def rank_line(total_steps, total_points, house=None, position=None):
     if position:
         bits.append(position)
     if total_steps is not None:
-        bits.append("You: **{:,}** steps".format(total_steps))
+        bits.append(f"You: **{total_steps:,}** steps")
     if total_points is not None:
-        bits.append("**%s** points" % "{:,}".format(total_points))
+        bits.append("**%s** points" % f"{total_points:,}")
     return "%s %s" % (EMOJI["rank"], "  ·  ".join(bits))
 
 
@@ -479,7 +480,7 @@ def sync_report(days, written):
            % (written, "" if written == 1 else "s"), ""]
     for day, steps in days[:15]:
         out.append("`%s`  **%s** steps" % (
-            day.strftime("%Y-%m-%d"), "{:,}".format(steps)))
+            day.strftime("%Y-%m-%d"), f"{steps:,}"))
     out.append("")
     out.append("_Read through the site's own dashboard. "
               "Nothing was submitted._")

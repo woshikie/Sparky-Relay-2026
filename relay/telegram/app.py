@@ -5,19 +5,29 @@ Application, and importing this module never starts polling.
 """
 from datetime import time as wallclock
 
-from telegram.ext import (ApplicationBuilder, CallbackQueryHandler, CommandHandler, MessageHandler, filters)
+from telegram.ext import (
+    ApplicationBuilder,
+    CallbackQueryHandler,
+    CommandHandler,
+    MessageHandler,
+    filters,
+)
 
-from relay import config, console, memory
 import relay.store.ledger as ledger
 import relay.telegram.access as access
-from relay.telegram.callbacks import cb_date, cb_ok
-from relay.telegram.commands import (backup_job, on_log, on_start,
-                                       on_status, on_sync, on_text)
-from relay.telegram.photo import on_photo
-from relay.telegram.prompts import (on_credential_choice, on_login,
-                                      on_logout)
 import relay.telegram.session as session_mod
-
+from relay import config, console, memory
+from relay.telegram.callbacks import cb_date, cb_ok
+from relay.telegram.commands import (
+    backup_job,
+    on_log,
+    on_start,
+    on_status,
+    on_sync,
+    on_text,
+)
+from relay.telegram.photo import on_photo
+from relay.telegram.prompts import on_credential_choice, on_login, on_logout
 
 # ----------------------------------------------------------------------
 # main
@@ -52,7 +62,6 @@ def main():
     app.add_handler(CallbackQueryHandler(cb_ok, pattern=r"^ok:"))
     app.add_handler(CallbackQueryHandler(on_credential_choice, pattern=r"^cred:"))
 
-    from telegram.ext import MessageHandler, filters
     # Photos first, then text. A photo is never an answer to the Credentials
     # Prompt, and text has to reach on_text even though it is the catch-all.
     app.add_handler(MessageHandler(filters.PHOTO, on_photo))

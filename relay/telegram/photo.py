@@ -12,17 +12,16 @@ from PIL import Image
 from telegram import Update
 from telegram.constants import ParseMode
 
+import relay.telegram.access as access
+import relay.telegram.failures as failures
+import relay.telegram.session as session_mod
+import relay.telegram.words as words
 from relay import config
 from relay import progress as progress_mod
 from relay.site import driver as relay_site
-import relay.telegram.access as access
-import relay.telegram.words as words
 from relay.telegram.callbacks import PENDING
 from relay.telegram.keyboards import kb_date_default
 from relay.telegram.prompts import ask_credentials
-import relay.telegram.failures as failures
-import relay.telegram.session as session_mod
-
 
 # Longest edge of the Screenshot we will keep. The site downscales to 1200px
 # anyway, and smaller photos upload faster on a 1GB VM.
@@ -49,7 +48,6 @@ async def save_photo(update: Update, ctx) -> str:
         data = await doc.get_file()
     raw = await data.download_as_bytearray()
 
-    from PIL import Image
     im = Image.open(io.BytesIO(bytes(raw)))
     im = im.convert("RGB")
     w, h = im.size

@@ -10,10 +10,9 @@ import asyncio
 import contextlib
 import os
 
+import relay.telegram.prompts as prompts_mod
 from relay import config, memory
 from relay.site import driver
-import relay.telegram.prompts as prompts_mod
-
 
 DBG = bool(os.environ.get("RELAY_DEBUG"))
 

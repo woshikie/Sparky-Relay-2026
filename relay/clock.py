@@ -9,7 +9,7 @@ from relay import config
 
 
 def sg_now():
-    return datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(
+    return datetime.datetime.now(datetime.UTC) + datetime.timedelta(
         hours=config.SGT_OFFSET_HOURS)
 
 

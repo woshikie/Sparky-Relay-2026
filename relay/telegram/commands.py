@@ -11,23 +11,30 @@ from telegram import Update
 from telegram.constants import ParseMode
 from telegram.error import TelegramError
 
-from relay import config, memory
-from relay import progress as progress_mod
-from relay.clock import sg_now
 import relay.store.ledger as ledger
 import relay.telegram.access as access
-from relay.telegram.callbacks import PENDING
-from relay.telegram.keyboards import (button_actions, kb_after_login,
-                                        kb_reply)
-from relay.telegram.prompts import (_clear_stage, _credential_prompt_body,
-                                     _prompt_stage, _scrub, _set_stage,
-                                     _start_credential_stage, ask_credentials,
-                                     ask_password, has_credentials, kb_for,
-                                     on_login, on_logout)
 import relay.telegram.failures as failures
 import relay.telegram.session as session_mod
 import relay.telegram.words as words
-
+from relay import config, memory
+from relay import progress as progress_mod
+from relay.clock import sg_now
+from relay.telegram.callbacks import PENDING
+from relay.telegram.keyboards import button_actions, kb_after_login, kb_reply
+from relay.telegram.prompts import (
+    _clear_stage,
+    _credential_prompt_body,
+    _prompt_stage,
+    _scrub,
+    _set_stage,
+    _start_credential_stage,
+    ask_credentials,
+    ask_password,
+    has_credentials,
+    kb_for,
+    on_login,
+    on_logout,
+)
 
 # ----------------------------------------------------------------------
 
