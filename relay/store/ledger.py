@@ -10,6 +10,7 @@ Three jobs beyond the Submission ledger:
    configured.
 """
 
+import datetime
 import os
 import sqlite3
 import time
@@ -92,11 +93,11 @@ CREATE TABLE IF NOT EXISTS telegram_users (
 """
 
 
-def now():
+def now() -> str:
     return time.strftime("%Y-%m-%dT%H:%M:%S")
 
 
-def conn():
+def conn() -> sqlite3.Connection:
     c = sqlite3.connect(DB, timeout=30)
     c.row_factory = sqlite3.Row
     c.execute("PRAGMA journal_mode=WAL")
@@ -104,7 +105,7 @@ def conn():
     return c
 
 
-def init():
+def init() -> str:
     d = os.path.dirname(DB)
     if d:
         os.makedirs(d, exist_ok=True)
@@ -116,7 +117,7 @@ def init():
 # ---------- submissions ----------
 
 
-def last_submission(activity_date):
+def last_submission(activity_date: str) -> dict[str, object] | None:
     with conn() as c:
         r = c.execute(
             "SELECT * FROM submissions WHERE activity_date=?", (activity_date,)
@@ -124,7 +125,7 @@ def last_submission(activity_date):
     return dict(r) if r else None
 
 
-def all_submissions():
+def all_submissions() -> list[dict[str, object]]:
     with conn() as c:
         rows = c.execute(
             "SELECT * FROM submissions ORDER BY activity_date DESC"
@@ -135,7 +136,7 @@ def all_submissions():
 # ---------- site days ----------
 
 
-def record_site_days(rows):
+def record_site_days(rows: list[tuple[object, int]]) -> int:
     """Store what the site reports. `rows` is [(date, steps), ...].
 
     Upsert, so re-syncing refreshes rather than duplicates. Returns the number
@@ -144,7 +145,7 @@ def record_site_days(rows):
     stamp = now()
     with conn() as c:
         for day, steps in rows:
-            iso = day.isoformat() if hasattr(day, "isoformat") else str(day)
+            iso = day.isoformat() if isinstance(day, datetime.date) else str(day)
             c.execute(
                 "INSERT INTO site_days (activity_date, steps, reported, synced_at)"
                 " VALUES (?, ?, ?, ?)"
@@ -156,7 +157,7 @@ def record_site_days(rows):
     return len(rows)
 
 
-def site_value(activity_date):
+def site_value(activity_date: str) -> dict[str, object] | None:
     """What the site holds for a date, from the last sync. None if never synced."""
     with conn() as c:
         r = c.execute(
@@ -165,7 +166,7 @@ def site_value(activity_date):
     return dict(r) if r else None
 
 
-def all_site_days():
+def all_site_days() -> list[dict[str, object]]:
     with conn() as c:
         rows = c.execute(
             "SELECT * FROM site_days ORDER BY activity_date DESC"
@@ -173,7 +174,7 @@ def all_site_days():
     return [dict(r) for r in rows]
 
 
-def current_value(activity_date):
+def current_value(activity_date: str) -> dict[str, object] | None:
     """What the site holds for a date.
 
     The sync if we have one, else the bot's own record of what it wrote.
@@ -188,7 +189,13 @@ def current_value(activity_date):
     return last_submission(activity_date)
 
 
-def record(activity_date, steps, reported=None, site_label=None, msg_id=None):
+def record(
+    activity_date: str,
+    steps: int,
+    reported: str | None = None,
+    site_label: str | None = None,
+    msg_id: int | None = None,
+) -> None:
     with conn() as c:
         c.execute(
             """INSERT INTO submissions
@@ -205,7 +212,9 @@ def record(activity_date, steps, reported=None, site_label=None, msg_id=None):
 # ---------- credentials ----------
 
 
-def save_credentials(chat_id, username, password, token, preset=False):
+def save_credentials(
+    chat_id: int, username: str, password: str, token: str, preset: bool = False
+) -> None:
     with conn() as c:
         c.execute(
             """INSERT INTO credentials
@@ -228,7 +237,7 @@ def save_credentials(chat_id, username, password, token, preset=False):
         )
 
 
-def load_credentials(chat_id, token):
+def load_credentials(chat_id: int, token: str) -> tuple[str, str] | None:
     """Return (username, password) for a chat, or None.
 
     Raises vault.DecryptionFailed if the stored entry cannot be opened — which
@@ -244,7 +253,7 @@ def load_credentials(chat_id, token):
     return (r["username"], vault.open_sealed(token, r["password_enc"]))
 
 
-def credentials_stored(chat_id):
+def credentials_stored(chat_id: int) -> dict[str, object] | None:
     with conn() as c:
         r = c.execute(
             "SELECT username, preset, fingerprint, updated_at FROM credentials "
@@ -254,13 +263,13 @@ def credentials_stored(chat_id):
     return dict(r) if r else None
 
 
-def forget_credentials(chat_id):
+def forget_credentials(chat_id: int) -> bool:
     with conn() as c:
         c.execute("DELETE FROM credentials WHERE chat_id=?", (chat_id,))
     return True
 
 
-def forget_all_credentials():
+def forget_all_credentials() -> bool:
     with conn() as c:
         c.execute("DELETE FROM credentials")
     return True
@@ -269,7 +278,7 @@ def forget_all_credentials():
 # ---------- access control ----------
 
 
-def grant(chat_id, how):
+def grant(chat_id: int, how: str) -> None:
     with conn() as c:
         c.execute(
             "INSERT INTO access (chat_id, how, granted_at) VALUES (?,?,?) "
@@ -278,23 +287,23 @@ def grant(chat_id, how):
         )
 
 
-def has_access(chat_id):
+def has_access(chat_id: int) -> str | None:
     with conn() as c:
         r = c.execute("SELECT how FROM access WHERE chat_id=?", (chat_id,)).fetchone()
     return r["how"] if r else None
 
 
-def revoke(chat_id):
+def revoke(chat_id: int) -> None:
     with conn() as c:
         c.execute("DELETE FROM access WHERE chat_id=?", (chat_id,))
 
 
-def all_access():
+def all_access() -> list[dict[str, object]]:
     with conn() as c:
         return [dict(r) for r in c.execute("SELECT * FROM access ORDER BY granted_at")]
 
 
-def deny(chat_id, reason=""):
+def deny(chat_id: int, reason: str = "") -> None:
     with conn() as c:
         c.execute(
             "INSERT INTO denied (chat_id, reason, denied_at) VALUES (?,?,?) "
@@ -303,13 +312,13 @@ def deny(chat_id, reason=""):
         )
 
 
-def is_denied(chat_id):
+def is_denied(chat_id: int) -> bool:
     with conn() as c:
         r = c.execute("SELECT 1 FROM denied WHERE chat_id=?", (chat_id,)).fetchone()
     return r is not None
 
 
-def all_denied():
+def all_denied() -> list[dict[str, object]]:
     with conn() as c:
         return [dict(r) for r in c.execute("SELECT * FROM denied ORDER BY denied_at")]
 
@@ -317,7 +326,7 @@ def all_denied():
 # ---------- shared secrets ----------
 
 
-def add_secret(label, secret):
+def add_secret(label: str, secret: str) -> None:
     """Store a per-person Shared Secret. Only a hash is kept."""
     import hashlib
 
@@ -331,7 +340,7 @@ def add_secret(label, secret):
         )
 
 
-def check_secret(candidate):
+def check_secret(candidate: str) -> str | None:
     """True if candidate matches any stored Shared Secret. Returns the label."""
     import hashlib
     import hmac
@@ -344,7 +353,7 @@ def check_secret(candidate):
     return None
 
 
-def list_secret_labels():
+def list_secret_labels() -> list[str]:
     with conn() as c:
         return [
             r["label"]
@@ -352,13 +361,13 @@ def list_secret_labels():
         ]
 
 
-def remove_secret(label):
+def remove_secret(label: str) -> bool:
     with conn() as c:
         c.execute("DELETE FROM shared_secrets WHERE label=?", (label,))
     return True
 
 
-def init_secrets_from_env(spec):
+def init_secrets_from_env(spec: str | None) -> tuple[bool, int]:
     """Load SHARED_SECRETS from the environment if any are configured.
 
     Returns (loaded_now, total). Does nothing when spec is None, so an operator
@@ -377,7 +386,7 @@ def init_secrets_from_env(spec):
     return True, len(entries)
 
 
-def _parse_secret_spec(spec):
+def _parse_secret_spec(spec: str | None) -> list[tuple[str, str]]:
     entries = []
     for line in (spec or "").splitlines():
         line = line.strip()
@@ -394,7 +403,7 @@ def _parse_secret_spec(spec):
     return entries
 
 
-def sync_secrets_from_env(spec):
+def sync_secrets_from_env(spec: str | None) -> list[str]:
     """Load SHARED_SECRETS from the environment, replacing the stored set.
 
     Format: one entry per line, either "label:secret" or just "secret" (the
@@ -432,7 +441,9 @@ def sync_secrets_from_env(spec):
 SECRET_WINDOW = 30.0
 
 
-def secret_throttled(chat_id, window=None, max_fails=1):
+def secret_throttled(
+    chat_id: int, window: float | None = None, max_fails: int = 1
+) -> bool:
     """True if this chat is guessing too fast and should be made to wait."""
     window = SECRET_WINDOW if window is None else window
     with conn() as c:
@@ -447,7 +458,7 @@ def secret_throttled(chat_id, window=None, max_fails=1):
     return r["fails"] >= max_fails
 
 
-def last_secret_attempt(chat_id):
+def last_secret_attempt(chat_id: int) -> float:
     with conn() as c:
         r = c.execute(
             "SELECT last_try FROM secret_attempts WHERE chat_id=?", (chat_id,)
@@ -455,7 +466,7 @@ def last_secret_attempt(chat_id):
     return r["last_try"] if r else 0.0
 
 
-def note_secret_attempt(chat_id, ok):
+def note_secret_attempt(chat_id: int, ok: bool) -> None:
     with conn() as c:
         if ok:
             c.execute("DELETE FROM secret_attempts WHERE chat_id=?", (chat_id,))
@@ -475,7 +486,7 @@ def note_secret_attempt(chat_id, ok):
 # ---------- telegram identity ----------
 
 
-def remember_user(chat_id, username=None):
+def remember_user(chat_id: int, username: str | None = None) -> None:
     with conn() as c:
         c.execute(
             "INSERT OR IGNORE INTO telegram_users (chat_id, username, first_seen) "
@@ -484,7 +495,7 @@ def remember_user(chat_id, username=None):
         )
 
 
-def known_users():
+def known_users() -> list[dict[str, object]]:
     with conn() as c:
         return [
             dict(r)
