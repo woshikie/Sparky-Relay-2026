@@ -1,5 +1,10 @@
 # Single-user identity, held as one hard-wired pair
 
+> Status: superseded by [ADR 0006](0006-access-modes-and-prompted-credentials.md).
+> Per-chat grants and per-chat credentials replaced the hard-wired pair; the
+> resolver is now the Access Mode check plus the per-chat credential lookup.
+> Kept as the record of why single-user was the starting point.
+
 ## Context
 
 Today the Relay serves exactly one person. The user asked for a personal bot

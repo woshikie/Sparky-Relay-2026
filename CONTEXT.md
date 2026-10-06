@@ -53,7 +53,9 @@ _Avoid_: update, edit, replace, correction
 
 **Submission**:
 One recorded row in the Site's ledger: an Activity Date plus a Detected Steps
-value. The unit of success the Relay is judged by.
+value. The unit of success the Relay is judged by. The local ledger keeps a
+mirror row per Submission, so the overwrite guard and `/log` work without
+asking the Site; a day entered by hand on the Site is invisible until `/sync`.
 _Avoid_: row, entry, log line
 
 **Cutoff**:
@@ -96,8 +98,8 @@ _Avoid_: env secrets, config credentials, defaults
 
 **Access Mode**:
 The rule deciding who may drive the Relay. Chosen at startup; changing it is a
-restart. See [ADR 0006](../docs/adr/0006-access-modes.md) for the modes and what
-each one costs.
+restart. See [ADR 0006](docs/adr/0006-access-modes-and-prompted-credentials.md)
+for the modes and what each one costs.
 _Avoid_: auth mode, permission model, access control
 
 **Shared Secret**:
@@ -116,10 +118,11 @@ response to a suspected compromise.
 _Avoid_: keychain, secret store, password cache
 
 **Identity seam**:
-The one place that would change if the Relay ever served more than one person:
-where a Telegram chat resolves to a Site Session. Today that is a single
-hard-wired pair, deliberately, so the multi-user case is a change rather than
-something half-built.
+The one place where a Telegram chat resolves to a Site Session: the Access
+Mode check plus the per-chat credential lookup. A Submission always belongs to
+whichever Site account the driving chat's credentials belong to — never the
+owner's, by accident. Two chats with their own accounts are two independent
+drivers, not a shared one.
 _Avoid_: user table, tenant, profile layer
 
 ## Vocabulary to watch
@@ -138,3 +141,24 @@ _Avoid_: score (ambiguous between steps, points and medals)
 Telegram is the *Bot Log*. The Site's audit table of who did what is the *Audit
 Trail*. The Site's list of what you submitted is your *Submissions*.
 _Avoid_: using bare "log" for any of the three
+
+## Where it runs
+
+**Container route**:
+The supported deployment: the Relay runs in a container built from the
+Dockerfile, with secrets arriving as environment variables. The only path a
+public checkout of this repo should need.
+_Avoid_: bare-metal install, systemd unit
+
+**Oracle VM**:
+The 1GB Always Free host the container route targets. The size is the shaping
+constraint of the whole design: the per-Screenshot browser lifecycle, the
+memory pre-flight that refuses instead of crashing, and the swap the host
+needs to survive a launch.
+_Avoid_: the server, prod, the cloud
+
+**Workstation**:
+The development machine: where the test suite runs and where bare-metal
+browser checks run against the live Site. Never where Submissions are recorded
+from — that is always the Site, through the Relay.
+_Avoid_: local, laptop, dev server
