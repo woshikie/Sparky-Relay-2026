@@ -4,6 +4,7 @@ Wraps the site in headless Firefox and exposes the upload flow as three steps:
 upload + read the Detected Steps, set the Activity Date, commit.
 """
 
+import datetime
 import os
 import re
 import time
@@ -14,7 +15,9 @@ from selenium.common.exceptions import StaleElementReferenceException
 from selenium.webdriver.common.by import By
 from selenium.webdriver.firefox.options import Options
 from selenium.webdriver.firefox.service import Service
+from selenium.webdriver.remote.webelement import WebElement
 
+import relay.progress as progress_mod
 from relay import config, memory
 from relay.site.parsing import parse_day, parse_steps
 
@@ -74,7 +77,7 @@ DATE_LABEL_RE = re.compile(
 )
 
 
-def _in_container():
+def _in_container() -> bool:
     """True when we are running inside a container rather than on bare metal.
 
     Podman rootless puts the container in its own cgroup namespace, so
@@ -119,7 +122,13 @@ class NoStepsFound(Exception):
 
 
 class Relay:
-    def __init__(self, base, headless=True, verbose=True, progress=None):
+    def __init__(
+        self,
+        base: str,
+        headless: bool = True,
+        verbose: bool = True,
+        progress: progress_mod.Progress | None = None,
+    ) -> None:
         self.base = base.rstrip("/")
         self.headless = headless
         self.verbose = verbose
@@ -128,17 +137,17 @@ class Relay:
         # progress.py -- the step names are defined there, not here, so the
         # checklist and the code that fills it in cannot drift.
         self.progress = progress
-        self.driver = None
-        self.log = []
+        self.driver: webdriver.Firefox | None = None
+        self.log: list[str] = []
 
     # ---------- plumbing ----------
 
-    def _say(self, msg):
+    def _say(self, msg: str) -> None:
         self.log.append(msg)
         if self.verbose:
             print("[relay] %s" % msg, flush=True)
 
-    def _step(self, key):
+    def _step(self, key: str) -> None:
         """Tell the progress reporter that `key` has started.
 
         Deliberately fire-and-forget and never allowed to raise: reporting is
@@ -151,7 +160,7 @@ class Relay:
         except Exception:
             self.progress = None
 
-    def _opts(self):
+    def _opts(self) -> Options:
         o = Options()
         if self.headless:
             o.add_argument("-headless")
@@ -172,7 +181,7 @@ class Relay:
             o.set_preference(k, v)
         return o
 
-    def start(self):
+    def start(self) -> None:
         """Launch the browser. Refuses if the host cannot fit it.
 
         Called per Screenshot rather than held open: the OCR needs ~640MB, and
@@ -189,7 +198,7 @@ class Relay:
             )
         try:
             rep = memory.require_memory()
-            self._say("memory ok: %.0fMB free" % rep["available_mb"])
+            self._say("memory ok: %.0fMB free" % (rep["available_mb"] or 0))
         except memory.InsufficientMemory as e:
             self._say("NOT launching the browser: %s" % e)
             raise
@@ -202,7 +211,7 @@ class Relay:
         self.driver.set_page_load_timeout(60)
         self._say("browser started")
 
-    def stop(self):
+    def stop(self) -> None:
         if self.driver:
             self._step("closing")
             with suppress(Exception):
@@ -210,7 +219,7 @@ class Relay:
             self.driver = None
             self._say("browser closed")
 
-    def _text(self, el):
+    def _text(self, el: WebElement) -> str | None:
         """Element text, tolerating the SPA swapping nodes mid-read.
 
         React re-renders on every state change, so any element reference we
@@ -223,11 +232,13 @@ class Relay:
         except Exception:
             return None
 
-    def _body(self):
+    def _body(self) -> str:
+        assert self.driver is not None, "browser not started"
         return self.driver.find_element(By.TAG_NAME, "body").text
 
-    def _calendar_header(self):
+    def _calendar_header(self) -> str | None:
         """The month/year caption inside the open date picker, or None."""
+        assert self.driver is not None, "browser not started"
         for el in self.driver.find_elements(
             By.CSS_SELECTOR, "div, button, span, h2, caption"
         ):
@@ -238,8 +249,9 @@ class Relay:
 
     # ---------- session ----------
 
-    def _authed(self):
+    def _authed(self) -> bool:
         """True when the nav exposes /upload, i.e. a live Site Session."""
+        assert self.driver is not None, "browser not started"
         try:
             hrefs = [
                 a.get_attribute("href") or ""
@@ -249,7 +261,7 @@ class Relay:
             return False
         return any("/upload" in h for h in hrefs)
 
-    def _wait_hydrated(self, el, tries=60):
+    def _wait_hydrated(self, el: WebElement, tries: int = 60) -> bool:
         """Block until React has attached its handlers to the form.
 
         React marks the nodes it owns with a `__react*` expando. Until that
@@ -257,6 +269,7 @@ class Relay:
         on this is what makes sign-in reliable on a cold VM, where the
         CPU-bound hydration is much slower than on a desktop.
         """
+        assert self.driver is not None, "browser not started"
         for _ in range(tries):
             try:
                 owned = self.driver.execute_script(
@@ -277,9 +290,10 @@ class Relay:
         self._say("warning: no React marker on the form after 30s; proceeding anyway")
         return False
 
-    def login(self, username, password):
+    def login(self, username: str, password: str) -> None:
         if not self.driver:
             self.start()
+        assert self.driver is not None, "browser not started"
         self._step("signin")
         self._say("opening sign-in")
         self.driver.get(self.base + "/auth")
@@ -292,7 +306,8 @@ class Relay:
             time.sleep(0.5)
         # Wait for the form to actually render; the SPA hydrates after load and
         # a fixed sleep loses the race on a cold profile / cold VM.
-        u = p = None
+        u: WebElement | None = None
+        p: WebElement | None = None
         for _ in range(FORM_PROBES):
             time.sleep(0.5)
             ins = self.driver.find_elements(By.CSS_SELECTOR, "input")
@@ -341,15 +356,17 @@ class Relay:
 
     # ---------- navigation ----------
 
-    def _on_upload_page(self):
+    def _on_upload_page(self) -> bool:
+        assert self.driver is not None, "browser not started"
         return "/upload" in (self.driver.current_url or "")
 
-    def goto_upload(self):
+    def goto_upload(self) -> None:
         """Routes are client-side only; /upload by URL bounces to /home.
 
         Idempotent: we are often already on /upload with a confirm panel up from
         a previous Screenshot, in which case there is nothing to navigate to.
         """
+        assert self.driver is not None, "browser not started"
         if self._on_upload_page():
             return
         for a in self.driver.find_elements(By.CSS_SELECTOR, "a"):
@@ -358,7 +375,7 @@ class Relay:
                 return
         raise SiteChanged("no Upload steps link in nav")
 
-    def _reset_to_form(self):
+    def _reset_to_form(self) -> None:
         """Clear any confirm panel so the file input is usable again."""
         for _ in range(BUTTON_PROBES):
             t = self._body()
@@ -375,7 +392,8 @@ class Relay:
             "Steps", exact=True, what="upload form did not come back after clearing"
         )
 
-    def _btn(self, label, exact=False):
+    def _btn(self, label: str | None, exact: bool = False) -> WebElement | None:
+        assert self.driver is not None, "browser not started"
         want = (label or "").strip().lower()
         for b in self.driver.find_elements(By.CSS_SELECTOR, "button"):
             t = self._text(b)
@@ -385,7 +403,13 @@ class Relay:
                 return b
         return None
 
-    def _wait_btn(self, label, exact=False, tries=30, what=None):
+    def _wait_btn(
+        self,
+        label: str | None,
+        exact: bool = False,
+        tries: int = 30,
+        what: str | None = None,
+    ) -> WebElement:
         """Wait for a button instead of sleeping a guessed interval."""
         for _ in range(tries):
             b = self._btn(label, exact=exact)
@@ -394,13 +418,14 @@ class Relay:
             time.sleep(0.5)
         raise SiteChanged(what or ("no '%s' button appeared" % label))
 
-    def _require(self, cond, msg):
+    def _require(self, cond: object, msg: str) -> None:
         if not cond:
             raise SiteChanged(msg)
 
     # ---------- step 1: upload + read ----------
 
-    def upload(self, image_path, mode="steps"):
+    def upload(self, image_path: str, mode: str = "steps") -> tuple[int, str]:
+        assert self.driver is not None, "browser not started"
         self.goto_upload()
         self._reset_to_form()
         self._wait_btn(mode, exact=True).click()
@@ -434,17 +459,21 @@ class Relay:
 
     # ---------- step 2: date ----------
 
-    def _date_button(self):
+    def _date_button(self) -> WebElement | None:
+        assert self.driver is not None, "browser not started"
         for b in self.driver.find_elements(By.CSS_SELECTOR, "button"):
             t = self._text(b)
             if t and DATE_LABEL_RE.search(t):
                 return b
         return None
 
-    def set_date(self, date_obj):
+    def set_date(self, date_obj: datetime.date) -> str:
         """Pick date_obj in the site's Radix calendar, then verify it stuck."""
+        assert self.driver is not None, "browser not started"
         target = self._date_button()
         self._require(target is not None, "no date button in confirm panel")
+        assert target is not None
+
         start_label = self._text(target) or ""
         target.click()
         self._say("date picker opened")
@@ -461,6 +490,8 @@ class Relay:
             if hdr is None:
                 raise SiteChanged("calendar header disappeared")
             m = HEADER_RE.search(hdr)
+            if m is None:
+                raise SiteChanged("calendar header unreadable")
             cur = (int(m.group(2)), MONTHS.index(m.group(1)) + 1)
             if cur == (date_obj.year, date_obj.month):
                 break
@@ -468,9 +499,11 @@ class Relay:
             prv = self._btn("Previous month")
             if (date_obj.year, date_obj.month) > cur:
                 self._require(nxt is not None, "no next-month control")
+                assert nxt is not None
                 nxt.click()
             else:
                 self._require(prv is not None, "no previous-month control")
+                assert prv is not None
                 prv.click()
             time.sleep(1.2)
         else:
@@ -508,11 +541,13 @@ class Relay:
 
     # ---------- step 3: commit ----------
 
-    def commit(self, expect_steps):
+    def commit(self, expect_steps: int) -> str:
+        assert self.driver is not None, "browser not started"
         before = self._body()
         self._require("Detected steps" in before, "confirm panel gone before submit")
         btn = self._btn("Submit steps")
         self._require(btn is not None, "no Submit steps button")
+        assert btn is not None
         self._say("clicking Submit steps")
         btn.click()
         for _ in range(COMMIT_PROBES):
@@ -525,12 +560,14 @@ class Relay:
 
     # ---------- result ----------
 
-    def read_result(self):
+    def read_result(self) -> str:
+        assert self.driver is not None, "browser not started"
         t = self._body()
         return t
 
-    def leaderboard_line(self):
+    def leaderboard_line(self) -> str:
         """Best-effort rank/points read after a successful commit."""
+        assert self.driver is not None, "browser not started"
         try:
             self.driver.get(self.base + "/home")
             for _ in range(BUTTON_PROBES):
@@ -542,11 +579,12 @@ class Relay:
         except Exception:
             return ""
 
-    def existing_for_date(self, date_str):
+    def existing_for_date(self, date_str: str) -> str:
         """What the site currently holds for YYYY-MM-DD, via the app's own path.
 
         This mirrors the preflight SELECT the site issues before submitting.
         """
+        assert self.driver is not None, "browser not started"
         self.driver.get(self.base + "/home")
         for _ in range(BUTTON_PROBES):
             time.sleep(0.5)
@@ -561,7 +599,7 @@ class Relay:
 
     # ---------- reading back ----------
 
-    def read_days(self):
+    def read_days(self) -> list[tuple[datetime.date, int]]:
         """What the site currently holds, read through its own dashboard.
 
         Read-only: it navigates and reads, and writes nothing. The list is the
@@ -579,6 +617,7 @@ class Relay:
 
         Returns [(date, steps), ...] newest first, as datetime.date and int.
         """
+        assert self.driver is not None, "browser not started"
         self.driver.get(self.base + "/home")
         for _ in range(BUTTON_PROBES):
             time.sleep(0.5)
