@@ -876,3 +876,96 @@ def test_main_installs_the_timestamps(bot, monkeypatch):
     import console as console_mod
     assert isinstance(sys.stdout, console_mod.TimestampedStream)
     console_mod.uninstall()
+
+
+# ------------------------------------------- on_photo's failure branches
+
+def _photo_with_failing_session(bot, access, ledger, exc, tmp_path, monkeypatch):
+    """A photo where the browser session raises `exc`."""
+    monkeypatch.setattr(bot.config, "INBOX", str(tmp_path))
+    access.grant(40, "manual")
+    ledger.save_credentials(40, "testuser", "testpass123",
+                            bot.config.TELEGRAM_BOT_TOKEN)
+
+    @contextlib.asynccontextmanager
+    async def failing(progress=None):
+        raise exc
+        yield
+
+    monkeypatch.setattr(bot, "browser_session", failing)
+    upd = FakeUpdate(chat_id=40)
+    upd.message.photo = [FakePhotoSize(_jpeg())]
+    return upd
+
+
+def test_a_photo_with_no_credentials_says_so(bot, access, ledger, tmp_path,
+                                             monkeypatch):
+    upd = _photo_with_failing_session(bot, access, ledger, bot._NoCredentials(),
+                                      tmp_path, monkeypatch)
+    run(bot.on_photo(upd, None))
+    assert "username" in upd.message.said.lower()
+
+
+def test_a_photo_with_a_rotated_token_says_the_password_is_gone(
+        bot, access, ledger, tmp_path, monkeypatch):
+    """A rotated bot token means the vault key no longer fits. The old password
+    is unrecoverable by design, and the reply has to say so."""
+    import vault
+    upd = _photo_with_failing_session(
+        bot, access, ledger, vault.DecryptionFailed("the key no longer fits"),
+        tmp_path, monkeypatch)
+    run(bot.on_photo(upd, None))
+    assert "gone" in upd.message.said.lower() or "again" in upd.message.said.lower()
+
+
+def test_a_photo_with_too_little_memory_says_so(bot, access, ledger, tmp_path,
+                                                monkeypatch):
+    upd = _photo_with_failing_session(
+        bot, access, ledger,
+        bot.memory.InsufficientMemory({"available_mb": 10, "min_free_mb": 780}),
+        tmp_path, monkeypatch)
+    run(bot.on_photo(upd, None))
+    assert "memory" in upd.message.said.lower()
+
+
+def test_a_photo_where_the_site_read_nothing_says_so(bot, access, ledger,
+                                                     tmp_path, monkeypatch):
+    upd = _photo_with_failing_session(
+        bot, access, ledger, bot.relay_site.NoStepsFound(),
+        tmp_path, monkeypatch)
+    run(bot.on_photo(upd, None))
+    assert "could not read" in upd.message.said.lower()
+
+
+def test_a_photo_where_the_site_changed_says_so(bot, access, ledger, tmp_path,
+                                                monkeypatch):
+    upd = _photo_with_failing_session(
+        bot, access, ledger,
+        bot.relay_site.SiteChanged("the upload form is gone"),
+        tmp_path, monkeypatch)
+    run(bot.on_photo(upd, None))
+    assert "changed" in upd.message.said.lower()
+
+
+def test_a_photo_that_fails_for_any_other_reason_says_so(bot, access, ledger,
+                                                         tmp_path, monkeypatch):
+    """The catch-all: a submission must never fail because of a progress line."""
+    upd = _photo_with_failing_session(
+        bot, access, ledger, RuntimeError("something unexpected"),
+        tmp_path, monkeypatch)
+    run(bot.on_photo(upd, None))
+    assert "failed" in upd.message.said.lower()
+
+
+def test_a_photo_failure_reports_on_the_original_message(bot, access, ledger,
+                                                         tmp_path, monkeypatch):
+    """The failure reply goes to the message the user sent, not the checklist.
+
+    The scratch is a separate object that reply_text() returns, so the
+    'Upload failed' reply has to be addressed to the original message or the
+    user would never see it.
+    """
+    upd = _photo_with_failing_session(
+        bot, access, ledger, RuntimeError("boom"), tmp_path, monkeypatch)
+    run(bot.on_photo(upd, None))
+    assert "Upload failed" in upd.message.said
