@@ -530,3 +530,86 @@ def test_save_photo_names_the_saved_file(bot, tmp_path, monkeypatch):
     upd.message.photo = [FakePhotoSize(_jpeg())]
     path = run(bot.save_photo(upd, None))
     assert "7-42.jpg" in path
+
+
+def test_status_reports_stored_credentials_as_encrypted(bot, granted):
+    """The username is fine to show; the fact that it is stored is the point."""
+    upd = FakeUpdate(chat_id=1)
+    run(bot.on_status(upd, None))
+    assert "stored, encrypted" in upd.message.replies[0][0]
+
+
+def test_status_without_credentials_says_to_sign_in(bot, access, ledger):
+    access.grant(5, "manual")
+    upd = FakeUpdate(chat_id=5)
+    run(bot.on_status(upd, None))
+    assert "send /login" in upd.message.replies[0][0]
+
+
+def test_status_counts_the_recorded_submissions(bot, granted, ledger):
+    ledger.record("2026-10-03", 2831, "2,831", "October 3rd, 2026", 52)
+    ledger.record("2026-10-04", 6532, "6,532", "October 4th, 2026", 58)
+    upd = FakeUpdate(chat_id=1)
+    run(bot.on_status(upd, None))
+    assert "Submissions recorded:** 2" in upd.message.replies[0][0]
+
+
+def test_status_lists_the_chats_with_access(bot, granted, ledger):
+    ledger.grant(9, "manual")
+    upd = FakeUpdate(chat_id=1)
+    run(bot.on_status(upd, None))
+    assert "9" in upd.message.replies[0][0]
+
+
+def test_status_lists_the_chats_denied(bot, granted, ledger):
+    ledger.deny(11, "spam")
+    upd = FakeUpdate(chat_id=1)
+    run(bot.on_status(upd, None))
+    assert "11" in upd.message.replies[0][0]
+
+
+def test_status_says_when_nothing_is_denied(bot, granted):
+    upd = FakeUpdate(chat_id=1)
+    run(bot.on_status(upd, None))
+    assert "Chats denied:** none" in upd.message.replies[0][0]
+
+
+def test_status_counts_pending_confirmations(bot, granted):
+    bot.PENDING[(1, 100)] = {"path": "/tmp/x.jpg", "steps": 100,
+                              "reported": "100", "scratch": None,
+                              "date": None}
+    upd = FakeUpdate(chat_id=1)
+    run(bot.on_status(upd, None))
+    assert "Pending confirmations:** 1" in upd.message.replies[0][0]
+    bot.PENDING.clear()
+
+
+def test_status_says_when_nothing_is_pending(bot, granted):
+    upd = FakeUpdate(chat_id=1)
+    run(bot.on_status(upd, None))
+    assert "Pending confirmations:** 0" in upd.message.replies[0][0]
+
+
+def test_status_reports_the_browser_configuration(bot, granted):
+    upd = FakeUpdate(chat_id=1)
+    run(bot.on_status(upd, None))
+    assert "headless=" in upd.message.replies[0][0]
+    assert "per Screenshot" in upd.message.replies[0][0]
+
+
+def test_status_says_no_when_the_browser_cannot_launch(bot, granted, monkeypatch):
+    """The one word that tells the user not to bother sending a screenshot."""
+    monkeypatch.setattr(bot.memory, "budget", lambda: {
+        "total_mb": 950.0, "available_mb": 10.0,
+        "browser_peak_mb": 780, "min_free_mb": 780, "can_launch": False,
+        "cgroup": True, "cgroup_limit_mb": 950.0,
+        "cgroup_current_mb": 850.0, "cgroup_committed_mb": 850.0})
+    upd = FakeUpdate(chat_id=1)
+    run(bot.on_status(upd, None))
+    assert "can launch: **NO**" in upd.message.replies[0][0]
+
+
+def test_status_refreshes_the_keyboard(bot, granted):
+    upd = FakeUpdate(chat_id=1)
+    run(bot.on_status(upd, None))
+    assert upd.message.replies[0][1] is not None
