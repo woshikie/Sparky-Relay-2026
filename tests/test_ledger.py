@@ -132,3 +132,85 @@ def test_the_clock_is_per_chat(ledger):
 def test_the_window_can_be_configured(ledger):
     ledger.note_secret_attempt(5, ok=False)
     assert not ledger.secret_throttled(5, window=0.0)
+
+
+# ------------------------------------------- the secret-spec parsing branches
+
+def test_a_blank_line_in_the_spec_is_skipped(ledger):
+    labels = ledger.sync_secrets_from_env("a:one\n\nb:two")
+    assert sorted(labels) == ["a", "b"]
+
+
+def test_a_comment_line_in_the_spec_is_skipped(ledger):
+    labels = ledger.sync_secrets_from_env("# a comment\na:one")
+    assert labels == ["a"]
+
+
+def test_a_line_with_no_colon_derives_its_label(ledger):
+    """The label is what revocation is keyed on, so it must not print the secret."""
+    labels = ledger.sync_secrets_from_env("just-a-secret")
+    assert labels == ["secret-just-a-s"]
+    assert "just-a-secret" not in labels[0]
+
+
+def test_a_line_with_an_empty_secret_is_skipped(ledger):
+    """'label:' with nothing after it is not a secret."""
+    labels = ledger.sync_secrets_from_env("a:one\nb:")
+    assert labels == ["a"]
+
+
+def test_a_spec_of_only_blank_lines_loads_nothing(ledger):
+    assert ledger.sync_secrets_from_env("\n\n") == []
+
+
+def test_a_spec_that_is_none_loads_nothing(ledger):
+    """An operator adding secrets with /addsecret must not be clobbered."""
+    ledger.add_secret("keep", "value")
+    assert ledger.sync_secrets_from_env(None) == []
+    assert ledger.list_secret_labels() == ["keep"]
+
+
+def test_list_secret_labels_with_no_spec_returns_nothing(ledger):
+    assert ledger.list_secret_labels() == []
+
+
+# ------------------------------------------------------- init() itself
+
+def test_init_with_a_bare_filename_creates_no_directory(ledger, monkeypatch, tmp_path):
+    """DB with no directory component: dirname is '', and '' is not a path.
+
+    A relative filename is the case where dirname is empty, so the makedirs
+    branch is skipped. Run inside tmp_path so the file lands there.
+    """
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(ledger, "DB", "ledger.sqlite3")
+    assert ledger.init() == "ledger.sqlite3"
+    assert (tmp_path / "ledger.sqlite3").exists()
+
+
+def test_init_secrets_with_a_blank_spec_loads_nothing(ledger):
+    """A spec of blank lines parses to no entries, so nothing is replaced."""
+    ledger.add_secret("keep", "value")
+    loaded, total = ledger.init_secrets_from_env("\n# comment\n")
+    assert (loaded, total) == (False, 0)
+    assert ledger.list_secret_labels() == ["keep"]
+
+
+def test_init_secrets_with_a_bare_secret_derives_the_label(ledger):
+    loaded, total = ledger.init_secrets_from_env("just-a-secret")
+    assert (loaded, total) == (True, 1)
+    assert ledger.list_secret_labels() == ["secret-just-a-s"]
+
+
+def test_init_secrets_skips_a_line_with_an_empty_secret(ledger):
+    """:'label:' with nothing after it is not a secret."""
+    loaded, total = ledger.init_secrets_from_env("a:one\nb:")
+    assert (loaded, total) == (True, 1)
+    assert ledger.list_secret_labels() == ["a"]
+
+
+def test_init_creates_the_directory_when_there_is_one(ledger, monkeypatch, tmp_path):
+    nested = tmp_path / "a" / "b" / "ledger.sqlite3"
+    monkeypatch.setattr(ledger, "DB", str(nested))
+    ledger.init()
+    assert nested.parent.is_dir()
