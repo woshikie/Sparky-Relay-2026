@@ -368,7 +368,7 @@ def test_an_unchanged_second_read_proceeds_to_commit(pending, monkeypatch):
 
 def test_the_commit_reports_what_the_site_said(pending, monkeypatch):
     """After Commit the site's own words are the evidence, not ours."""
-    import ledger as led
+    from relay.store import ledger as led
     pending.PENDING[(1, 100)]["date"] = datetime.date(2026, 10, 4)
     pending.PENDING[(1, 100)]["iso"] = "2026-10-04"
     pending.PENDING[(1, 100)]["label"] = "October 4th, 2026"

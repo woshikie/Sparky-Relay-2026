@@ -101,7 +101,7 @@ def test_the_date_picker_keyboard_is_scoped_to_a_month(bot):
     (200_000, True), (200_001, False),
 ])
 def test_the_plausibility_band_matches_the_site(bot, steps, plausible):
-    import relay_site
+    from relay import site as relay_site
     assert (relay_site.MIN_STEPS <= steps <= relay_site.MAX_STEPS) is plausible
 
 

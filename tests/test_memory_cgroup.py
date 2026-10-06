@@ -8,7 +8,7 @@ without needing a container.
 import os
 import pytest
 
-import memory
+from relay import memory
 
 
 def tree(tmp_path, files):

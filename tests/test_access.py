@@ -61,7 +61,7 @@ def test_denial_carries_the_chat_id_so_a_reply_can_name_it(access):
 
 def test_blacklist_admits_a_stranger(monkeypatch, tmp_path):
     reload_with(monkeypatch, ACCESS_MODE="blacklist", RELAY_STATE_DIR=str(tmp_path))
-    import access
+    from relay.telegram import access
     access.ledger.init()
     d = access.check(99999, "nobody-in-particular")
     assert d
@@ -71,7 +71,7 @@ def test_blacklist_admits_a_stranger(monkeypatch, tmp_path):
 def test_blacklist_still_refuses_a_denied_chat(monkeypatch, tmp_path):
     reload_with(monkeypatch, ACCESS_MODE="blacklist", DENY_CHAT_IDS="4242",
                 RELAY_STATE_DIR=str(tmp_path))
-    import access
+    from relay.telegram import access
     access.ledger.init()
     assert not access.check(4242)
     assert not access.check(99999) is False   # the stranger is still admitted
@@ -80,14 +80,14 @@ def test_blacklist_still_refuses_a_denied_chat(monkeypatch, tmp_path):
 def test_blacklist_deny_list_accepts_several_formats(monkeypatch, tmp_path):
     reload_with(monkeypatch, ACCESS_MODE="blacklist", DENY_CHAT_IDS="1, 2;3",
                 RELAY_STATE_DIR=str(tmp_path))
-    import config
+    from relay import config
     assert config.DENY_CHAT_IDS == [1, 2, 3]
 
 
 def test_blacklist_deny_list_ignores_junk(monkeypatch, tmp_path):
     reload_with(monkeypatch, ACCESS_MODE="blacklist", DENY_CHAT_IDS="1,abc,,3",
                 RELAY_STATE_DIR=str(tmp_path))
-    import config
+    from relay import config
     assert config.DENY_CHAT_IDS == [1, 3]
 
 
@@ -104,8 +104,8 @@ def secret_access(monkeypatch, tmp_path):
     cfg = reload_with(monkeypatch, ACCESS_MODE="shared_secret",
                       SHARED_SECRETS="alice:hunter2-long-one\nbob:another-long-one",
                       RELAY_STATE_DIR=str(tmp_path))
-    import access
-    import ledger
+    from relay.telegram import access
+    from relay.store import ledger
     ledger.init()
     loaded, total = ledger.init_secrets_from_env(cfg.SHARED_SECRETS)
     assert loaded and total == 2
@@ -218,8 +218,8 @@ def test_describe_counts_secrets_after_a_resync(monkeypatch, tmp_path):
     cfg = reload_with(monkeypatch, ACCESS_MODE="shared_secret",
                       SHARED_SECRETS="a:one\nb:two\nc:three",
                       RELAY_STATE_DIR=str(tmp_path))
-    import access
-    import ledger
+    from relay.telegram import access
+    from relay.store import ledger
     ledger.init()
     ledger.init_secrets_from_env(cfg.SHARED_SECRETS)
     assert "3 secret" in access.describe()
@@ -235,15 +235,15 @@ def test_comments_and_blank_lines_are_skipped(secret_access):
 
 def test_describe_warns_in_blacklist_mode(monkeypatch, tmp_path):
     reload_with(monkeypatch, ACCESS_MODE="blacklist", RELAY_STATE_DIR=str(tmp_path))
-    import access
-    import ledger
+    from relay.telegram import access
+    from relay.store import ledger
     ledger.init()
     assert "anyone not denied" in access.describe()
 
 
 def test_a_decision_reprs_itself():
     """A decision that ends up in a log line has to be readable."""
-    import access
+    from relay.telegram import access
     d = access.Decision(True, "claim", chat_id=1)
     assert "True" in repr(d) and "claim" in repr(d)
 
@@ -255,8 +255,8 @@ def test_an_unknown_mode_is_refused(secret_access, monkeypatch):
     It is covered anyway because the alternative to a refusal is a crash, and
     the whole point of the fallback is that it cannot happen.
     """
-    import access
-    import config as cfg
+    from relay.telegram import access
+    from relay import config as cfg
     monkeypatch.setattr(cfg, "ACCESS_MODE", "something_else")
     d = access.check(1, "someone")
     assert bool(d) is False

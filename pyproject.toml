@@ -10,7 +10,7 @@ source = ["."]
 omit = [
     "tests/*",
     "check_*.py",
-    "relay_site.py",
+    "relay/site.py",
     "*/.venv/*",
     "setup.sh",
     "*/__pycache__/*",

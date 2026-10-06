@@ -33,8 +33,8 @@ def bot():
 
 @pytest.fixture
 def relay_site():
-    """Not `import relay_site` at the top: _purge() makes that stale."""
-    return importlib.import_module("relay_site")
+    """Not `from relay import site` at the top: _purge() makes that stale."""
+    return importlib.import_module("relay.site")
 
 
 # ------------------------------------------------------------ parse_day
@@ -305,7 +305,7 @@ def test_the_reported_column_is_formatted(bot, ledger):
 # ------------------------------------------------------------------ copy
 
 def test_the_sync_report_states_the_count(bot):
-    import words
+    from relay.telegram import words
     days = [(datetime.date(2026, 10, 5), 4272),
             (datetime.date(2026, 10, 4), 6532)]
     out = words.sync_report(days, 2)
@@ -315,25 +315,25 @@ def test_the_sync_report_states_the_count(bot):
 
 def test_the_sync_report_says_it_submitted_nothing(bot):
     """The whole point of the button; the copy has to say so."""
-    import words
+    from relay.telegram import words
     out = words.sync_report([(datetime.date(2026, 10, 5), 4272)], 1)
     assert "Nothing was submitted" in out
 
 
 def test_the_sync_report_uses_the_singular_for_one_day(bot):
-    import words
+    from relay.telegram import words
     out = words.sync_report([(datetime.date(2026, 10, 5), 4272)], 1)
     assert "Synced 1 day" in out
     assert "days" not in out.split("\n")[0]
 
 
 def test_an_empty_sync_says_so_rather_than_claiming_success(bot):
-    import words
+    from relay.telegram import words
     out = words.sync_empty()
     assert "no days" in out.lower()
     assert "Nothing was stored" in out
 
 
 def test_the_sync_prompt_says_it_submits_nothing(bot):
-    import words
+    from relay.telegram import words
     assert "submits nothing" in words.syncing()

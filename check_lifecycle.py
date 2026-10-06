@@ -7,10 +7,9 @@ import os
 import sys
 import time
 
-import config
-import ledger
-import memory
-import relay_site
+from relay import config, memory
+from relay import site as relay_site
+from relay.store import ledger
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SAMPLES = os.path.join(HERE, "..", "workstation", "samples")

@@ -16,10 +16,8 @@ import re
 
 import pytest
 
-import access
-import config
-import memory
-import words
+from relay import config, memory
+from relay.telegram import access, words
 
 
 def all_strings():
@@ -258,8 +256,8 @@ def test_every_mode_produces_a_parseable_describe(monkeypatch, tmp_path, mode):
     from conftest import reload_with
     reload_with(monkeypatch, ACCESS_MODE=mode, RELAY_STATE_DIR=str(tmp_path))
     import importlib
-    acc = importlib.import_module("access")
-    import ledger
+    acc = importlib.import_module("relay.telegram.access")
+    from relay.store import ledger
     ledger.init()
     for md in (True, False):
         text = acc.describe(markdown=md)

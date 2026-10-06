@@ -15,8 +15,9 @@ who can write to a live leaderboard account.
 """
 import time
 
-import config
-import ledger
+from relay import config
+from relay.store import ledger
+from relay.telegram import words
 
 
 class Decision:
@@ -155,7 +156,6 @@ def describe(markdown=True):
     The mode name is escaped because `whitelist_claim` contains an underscore,
     which Telegram reads as an italic delimiter.
     """
-    import words
     mode = words.md(config.ACCESS_MODE)
     if markdown:
         line = "Access Mode: **%s**" % mode

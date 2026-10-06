@@ -13,8 +13,8 @@ import os
 import sqlite3
 import time
 
-import config
-import vault
+from relay import config
+from relay.store import vault
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 DB = config.LEDGER_DB

@@ -304,7 +304,7 @@ def test_a_rotated_token_is_its_own_failure(bot, access, ledger, fake_relay):
     """Distinct from 'never signed in': the reply differs, so the type must."""
     access.grant(1, "claim")
     ledger.save_credentials(1, "testuser", "pw", "111:OLDTOKEN")
-    vault = importlib.import_module("vault")
+    vault = importlib.import_module("relay.store.vault")
     with pytest.raises(vault.DecryptionFailed):
         run(bot.sign_in(1))
     assert fake_relay.login_calls == []

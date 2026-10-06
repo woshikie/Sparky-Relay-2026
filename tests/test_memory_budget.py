@@ -7,7 +7,7 @@ committed, so the bot refused to run a second Submission with real headroom.
 """
 import pytest
 
-import memory
+from relay import memory
 
 
 # ----------------------------------------------------------------- helpers

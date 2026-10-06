@@ -49,7 +49,7 @@ def test_the_stored_row_never_contains_the_password(ledger):
 
 
 def test_a_rotated_token_makes_them_unreadable(ledger):
-    import vault
+    from relay.store import vault
     ledger.save_credentials(1, "testuser", "testpass123", FAKE_TOKEN)
     with pytest.raises(vault.DecryptionFailed):
         ledger.load_credentials(1, "999:ROTATEDTOKEN")

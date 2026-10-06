@@ -18,7 +18,7 @@ import datetime
 
 import pytest
 
-import relay_site
+from relay import site as relay_site
 
 
 # ------------------------------------------------------------------- fakes

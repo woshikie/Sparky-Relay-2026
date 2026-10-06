@@ -8,10 +8,9 @@ import os
 import re
 import time
 
-import config
-import ledger
-import memory
-import relay_site
+from relay import config, memory
+from relay import site as relay_site
+from relay.store import ledger
 
 DETECT = re.compile(r"Detected steps\s*([\d,. ]+)", re.I)
 CASES = [("Saturday-3-October.jpg", 2831), ("Sunday-4-October.jpg", 6532)]

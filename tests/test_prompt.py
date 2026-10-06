@@ -111,7 +111,7 @@ def test_a_rotated_token_surfaces_as_a_vault_failure(bot, ledger):
     site_credentials reads the token from config, so the test rotates config
     rather than passing a token: that is the real path.
     """
-    import vault
+    from relay.store import vault
     ledger.save_credentials(1, "testuser", "testpass123", "111:OLDTOKEN")
     with pytest.raises(vault.DecryptionFailed):
         bot.site_credentials(1)      # config still holds FAKE_TOKEN
@@ -119,7 +119,7 @@ def test_a_rotated_token_surfaces_as_a_vault_failure(bot, ledger):
 
 def test_a_rotated_token_is_distinguishable_from_a_missing_pair(bot, ledger):
     """They need different replies: re-prompt vs. ask for credentials."""
-    import vault
+    from relay.store import vault
     ledger.save_credentials(1, "testuser", "testpass123", "111:OLDTOKEN")
     with pytest.raises(vault.DecryptionFailed):
         bot.site_credentials(1)
@@ -140,7 +140,7 @@ def test_no_reply_text_contains_the_stored_password(bot, ledger):
     and none may contain a password. This is the check that would catch someone
     adding a debug line that interpolates the credential.
     """
-    import words
+    from relay.telegram import words
     ledger.save_credentials(1, "testuser", CANARY, FAKE_TOKEN)
     checked = 0
     for name in dir(words):

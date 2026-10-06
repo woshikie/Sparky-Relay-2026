@@ -13,7 +13,7 @@ import time
 
 import pytest
 
-import console
+from relay import console
 
 
 class Clock:

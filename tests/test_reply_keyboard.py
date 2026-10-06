@@ -257,9 +257,9 @@ def test_start_uses_the_reply_keyboard_for_the_preset_choice(keyboard_bot,
     from conftest import reload_with
     reload_with(monkeypatch, SITE_USERNAME="testuser", SITE_PASSWORD="pw",
                 RELAY_STATE_DIR=str(tmp_path))
-    import access as acc
+    from relay.telegram import access as acc
     import bot as reloaded
-    import ledger as led
+    from relay.store import ledger as led
     led.init()
     acc.grant(2, "claim")
     upd = Upd(chat_id=2)

@@ -26,8 +26,17 @@ os.environ["RELAY_SKIP_SECRETS_FILE"] = "1"
 os.environ.setdefault("ACCESS_MODE", "whitelist_claim")
 os.environ.setdefault("RELAY_STATE_DIR", tempfile.mkdtemp(prefix="relay-pytest-"))
 
-MODULES = ("config", "access", "ledger", "vault", "bot", "words", "memory",
-           "datepicker", "relay_site")
+# The parent packages come first, and that order is load-bearing. `from
+# relay.telegram import access` does NOT do a straight sys.modules lookup the
+# way `import access` did: it imports the parent, then takes the `access`
+# attribute off it, and only imports the submodule on AttributeError. A stale
+# parent still carrying the old attribute short-circuits the whole thing and
+# hands back the pre-purge module with no error. Popping the parents forces
+# the attribute to be re-bound to the fresh submodule.
+MODULES = ("relay", "relay.telegram", "relay.store",
+           "relay.config", "relay.telegram.access", "relay.store.ledger",
+           "relay.store.vault", "bot", "relay.telegram.words",
+           "relay.memory", "relay.telegram.datepicker", "relay.site")
 
 
 # The bot's fixtures are imported as bare names, so the repo root has to be on
@@ -86,42 +95,42 @@ def reload_with(monkeypatch, **env):
     for k, v in env.items():
         monkeypatch.setenv(k, v)
     _purge()
-    return importlib.import_module("config")
+    return importlib.import_module("relay.config")
 
 
 @pytest.fixture
 def fresh_vault():
     """A vault module imported after any previous test replaced it."""
-    return importlib.import_module("vault")
+    return importlib.import_module("relay.store.vault")
 
 
 @pytest.fixture
 def fresh_ledger():
-    mod = importlib.import_module("ledger")
+    mod = importlib.import_module("relay.store.ledger")
     mod.init()
     return mod
 
 
 @pytest.fixture
 def config():
-    return importlib.import_module("config")
+    return importlib.import_module("relay.config")
 
 
 @pytest.fixture
 def ledger():
-    mod = importlib.import_module("ledger")
+    mod = importlib.import_module("relay.store.ledger")
     mod.init()
     return mod
 
 
 @pytest.fixture
 def vault():
-    return importlib.import_module("vault")
+    return importlib.import_module("relay.store.vault")
 
 
 @pytest.fixture
 def access(config, ledger):
-    return importlib.import_module("access")
+    return importlib.import_module("relay.telegram.access")
 
 
 @pytest.fixture
@@ -133,7 +142,7 @@ def memory(config):
     does nothing. That is not hypothetical: it left a real Firefox running for
     the whole of one test file, which is why the suite took 50 seconds.
     """
-    return importlib.import_module("memory")
+    return importlib.import_module("relay.memory")
 
 
 @pytest.fixture

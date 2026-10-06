@@ -14,7 +14,7 @@ import importlib
 
 import pytest
 
-import datepicker
+from relay.telegram import datepicker
 
 
 @pytest.fixture

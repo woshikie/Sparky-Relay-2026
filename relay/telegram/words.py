@@ -148,7 +148,7 @@ def _chat_id_of(decision):
 
 
 def _mode_or_unknown():
-    import config
+    from relay import config
     return config.ACCESS_MODE
 
 

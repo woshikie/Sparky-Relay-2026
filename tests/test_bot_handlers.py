@@ -121,7 +121,7 @@ def run(coro):
 def granted(bot, access):
     """A chat that has been granted access and holds credentials."""
     access.grant(1, "claim")
-    import ledger
+    from relay.store import ledger
     ledger.save_credentials(1, "testuser", "testpass123",
                             bot.config.TELEGRAM_BOT_TOKEN)
     return 1
@@ -203,9 +203,9 @@ def test_start_in_shared_secret_mode_prompts(bot, monkeypatch, tmp_path):
     from conftest import reload_with
     reload_with(monkeypatch, ACCESS_MODE="shared_secret",
                 RELAY_STATE_DIR=str(tmp_path))
-    import access
+    from relay.telegram import access
     import bot as reloaded
-    import ledger
+    from relay.store import ledger
     ledger.init()
     upd = FakeUpdate(chat_id=13)
     run(reloaded.on_start(upd, None))
@@ -287,9 +287,9 @@ def test_a_correct_secret_is_accepted_and_the_message_deleted(bot, monkeypatch,
     reload_with(monkeypatch, ACCESS_MODE="shared_secret",
                 SHARED_SECRETS="testuser:s3cret-passphrase",
                 RELAY_STATE_DIR=str(tmp_path))
-    import access
+    from relay.telegram import access
     import bot as reloaded
-    import ledger
+    from relay.store import ledger
     ledger.init()
     ledger.init_secrets_from_env("testuser:s3cret-passphrase")
     upd = FakeUpdate(chat_id=20, text="s3cret-passphrase")
@@ -305,9 +305,9 @@ def test_a_wrong_secret_is_rejected_and_the_message_deleted(bot, monkeypatch,
     reload_with(monkeypatch, ACCESS_MODE="shared_secret",
                 SHARED_SECRETS="testuser:s3cret-passphrase",
                 RELAY_STATE_DIR=str(tmp_path))
-    import access
+    from relay.telegram import access
     import bot as reloaded
-    import ledger
+    from relay.store import ledger
     ledger.init()
     ledger.init_secrets_from_env("testuser:s3cret-passphrase")
     upd = FakeUpdate(chat_id=21, text="guess")
@@ -321,9 +321,9 @@ def test_a_throttled_chat_is_told_to_wait(bot, monkeypatch, tmp_path):
     reload_with(monkeypatch, ACCESS_MODE="shared_secret",
                 SHARED_SECRETS="testuser:s3cret-passphrase",
                 RELAY_STATE_DIR=str(tmp_path))
-    import access
+    from relay.telegram import access
     import bot as reloaded
-    import ledger
+    from relay.store import ledger
     ledger.init()
     ledger.init_secrets_from_env("testuser:s3cret-passphrase")
     run(reloaded.on_text(FakeUpdate(chat_id=22, text="guess"), None))
@@ -347,9 +347,9 @@ def test_the_preset_choice_is_offered_when_configured(bot, monkeypatch, tmp_path
     from conftest import reload_with
     reload_with(monkeypatch, SITE_USERNAME="testuser", SITE_PASSWORD="pw",
                 RELAY_STATE_DIR=str(tmp_path))
-    import access
+    from relay.telegram import access
     import bot as reloaded
-    import ledger
+    from relay.store import ledger
     ledger.init()
     access.grant(1, "claim")
     upd = FakeUpdate(chat_id=1)
@@ -362,9 +362,9 @@ def test_choosing_the_preset_uses_it(bot, monkeypatch, tmp_path):
     from conftest import reload_with
     reload_with(monkeypatch, SITE_USERNAME="testuser", SITE_PASSWORD="pw",
                 RELAY_STATE_DIR=str(tmp_path))
-    import access
+    from relay.telegram import access
     import bot as reloaded
-    import ledger
+    from relay.store import ledger
     ledger.init()
     access.grant(1, "claim")
     reloaded._set_stage(1, "choose_preset")
@@ -379,9 +379,9 @@ def test_choosing_new_moves_to_the_username(bot, monkeypatch, tmp_path):
     from conftest import reload_with
     reload_with(monkeypatch, SITE_USERNAME="testuser", SITE_PASSWORD="pw",
                 RELAY_STATE_DIR=str(tmp_path))
-    import access
+    from relay.telegram import access
     import bot as reloaded
-    import ledger
+    from relay.store import ledger
     ledger.init()
     access.grant(1, "claim")
     reloaded._set_stage(1, "choose_preset")
@@ -727,7 +727,7 @@ def test_a_throttled_chat_is_told_why_the_secret_was_deleted(bot, monkeypatch,
                 SHARED_SECRETS="testuser:s3cret-passphrase",
                 RELAY_STATE_DIR=str(tmp_path))
     import bot as reloaded
-    import ledger
+    from relay.store import ledger
     ledger.init()
     ledger.init_secrets_from_env("testuser:s3cret-passphrase")
     run(reloaded.on_text(FakeUpdate(chat_id=31, text="guess"), None))
@@ -816,7 +816,7 @@ def test_a_preset_that_is_no_longer_configured_is_refused(bot, monkeypatch):
     and the operator has since removed it. The answer must be the specific
     'preset is gone' error, not a generic 'no credentials'.
     """
-    import vault
+    from relay.store import vault
     bot._set_stage(1, "username", preset=True)
     assert bot.config.has_preset_credentials() is False
     with pytest.raises(vault.DecryptionFailed):
@@ -875,7 +875,7 @@ def test_main_installs_the_timestamps(bot, monkeypatch):
     monkeypatch.setattr(bot.config, "TELEGRAM_BOT_TOKEN", "")
     with pytest.raises(SystemExit):
         bot.main()
-    import console as console_mod
+    from relay import console as console_mod
     assert isinstance(sys.stdout, console_mod.TimestampedStream)
     console_mod.uninstall()
 
@@ -912,7 +912,7 @@ def test_a_photo_with_a_rotated_token_says_the_password_is_gone(
         bot, access, ledger, tmp_path, monkeypatch):
     """A rotated bot token means the vault key no longer fits. The old password
     is unrecoverable by design, and the reply has to say so."""
-    import vault
+    from relay.store import vault
     upd = _photo_with_failing_session(
         bot, access, ledger, vault.DecryptionFailed("the key no longer fits"),
         tmp_path, monkeypatch)

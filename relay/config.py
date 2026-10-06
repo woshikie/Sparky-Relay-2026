@@ -1,7 +1,7 @@
 """Config. Nothing here is a default we invented at runtime."""
 import os
 
-from errors import ConfigRefused
+from relay.errors import ConfigRefused
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ENV_PATH = os.path.join(HERE, "secrets.env")

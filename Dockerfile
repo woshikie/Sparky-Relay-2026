@@ -94,8 +94,8 @@ WORKDIR /app
 
 RUN mkdir -p /app/data
 
-COPY access.py bot.py config.py console.py datepicker.py errors.py ledger.py \
-     memory.py progress.py relay_site.py vault.py words.py ./
+COPY bot.py ./
+COPY relay ./relay
 # Verification helpers, so the built image can prove it can read the site's OCR
 # without needing the source tree on the host.
 COPY check_container.py check_lifecycle.py ./

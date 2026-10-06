@@ -17,7 +17,7 @@ import time
 
 import pytest
 
-import progress
+from relay import progress
 
 
 def run(coro):

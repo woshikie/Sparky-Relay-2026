@@ -18,27 +18,27 @@ from datetime import time as wallclock
 
 import sys
 
-import errors
+from relay import errors
 
 # config validates ACCESS_MODE at import time, and everything else imports it.
 # Doing it first, in a try, means a bad mode prints the message telling the
 # operator which line of secrets.env to fix -- rather than a traceback that
 # buries it under import frames.
 try:
-    import config
+    from relay import config
 except errors.ConfigRefused as _exc:
     sys.stderr.write("%s\n" % _exc)
     sys.exit(2)
 
-import access          # noqa: E402  (must follow the config guard)
-import console         # noqa: E402
-import datepicker      # noqa: E402
-import ledger          # noqa: E402
-import memory          # noqa: E402
-import progress as progress_mod  # noqa: E402
-import relay_site      # noqa: E402
-import vault           # noqa: E402
-import words           # noqa: E402
+from relay.telegram import access          # noqa: E402  (must follow the config guard)
+from relay import console         # noqa: E402
+from relay.telegram import datepicker      # noqa: E402
+from relay.store import ledger          # noqa: E402
+from relay import memory          # noqa: E402
+from relay import progress as progress_mod  # noqa: E402
+from relay import site as relay_site      # noqa: E402
+from relay.store import vault           # noqa: E402
+from relay.telegram import words           # noqa: E402
 from telegram import (InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton,
                       ReplyKeyboardMarkup, ReplyKeyboardRemove, Update)
 from telegram.constants import ParseMode

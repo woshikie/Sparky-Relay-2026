@@ -4,7 +4,7 @@ The vault is imported inside each test rather than at module scope: conftest
 purges the app modules before every test so config re-reads the environment,
 and a module-level import would be bound to whichever version happened to be
 loaded first. It is fetched through the fixture rather than with a local
-`import vault`, which would shadow the fixture name.
+`import relay.store.vault`, which would shadow the fixture name.
 """
 import pytest
 
@@ -13,7 +13,7 @@ from conftest import FAKE_TOKEN
 
 @pytest.fixture
 def vault():
-    import vault as mod
+    import relay.store.vault as mod
     return mod
 
 

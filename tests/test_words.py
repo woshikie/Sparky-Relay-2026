@@ -59,8 +59,8 @@ def _refuse(monkeypatch, tmp_path, **env):
     """A Decision from a real access.check, in a given mode."""
     from conftest import reload_with
     cfg = reload_with(monkeypatch, RELAY_STATE_DIR=str(tmp_path), **env)
-    import access
-    import ledger
+    from relay.telegram import access
+    from relay.store import ledger
     ledger.init()
     return access, access.check(4242)
 

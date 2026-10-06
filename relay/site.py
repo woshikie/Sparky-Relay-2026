@@ -8,8 +8,7 @@ import os
 import re
 import time
 
-import config
-import memory
+from relay import config, memory
 from selenium import webdriver
 from selenium.common.exceptions import StaleElementReferenceException
 from selenium.webdriver.common.by import By
@@ -17,13 +16,17 @@ from selenium.webdriver.firefox.options import Options
 from selenium.webdriver.firefox.service import Service
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+# The project root, not the module directory: the geckodriver binary is a
+# deployment artefact (setup.sh fetches it to bin/, the image copies it to
+# /app/bin), and it must not move every time this module does.
+ROOT = os.path.dirname(HERE)
 # State that must survive a restart lives under config.LEDGER_DB's directory, so
 # in a container it is the mounted volume rather than the (read-only) image.
 STATE_DIR = config.STATE_DIR
 PROFILE = os.environ.get("BROWSER_PROFILE",
                          os.path.join(STATE_DIR, ".browserprofile"))
 GECKO = os.environ.get("GECKODRIVER_PATH",
-                       os.path.join(HERE, "bin", "geckodriver"))
+                       os.path.join(ROOT, "bin", "geckodriver"))
 GECKO_LOG = os.path.join(config.LOGS, "geckodriver.log")
 
 # Mirrors the client-side plausibility band we found in ocrParser. Used to

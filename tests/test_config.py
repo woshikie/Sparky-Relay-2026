@@ -12,7 +12,7 @@ import tempfile
 
 import pytest
 
-from errors import ConfigRefused
+from relay.errors import ConfigRefused
 
 from conftest import (reload_with, FAKE_TOKEN, FAKE_SITE_USERNAME,
                       FAKE_SITE_PASSWORD)
@@ -78,7 +78,7 @@ def test_the_file_is_read_when_present(monkeypatch, tmp_path):
     monkeypatch.delenv("SITE_USERNAME", raising=False)
     monkeypatch.delenv("SITE_PASSWORD", raising=False)
     monkeypatch.delenv("RELAY_SKIP_SECRETS_FILE", raising=False)
-    import config
+    from relay import config
     monkeypatch.setattr(config, "ENV_PATH", str(secrets))
     assert config._load()["SITE_USERNAME"] == "from-file"
 
@@ -87,7 +87,7 @@ def test_skipping_the_file_ignores_it(monkeypatch, tmp_path):
     secrets = tmp_path / "secrets.env"
     secrets.write_text("SITE_USERNAME=from-file\n")
     monkeypatch.setenv("RELAY_SKIP_SECRETS_FILE", "1")
-    import config
+    from relay import config
     monkeypatch.setattr(config, "ENV_PATH", str(secrets))
     assert config._load().get("SITE_USERNAME") is None
 
@@ -108,7 +108,7 @@ def test_an_empty_variable_does_not_override_the_file(monkeypatch, tmp_path):
     secrets.write_text("SITE_USERNAME=from-file\nSITE_PASSWORD=pw\n")
     monkeypatch.delenv("RELAY_SKIP_SECRETS_FILE", raising=False)
     monkeypatch.setenv("SITE_USERNAME", "")
-    import config
+    from relay import config
     monkeypatch.setattr(config, "ENV_PATH", str(secrets))
     loaded = config._load()
     assert loaded["SITE_USERNAME"] == "from-file"
@@ -181,7 +181,7 @@ def test_the_state_dir_is_created_on_demand(monkeypatch, tmp_path):
     deep = tmp_path / "deep" / "path"
     reload_with(monkeypatch, RELAY_STATE_DIR=str(deep))
     import importlib
-    ledger = importlib.import_module("ledger")
+    ledger = importlib.import_module("relay.store.ledger")
     ledger.init()
     assert (deep / "ledger.sqlite3").exists()
 
@@ -229,7 +229,7 @@ def test_a_missing_mode_fails_before_anything_else():
         "RELAY_STATE_DIR": tempfile.mkdtemp(prefix="relay-subproc-"),
         "TELEGRAM_BOT_TOKEN": FAKE_TOKEN,
     }
-    p = subprocess.run([sys.executable, "-c", "import config"], env=env, cwd=root,
+    p = subprocess.run([sys.executable, "-c", "from relay import config"], env=env, cwd=root,
                        capture_output=True, text=True)
     assert p.returncode != 0
     assert "ConfigRefused" in p.stderr
@@ -273,7 +273,7 @@ def test_a_valid_mode_lets_the_import_through(tmp_path):
     }
     p = subprocess.run(
         [sys.executable, "-c",
-         "import config; print(config.ACCESS_MODE)"],
+         "from relay import config; print(config.ACCESS_MODE)"],
         env=env, cwd=root, capture_output=True, text=True)
     assert p.returncode == 0, p.stderr
     assert p.stdout.strip() == "blacklist"
