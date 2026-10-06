@@ -41,3 +41,48 @@ exclude_lines = [
     "raise NotImplementedError",
     "@abstractmethod",
 ]
+
+[tool.ruff]
+# The container runs 3.12 while the dev machine runs 3.14: rules that suggest
+# newer syntax must stay quiet, or the linter will talk us into code the
+# deployment cannot run.
+target-version = "py312"
+line-length = 88
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors (includes E501 line length)
+    "F",   # pyflakes: unused imports and names -- the split left several
+    "I",   # isort: one import order, no debates
+    "W",
+    "UP",  # pyupgrade, capped at 3.12 by target-version above
+    "B",   # bugbear: the likely-bugs class (B904 raise-from, B008, ...)
+    "C4",  # comprehensions: no pointless list()/dict() calls
+    "SIM", # simplify: collapsible ifs,slow except-pass patterns
+    "RUF", # ruff-specific, including RUF100 unused-noqa
+    "ANN", # annotations must be present (correctness is mypy's job)
+    "D",   # docstring hygiene; the write-prose rules are off below
+]
+ignore = [
+    # The codebase formats with % throughout, consistently. Converting 120
+    # sites to f-strings is churn with zero hardening value; % stays.
+    "UP031",
+    # Docstring *existence* is not mandated: D103/D102 would demand ~90 new
+    # docstrings (many on one-line helpers, where they are noise) and D401
+    # would rewrite 25 existing ones into imperative mood. What is enforced
+    # is hygiene on the documentation already written: blank lines,
+    # capitalization, section format.
+    "D100", "D101", "D102", "D103", "D104", "D105", "D107", "D401",
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Test doubles are scaffolding: the tests pin behavior, not types. Annotating
+# forty fakes adds noise, not safety.
+"tests/*" = ["ANN"]
+
+[tool.mypy]
+# Correctness gate to ruff/ANN's presence gate: ANN demands the annotations
+# exist, mypy demands they check out. Default settings, deliberately not
+# strict -- strict's extras (disallow_any_generics, warn_return_any) mostly
+# punish the selenium/sqlite boundary, where Any is honest.
+python_version = "3.12"

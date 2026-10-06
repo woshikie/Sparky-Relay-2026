@@ -36,7 +36,12 @@ $(PY): ## create the venv and install deps
 	./setup.sh --driver-only
 	@touch $@
 
-check: $(PY) ## run the test suite with coverage
+lint: $(PY) ## ruff, format check, and mypy; fails fast, before the suite
+	$(PY) -m ruff check relay/ check_container.py check_lifecycle.py
+	$(PY) -m ruff format --check relay/ check_container.py check_lifecycle.py
+	$(PY) -m mypy relay/ check_container.py check_lifecycle.py
+
+check: lint ## run the test suite with coverage (lint runs first)
 	$(PY) -m pytest tests/ --cov=. --cov-report=term-missing:skip-covered
 
 check-verbose: $(PY) ## same, but per-test

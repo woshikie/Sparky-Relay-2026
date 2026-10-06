@@ -1,1 +1,6 @@
-pytest>=8.0
+# Tooling only: lint, format, type checks. Never installed into the image --
+# the Dockerfile builds its venv from requirements.txt alone, and this file
+# must stay out of it. Pinned exactly, so `make lint` means the same thing on
+# every machine.
+ruff==0.14.8
+mypy==1.19.1
