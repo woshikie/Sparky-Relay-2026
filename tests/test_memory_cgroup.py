@@ -149,3 +149,180 @@ def test_no_cgroup_at_all(tmp_path, monkeypatch):
     cg = memory._cgroup_limits_mb()
     assert cg["limit_mb"] is None
     assert cg["anon_mb"] is None
+
+
+# ------------------------------------------------------- the fallbacks
+
+def test_total_mb_reports_the_host_total(tmp_path, monkeypatch):
+    """The host figure, used when there is no cgroup ceiling."""
+    monkeypatch.setattr(memory, "_read_meminfo",
+                        lambda: {"MemTotal": 8 * 1024 * 1024})
+    assert memory.total_mb() == 8192.0
+
+
+def test_total_mb_without_meminfo_returns_none(tmp_path, monkeypatch):
+    """No /proc/meminfo means no number, not a crash."""
+    monkeypatch.setattr(memory, "_read_meminfo", lambda: {})
+    assert memory.total_mb() is None
+
+
+def test_a_cgroup_with_no_anon_and_no_current_commits_nothing(tmp_path, monkeypatch):
+    """Both figures missing must fall back to 0.0, not raise.
+
+    Being pessimistic is the safe direction: 0.0 committed means the full
+    limit is headroom, which is the optimistic reading, so this is the branch
+    that would let a browser launch it cannot afford.
+    """
+    monkeypatch.setattr(memory, "_cgroup_limits_mb", lambda: {
+        "limit_mb": 950.0, "current_mb": None, "anon_mb": None})
+    monkeypatch.setattr(memory, "budget_report", lambda: {
+        "total_mb": 950.0, "available_mb": 900.0,
+        "browser_peak_mb": memory.BROWSER_PEAK_MB,
+        "min_free_mb": memory.MIN_FREE_MB, "can_launch": True,
+        "cgroup": True, "cgroup_limit_mb": 950.0,
+        "cgroup_current_mb": None, "cgroup_committed_mb": None})
+    rep = memory.container_env()
+    # The fallback is 0.0 committed, so the whole limit is headroom -- and the
+    # host figure is then the tighter of the two, as it should be.
+    assert rep["cgroup_committed_mb"] == 0.0
+    assert rep["available_mb"] == 900.0
+
+
+def test_a_zero_available_figure_is_treated_as_unknown(tmp_path, monkeypatch):
+    """0.0 is falsy, and the code must not read that as 'no data'."""
+    monkeypatch.setattr(memory, "_cgroup_limits_mb", lambda: {
+        "limit_mb": 950.0, "current_mb": 100.0, "anon_mb": 100.0})
+    monkeypatch.setattr(memory, "budget_report", lambda: {
+        "total_mb": 950.0, "available_mb": 0.0,
+        "browser_peak_mb": memory.BROWSER_PEAK_MB,
+        "min_free_mb": memory.MIN_FREE_MB, "can_launch": False,
+        "cgroup": True, "cgroup_limit_mb": 950.0,
+        "cgroup_current_mb": 100.0, "cgroup_committed_mb": 100.0})
+    rep = memory.container_env()
+    assert rep["available_mb"] == 850.0
+
+
+def test_cgroup_root_falls_back_to_the_v2_path(monkeypatch):
+    """Neither v2 nor v1 files: the reader still returns a path.
+
+    Patches os.path.exists rather than memory.os.path.exists: they are the
+    same object, and patching the attribute on the shared module is what makes
+    the two calls inside _cgroup_root both see False.
+    """
+    monkeypatch.setattr(memory.os.path, "exists", lambda p: False)
+    assert memory._cgroup_root() == "/sys/fs/cgroup"
+
+
+def test_an_unparseable_v1_limit_is_survivable(tmp_path, monkeypatch):
+    """A garbage limit_in_bytes must not raise out of the reader."""
+    root = tree(tmp_path, {
+        "memory.limit_in_bytes": "not a number\n",
+        "memory.usage_in_bytes": "1048576\n",
+    })
+    monkeypatch.setattr(memory, "_cgroup_root", lambda: root)
+    out = memory._cgroup_limits_mb()
+    assert "limit_mb" not in out or out["limit_mb"] is None
+
+
+def test_a_missing_memory_stat_reports_no_anon(tmp_path, monkeypatch):
+    """No memory.stat means no anon figure, which is not the same as zero."""
+    root = tree(tmp_path, {"memory.max": "996147200\n"})
+    monkeypatch.setattr(memory, "_cgroup_root", lambda: root)
+    assert memory._cgroup_anon_mb() is None
+
+
+def test_an_unreadable_memory_stat_reports_no_anon(tmp_path, monkeypatch):
+    """A stat file that cannot be opened must not raise.
+
+    A directory named memory.stat makes open() raise IsADirectoryError,
+    which is an OSError -- the same branch a permission error takes, without
+    patching a builtin.
+    """
+    root = tree(tmp_path, {"memory.max": "996147200\n"})
+    (tmp_path / "memory.stat").mkdir()
+    monkeypatch.setattr(memory, "_cgroup_root", lambda: root)
+    assert memory._cgroup_anon_mb() is None
+
+
+def test_an_unreadable_meminfo_yields_no_figures(monkeypatch):
+    """A /proc/meminfo that cannot be opened must not raise.
+
+    The reader is called on every budget check, so an exception here would
+    take down /status and the pre-flight alike.
+    """
+    import builtins
+    real_open = builtins.open
+
+    def boom(path, *a, **kw):
+        if str(path) == "/proc/meminfo":
+            raise OSError("no such file")
+        return real_open(path, *a, **kw)
+
+    monkeypatch.setattr(builtins, "open", boom)
+    assert memory._read_meminfo() == {}
+    assert memory.mem_mb() is None
+
+
+def test_an_empty_meminfo_yields_no_figures(monkeypatch):
+    """A /proc/meminfo with no lines must not raise either."""
+    import builtins
+    import io
+    real_open = builtins.open
+
+    def empty(path, *a, **kw):
+        if str(path) == "/proc/meminfo":
+            return io.StringIO("")
+        return real_open(path, *a, **kw)
+
+    monkeypatch.setattr(builtins, "open", empty)
+    assert memory._read_meminfo() == {}
+    assert memory.mem_mb() is None
+    assert memory.total_mb() is None
+
+
+def test_a_meminfo_line_with_no_value_is_skipped(monkeypatch):
+    """'MemAvailable:' with nothing after it must not raise int('')."""
+    import builtins
+    import io
+    real_open = builtins.open
+
+    def partial(path, *a, **kw):
+        if str(path) == "/proc/meminfo":
+            return io.StringIO("MemTotal:       8000000 kB\n"
+                               "MemAvailable:\n"
+                               "MemFree:        1000000 kB\n")
+        return real_open(path, *a, **kw)
+
+    monkeypatch.setattr(builtins, "open", partial)
+    vals = memory._read_meminfo()
+    assert vals == {"MemTotal": 8000000, "MemFree": 1000000}
+
+
+def test_cgroup_root_finds_a_real_v2_group(monkeypatch):
+    """The success branch: a memory.max exists, so that path is returned.
+
+    The other tests patch _cgroup_root out, so the real one is never exercised
+    on the path where it actually finds something.
+    """
+    def exists(p):
+        p = str(p)
+        return p.endswith("memory.max") or p.endswith("memory.limit_in_bytes")
+    monkeypatch.setattr(memory.os.path, "exists", exists)
+    assert memory._cgroup_root() == "/sys/fs/cgroup"
+
+
+def test_cgroup_root_prefers_v2_over_v1(monkeypatch):
+    """v2 is checked first, and must win when both are present."""
+    def exists(p):
+        p = str(p)
+        return p.endswith("memory.max") or p.endswith("memory.limit_in_bytes")
+    monkeypatch.setattr(memory.os.path, "exists", exists)
+    assert memory._cgroup_root() == "/sys/fs/cgroup"
+
+
+def test_cgroup_root_finds_a_v1_group(monkeypatch):
+    """v1 only: memory.limit_in_bytes, no memory.max."""
+    def exists(p):
+        return str(p).endswith("memory.limit_in_bytes")
+    monkeypatch.setattr(memory.os.path, "exists", exists)
+    assert memory._cgroup_root() == "/sys/fs/cgroup/memory"
