@@ -151,7 +151,7 @@ def _cgroup_root():
 
 
 def _cgroup_limits_mb():
-    """This process's cgroup memory ceiling and committed usage, in MB.
+    """The cgroup memory ceiling and committed usage for this process, in MB.
 
     Reports `current` (all charged memory) and `anon` (memory that cannot be
     reclaimed). See container_env for why only the second one is a real cost.
@@ -163,11 +163,12 @@ def _cgroup_limits_mb():
     if os.path.exists(os.path.join(base, "memory.max")):
         out["path"] = "v2"
         try:
-            raw = open(os.path.join(base, "memory.max")).read().strip()
+            with open(os.path.join(base, "memory.max")) as f:
+                raw = f.read().strip()
             if raw != "max":
                 out["limit_mb"] = int(raw) / MB
-            out["current_mb"] = int(
-                open(os.path.join(base, "memory.current")).read().strip()) / MB
+            with open(os.path.join(base, "memory.current")) as f:
+                out["current_mb"] = int(f.read().strip()) / MB
         except (OSError, ValueError):
             pass
         out["anon_mb"] = _cgroup_anon_mb()
@@ -177,11 +178,12 @@ def _cgroup_limits_mb():
     if os.path.exists(os.path.join(base, "memory.limit_in_bytes")):
         out["path"] = "v1"
         try:
-            lim = int(open(os.path.join(base, "memory.limit_in_bytes")).read().strip())
+            with open(os.path.join(base, "memory.limit_in_bytes")) as f:
+                lim = int(f.read().strip())
             if lim < (1 << 62):      # v1 sentinel meaning "unlimited"
                 out["limit_mb"] = lim / MB
-            out["current_mb"] = int(
-                open(os.path.join(base, "memory.usage_in_bytes")).read().strip()) / MB
+            with open(os.path.join(base, "memory.usage_in_bytes")) as f:
+                out["current_mb"] = int(f.read().strip()) / MB
         except (OSError, ValueError):
             pass
         out["anon_mb"] = _cgroup_anon_mb()
@@ -199,7 +201,8 @@ def _cgroup_anon_mb():
     if not os.path.exists(stat):
         return None
     try:
-        raw = open(stat).read()
+        with open(stat) as f:
+            raw = f.read()
     except OSError:
         return None
     vals = {}

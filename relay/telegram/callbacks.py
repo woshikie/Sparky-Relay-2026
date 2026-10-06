@@ -7,6 +7,7 @@ callbacks are its only callers.
 """
 import asyncio
 import datetime
+from contextlib import suppress
 
 from telegram import Update
 from telegram.constants import ParseMode
@@ -45,11 +46,9 @@ async def cb_date(update: Update, ctx):
         await _cb_date(update, ctx)
     except Exception as e:
         session_mod.log(ctx, "date callback error: %r" % (e,))
-        try:
+        with suppress(TelegramError):
             await q.answer("something went wrong — send the screenshot again",
                            show_alert=True)
-        except TelegramError:
-            pass
 
 
 async def _cb_date(update: Update, ctx):
@@ -187,11 +186,9 @@ async def cb_ok(update: Update, ctx):
 
     iso = st["iso"]
     label = st["label"]
-    try:
+    with suppress(TelegramError):
         await q.edit_message_text(
             "⏳ Recording %s steps for %s…" % (st["reported"], label))
-    except TelegramError:
-        pass
 
     # The browser was closed after reading the number, so re-open it, re-upload
     # the same Screenshot, then set the date and Commit in one go. This is a
@@ -227,11 +224,10 @@ async def cb_ok(update: Update, ctx):
                   msg_id=msg.message_id)
     PENDING.pop(key, None)
 
-    try:
-        await msg.reply_text(words.recorded(st["reported"], label, iso, site_text),
-                             parse_mode=ParseMode.MARKDOWN)
-    except TelegramError:
-        pass
+    with suppress(TelegramError):
+        await msg.reply_text(
+            words.recorded(st["reported"], label, iso, site_text),
+            parse_mode=ParseMode.MARKDOWN)
 
     # House standing: a second browser launch, best effort, clearly separate
     # from the result. Skipped if memory is short — it is decoration.
@@ -249,10 +245,8 @@ async def cb_ok(update: Update, ctx):
     except Exception:
         pass
 
-    try:
+    with suppress(TelegramError):
         await q.answer("recorded")
-    except TelegramError:
-        pass
 
 
 def authorised(ctx, chat_id):

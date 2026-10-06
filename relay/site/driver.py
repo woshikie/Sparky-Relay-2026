@@ -6,6 +6,7 @@ upload + read the Detected Steps, set the Activity Date, commit.
 import os
 import re
 import time
+from contextlib import suppress
 
 from selenium import webdriver
 from selenium.common.exceptions import StaleElementReferenceException
@@ -53,7 +54,8 @@ DETECTED_RE = re.compile(r"Detected steps\s*([\d,. ]+)", re.I)
 
 # Anchored on real month names: a loose [A-Z][a-z]+ \d{4} also matches the page
 # title "Olympics 2026", which is not the calendar header.
-MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"]
+MONTHS = ["January", "February", "March", "April", "May", "June", "July",
+          "August", "September", "October", "November", "December"]
 MONTH_ALT = "|".join(MONTHS)
 HEADER_RE = re.compile(r"\b(%s)\s+(\d{4})\b" % MONTH_ALT)
 DATE_LABEL_RE = re.compile(
@@ -68,7 +70,10 @@ def _in_container():
     reliable signals are the marker file, a podman-style cgroup path, or the
     container being PID 1 with an init that is not systemd.
     """
-    if os.environ.get("container") or os.environ.get("IN_CONTAINER"):
+    # SIM112 wants CONTAINER, but the lowercase name is dictated by the
+    # runtime: rootless podman sets `container=podman` itself (see
+    # docker-compose.yml), and renaming our lookup would stop seeing it.
+    if os.environ.get("container") or os.environ.get("IN_CONTAINER"):  # noqa: SIM112
         return True
     if os.path.exists("/.dockerenv"):
         return True
@@ -188,10 +193,8 @@ class Relay:
     def stop(self):
         if self.driver:
             self._step("closing")
-            try:
+            with suppress(Exception):
                 self.driver.quit()
-            except Exception:
-                pass
             self.driver = None
             self._say("browser closed")
 
@@ -293,8 +296,10 @@ class Relay:
         self._wait_hydrated(u)
         self._say("page hydrated")
 
-        u.clear(); u.send_keys(username)
-        p.clear(); p.send_keys(password)
+        u.clear()
+        u.send_keys(username)
+        p.clear()
+        p.send_keys(password)
         self.driver.find_element(By.CSS_SELECTOR, "button").click()
         for _ in range(LOGIN_PROBES):
             time.sleep(0.5)

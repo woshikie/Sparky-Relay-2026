@@ -27,10 +27,16 @@ def kb_date_default(steps, reported):
     t = sg_today()
     y = t - datetime.timedelta(days=1)
     return InlineKeyboardMarkup([[
-        InlineKeyboardButton("Today (%s)" % t.strftime("%d %b"), callback_data="dt:today"),
-        InlineKeyboardButton("Yesterday (%s)" % y.strftime("%d %b"), callback_data="dt:yday"),
+        InlineKeyboardButton(
+            "Today (%s)" % t.strftime("%d %b"),
+            callback_data="dt:today"),
+        InlineKeyboardButton(
+            "Yesterday (%s)" % y.strftime("%d %b"),
+            callback_data="dt:yday"),
     ], [
-        InlineKeyboardButton("\U0001F4C5 Open datepicker", callback_data="dt:pick:%d:%d" % (t.year, t.month)),
+        InlineKeyboardButton(
+            "\U0001F4C5 Open datepicker",
+            callback_data="dt:pick:%d:%d" % (t.year, t.month)),
     ]])
 
 
@@ -47,7 +53,9 @@ def kb_overwrite(new_steps, old_steps, iso):
     return InlineKeyboardMarkup([[
         InlineKeyboardButton("\U0001F504 Overwrite anyway", callback_data="ok:go"),
     ], [
-        InlineKeyboardButton("Keep my %s" % f"{old_steps:,}", callback_data="ok:cancel"),
+        InlineKeyboardButton(
+            "Keep my %s" % f"{old_steps:,}",
+            callback_data="ok:cancel"),
     ]])
 
 
@@ -73,7 +81,9 @@ LABEL_NEW_CREDS = "✏️ Different account"
 
 
 def label_use_preset():
-    """'Use <Original Author's username>' — the username is part of the button, so it has to come
+    """Label for the use-preset-credentials button.
+
+    'Use <Original Author's username>' — the username is part of the button, so it has to come
     from config rather than being hard-coded here.
     """
     return "✅ Use %s" % config.SITE_USERNAME

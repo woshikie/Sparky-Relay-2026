@@ -112,7 +112,8 @@ def present_secret(chat_id, candidate):
     worse than a slow guessing attack on a passphrase.
     """
     if ledger.secret_throttled(chat_id):
-        wait = ledger.SECRET_WINDOW - (time.time() - ledger.last_secret_attempt(chat_id))
+        wait = ledger.SECRET_WINDOW - (
+            time.time() - ledger.last_secret_attempt(chat_id))
         return Decision(False, "secret_throttled", chat_id=chat_id,
                         retry_after=int(wait) + 1)
     label = ledger.check_secret(candidate)
@@ -157,10 +158,8 @@ def describe(markdown=True):
     which Telegram reads as an italic delimiter.
     """
     mode = words.md(config.ACCESS_MODE)
-    if markdown:
-        line = "Access Mode: **%s**" % mode
-    else:
-        line = "Access Mode: %s" % mode
+    template = "Access Mode: **%s**" if markdown else "Access Mode: %s"
+    line = template % mode
     if config.ACCESS_MODE == "blacklist":
         line += "  ⚠️ anyone not denied can drive this"
     if config.ACCESS_MODE == "whitelist_claim":

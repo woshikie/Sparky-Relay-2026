@@ -86,13 +86,15 @@ def open_sealed(token, blob):
         ).decode("utf-8")
     except DecryptionFailed:
         raise
-    except InvalidTag:
+    except InvalidTag as err:
         # Wrong key (token rotated) or the bytes were altered. Same response
         # either way: we cannot tell, and saying otherwise would leak whether
         # a guess was close.
-        raise DecryptionFailed("cannot decrypt: wrong key or altered data")
-    except Exception:
-        raise DecryptionFailed("cannot decrypt: malformed vault entry")
+        raise DecryptionFailed(
+            "cannot decrypt: wrong key or altered data") from err
+    except Exception as err:
+        raise DecryptionFailed(
+            "cannot decrypt: malformed vault entry") from err
 
 
 def can_open(token, blob):

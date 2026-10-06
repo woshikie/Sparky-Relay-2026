@@ -182,7 +182,7 @@ def ask_username():
 
 def bad_username():
     return (
-        "That does not look like a username. The site needs 3–40 characters. "
+        "That does not look like a username. The site needs 3–40 characters. "  # noqa: RUF001
         "Try again."
     )
 
@@ -276,13 +276,15 @@ def scanning(name):
 
 
 def ocr_read(steps, reported, plausible=True):
-    head = "%(ocr)s The site read **%(s)s** steps." % dict(
-        ocr=EMOJI["ocr"], s=reported)
+    head = "%(ocr)s The site read **%(s)s** steps." % {
+         'ocr': EMOJI["ocr"],
+         's': reported,
+    }
     if plausible:
         return head
     return (
         "⚠️ The site read **%s** steps, which is outside the range I expect "
-        "(%d–%d). I am not going to record that without a look from you."
+        "(%d–%d). I am not going to record that without a look from you."  # noqa: RUF001
         % (reported, 100, 200_000)
     )
 
@@ -291,7 +293,10 @@ def choose_date(steps, reported, default_label):
     return (
         "%(date)s Which day do these **%(s)s** steps belong to?\n\n"
         "_Defaults to today. Pick a different date if this is yesterday's "
-        "screenshot._" % dict(date=EMOJI["date"], s=reported)
+        "screenshot._" % {
+             'date': EMOJI["date"],
+             's': reported,
+        }
     )
 
 
@@ -300,7 +305,12 @@ def confirming(steps, reported, date_label, iso):
         "%(ok)s Confirming **%(s)s** steps for **%(dl)s**.\n\n"
         "Site read: `%(s)s`\n"
         "Activity date: `%(iso)s`"
-        % dict(ok=EMOJI["ok"], s=reported, dl=date_label, iso=iso)
+        % {
+             'ok': EMOJI["ok"],
+             's': reported,
+             'dl': date_label,
+             'iso': iso,
+        }
     )
 
 
@@ -312,17 +322,25 @@ def overwrite_warning(new_steps, old_steps, date_label):
         "That usually means a blurry or partial screenshot. Recording it would "
         "replace your %(old)s and the old screenshot would be deleted.\n\n"
         "Overwrite anyway?"
-        % dict(ow=EMOJI["overwrite"], old=f"{old_steps:,}",
-               dl=date_label, new=f"{new_steps:,}",
-               diff=f"{diff:,}")
+        % {
+             'ow': EMOJI["overwrite"],
+             'old': f"{old_steps:,}",
+             'dl': date_label,
+             'new': f"{new_steps:,}",
+             'diff': f"{diff:,}",
+        }
     )
 
 
 def overwrite_upgrade(new_steps, old_steps, date_label):
     return (
         "%(ow)s **Update for %(dl)s:** %(old)s → %(new)s steps."
-        % dict(ow=EMOJI["overwrite"], dl=date_label,
-               old=f"{old_steps:,}", new=f"{new_steps:,}")
+        % {
+             'ow': EMOJI["overwrite"],
+             'dl': date_label,
+             'old': f"{old_steps:,}",
+             'new': f"{new_steps:,}",
+        }
     )
 
 
@@ -385,15 +403,19 @@ def login_failed(reason):
 def recorded(reported, date_label, iso, site_text=None):
     txt = (
         "%(ok)s **Recorded %(s)s steps for %(dl)s.**\n\n"
-        "The site confirmed the Submission." % dict(
-            ok=EMOJI["ok"], s=reported, dl=date_label)
+        "The site confirmed the Submission." % {
+             'ok': EMOJI["ok"],
+             's': reported,
+             'dl': date_label,
+        }
     )
     if site_text:
         for ln in site_text.split("\n"):
             ln = ln.strip()
             if not ln:
                 continue
-            if "step" in ln.lower() or "point" in ln.lower() or "recorded" in ln.lower():
+            low = ln.lower()
+            if "step" in low or "point" in low or "recorded" in low:
                 txt += "\n> %s" % ln
                 break
     return txt

@@ -96,7 +96,7 @@ async def on_photo(update: Update, ctx):
     except Exception as e:
         await prog.stop()
         await scratch.delete()
-        alert, alarm, log_line = await failures.explain(
+        _alert, _alarm, log_line = await failures.explain(
             msg, e, operation="Upload",
             start_prompt=lambda: ask_credentials(msg, chat.id))
         if log_line:

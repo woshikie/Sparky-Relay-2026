@@ -170,8 +170,9 @@ def all_site_days():
 
 
 def current_value(activity_date):
-    """What the site holds for a date: the sync if we have one, else the bot's
-    own record of what it wrote.
+    """What the site holds for a date.
+
+    The sync if we have one, else the bot's own record of what it wrote.
 
     The site is the authority. A day the user entered by hand is invisible to
     the bot until a sync, and the overwrite guard has to know about it or it

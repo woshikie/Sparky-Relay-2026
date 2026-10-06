@@ -20,7 +20,7 @@ from relay.telegram.keyboards import kb_credential_choice, kb_prompt, kb_reply
 
 
 class _NoCredentials(Exception):
-    """This chat has not supplied Site credentials yet."""
+    """No Site credentials supplied for this chat yet."""
 
 
 def _credential_prompt_body():

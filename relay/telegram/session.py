@@ -9,6 +9,7 @@ Session -- belongs to the process, not to any one Screenshot.
 import asyncio
 import contextlib
 import os
+from contextlib import suppress
 
 import relay.telegram.prompts as prompts_mod
 from relay import config, memory
@@ -19,11 +20,9 @@ DBG = bool(os.environ.get("RELAY_DEBUG"))
 
 def log(ctx, msg):
     if DBG and ctx is not None:
-        try:
+        with suppress(Exception):
             ctx.job_queue.run_once(
                 lambda _c: None, 0)  # no-op; keeps job_queue referenced
-        except Exception:
-            pass
     print("[relay] %s" % msg, flush=True)
 
 

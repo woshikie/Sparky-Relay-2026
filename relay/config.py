@@ -1,5 +1,6 @@
 """Config. Nothing here is a default we invented at runtime."""
 import os
+from contextlib import suppress
 
 from relay.errors import ConfigRefused
 
@@ -21,11 +22,12 @@ def _load():
     # otherwise decide the result of the test.
     skip_file = os.environ.get("RELAY_SKIP_SECRETS_FILE") == "1"
     if not skip_file and os.path.exists(ENV_PATH):
-        for line in open(ENV_PATH):
-            line = line.strip()
-            if line and not line.startswith("#") and "=" in line:
-                k, v = line.split("=", 1)
-                env[k.strip()] = v.strip()
+        with open(ENV_PATH) as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith("#") and "=" in line:
+                    k, v = line.split("=", 1)
+                    env[k.strip()] = v.strip()
     # Compose's `${VAR:?}` and `${VAR:-}` distinguish "unset" from "set to the
     # empty string", and an empty env var is how a container expresses "not
     # configured". So an empty value is ignored rather than allowed to blank a
@@ -61,10 +63,8 @@ def _chat_ids(raw):
     for part in (raw or "").replace(";", ",").split(","):
         part = part.strip()
         if part:
-            try:
+            with suppress(ValueError):
                 out.append(int(part))
-            except ValueError:
-                pass
     return out
 
 

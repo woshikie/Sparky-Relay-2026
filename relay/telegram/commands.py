@@ -6,6 +6,7 @@ and sitting next to the handlers avoids a prompts<->commands cycle.
 """
 import asyncio
 import io
+from contextlib import suppress
 
 from telegram import Update
 from telegram.constants import ParseMode
@@ -129,7 +130,7 @@ async def on_sync(update: Update, ctx):
     except Exception as e:
         await prog.stop()
         await scratch.delete()
-        alert, alarm, log_line = await failures.explain(
+        _alert, _alarm, log_line = await failures.explain(
             msg, e, operation="Sync",
             start_prompt=lambda: ask_credentials(msg, chat.id))
         if log_line:
@@ -245,14 +246,12 @@ async def _run_button(ctx, msg, chat, action, stage):
     if stage is None:
         pending = _prompt_stage(chat.id)
         if pending and pending.get("stage") in ("username", "password"):
-            try:
+            with suppress(TelegramError):
                 await msg.reply_text(words.ask_password()
                                      if pending.get("stage") == "password"
                                      else words.ask_username(),
                                      parse_mode=ParseMode.MARKDOWN,
                                      reply_markup=kb_for(chat.id))
-            except TelegramError:
-                pass
 
 
 def _as_update(msg, chat):
