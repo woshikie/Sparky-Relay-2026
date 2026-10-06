@@ -11,6 +11,11 @@ omit = [
     "tests/*",
     "check_*.py",
     "relay/site/driver.py",
+    # __main__ is the eight-line entrypoint: the config guard plus a main()
+    # call. Coverage cannot see it because it only runs in a subprocess, and
+    # test_config proves it that way instead (`python -m relay`, exit 2, the
+    # message, no traceback).
+    "relay/__main__.py",
     "*/.venv/*",
     "setup.sh",
     "*/__pycache__/*",

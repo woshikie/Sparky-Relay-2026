@@ -12,16 +12,15 @@ from PIL import Image
 from telegram import Update
 from telegram.constants import ParseMode
 
-from relay import config, memory
+from relay import config
 from relay import progress as progress_mod
 from relay.site import driver as relay_site
-import relay.store.ledger as ledger
-import relay.store.vault as vault
 import relay.telegram.access as access
 import relay.telegram.words as words
 from relay.telegram.callbacks import PENDING
 from relay.telegram.keyboards import kb_date_default
-from relay.telegram.prompts import _NoCredentials, ask_credentials
+from relay.telegram.prompts import ask_credentials
+import relay.telegram.failures as failures
 import relay.telegram.session as session_mod
 from relay.telegram.session import log
 
@@ -97,45 +96,14 @@ async def on_photo(update: Update, ctx):
         async with session_mod.browser_session(prog) as r:
             await session_mod.sign_in(chat.id, prog)
             steps, reported = await asyncio.to_thread(r.upload, path)
-    except _NoCredentials:
-        await prog.stop()
-        await scratch.delete()
-        await msg.reply_text(words.need_credentials(),
-                             parse_mode=ParseMode.MARKDOWN)
-        await ask_credentials(msg, chat.id)
-        return
-    except vault.DecryptionFailed as e:
-        # Almost always a rotated bot token: the vault key no longer opens the
-        # stored entry. The old password is unrecoverable by design.
-        await prog.stop()
-        await scratch.delete()
-        await msg.reply_text(words.vault_unreadable(str(e)),
-                             parse_mode=ParseMode.MARKDOWN)
-        await ask_credentials(msg, chat.id)
-        return
-    except memory.InsufficientMemory as e:
-        await prog.stop()
-        await scratch.delete()
-        await msg.reply_text(words.low_memory(str(e)),
-                             parse_mode=ParseMode.MARKDOWN)
-        return
-    except relay_site.NoStepsFound:
-        await prog.stop()
-        await scratch.delete()
-        await msg.reply_text(words.no_steps(), parse_mode=ParseMode.MARKDOWN)
-        return
-    except relay_site.SiteChanged as e:
-        await prog.stop()
-        await scratch.delete()
-        await msg.reply_text(words.site_changed(str(e)),
-                             parse_mode=ParseMode.MARKDOWN)
-        return
     except Exception as e:
         await prog.stop()
         await scratch.delete()
-        await msg.reply_text("❌ Upload failed: `%s`" % str(e)[:200],
-                             parse_mode=ParseMode.MARKDOWN)
-        session_mod.log(ctx, "upload error: %r" % (e,))
+        alert, alarm, log_line = await failures.explain(
+            msg, e, operation="Upload",
+            start_prompt=lambda: ask_credentials(msg, chat.id))
+        if log_line:
+            session_mod.log(ctx, log_line)
         return
 
     plausible = relay_site.MIN_STEPS <= steps <= relay_site.MAX_STEPS

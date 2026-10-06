@@ -15,18 +15,17 @@ from relay import config, memory
 from relay import progress as progress_mod
 from relay.clock import sg_now
 import relay.store.ledger as ledger
-import relay.store.vault as vault
 from relay.site import driver as relay_site
 import relay.telegram.access as access
 from relay.telegram.callbacks import PENDING
 from relay.telegram.keyboards import (button_actions, kb_after_login,
                                         kb_reply)
-from relay.telegram.prompts import (_NoCredentials, _clear_stage,
-                                     _credential_prompt_body, _prompt_stage,
-                                     _scrub, _set_stage,
+from relay.telegram.prompts import (_clear_stage, _credential_prompt_body,
+                                     _prompt_stage, _scrub, _set_stage,
                                      _start_credential_stage, ask_credentials,
                                      ask_password, has_credentials, kb_for,
                                      on_login, on_logout)
+import relay.telegram.failures as failures
 import relay.telegram.session as session_mod
 import relay.telegram.words as words
 
@@ -121,38 +120,14 @@ async def on_sync(update: Update, ctx):
         async with session_mod.browser_session(prog) as r:
             await session_mod.sign_in(chat.id, prog)
             days = await asyncio.to_thread(r.read_days)
-    except _NoCredentials:
-        await prog.stop()
-        await scratch.delete()
-        await msg.reply_text(words.need_credentials(),
-                             parse_mode=ParseMode.MARKDOWN)
-        await ask_credentials(msg, chat.id)
-        return
-    except vault.DecryptionFailed as e:
-        await prog.stop()
-        await scratch.delete()
-        await msg.reply_text(words.vault_unreadable(str(e)),
-                             parse_mode=ParseMode.MARKDOWN)
-        await ask_credentials(msg, chat.id)
-        return
-    except memory.InsufficientMemory as e:
-        await prog.stop()
-        await scratch.delete()
-        await msg.reply_text(words.low_memory(str(e)),
-                             parse_mode=ParseMode.MARKDOWN)
-        return
-    except relay_site.SiteChanged as e:
-        await prog.stop()
-        await scratch.delete()
-        await msg.reply_text(words.site_changed(str(e)),
-                             parse_mode=ParseMode.MARKDOWN)
-        return
     except Exception as e:
         await prog.stop()
         await scratch.delete()
-        await msg.reply_text(" Sync failed: `%s`" % str(e)[:200],
-                             parse_mode=ParseMode.MARKDOWN)
-        session_mod.log(ctx, "sync error: %r" % (e,))
+        alert, alarm, log_line = await failures.explain(
+            msg, e, operation="Sync",
+            start_prompt=lambda: ask_credentials(msg, chat.id))
+        if log_line:
+            session_mod.log(ctx, log_line)
         return
 
     if not days:

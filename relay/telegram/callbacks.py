@@ -12,17 +12,15 @@ from telegram import Update
 from telegram.constants import ParseMode
 from telegram.error import TelegramError
 
-from relay import config, memory
-from relay.site import driver as relay_site
 import relay.store.ledger as ledger
-import relay.store.vault as vault
 from relay.clock import sg_today
 from relay.site.parsing import parse_profile
 import relay.telegram.access as access
 import relay.telegram.words as words
 from relay.telegram.keyboards import (kb_confirm, kb_date_default,
                                         kb_overwrite, kb_pick_date)
-from relay.telegram.prompts import _NoCredentials, ask_credentials
+from relay.telegram.prompts import ask_credentials
+import relay.telegram.failures as failures
 import relay.telegram.session as session_mod
 from relay.telegram.session import log
 
@@ -213,44 +211,14 @@ async def cb_ok(update: Update, ctx):
                 return
             await asyncio.to_thread(r.set_date, date)
             site_text = await asyncio.to_thread(r.commit, st["steps"])
-    except _NoCredentials:
-        PENDING.pop(key, None)
-        await msg.reply_text(words.need_credentials(),
-                             parse_mode=ParseMode.MARKDOWN)
-        await ask_credentials(msg, chat.id)
-        await q.answer("credentials needed", show_alert=True)
-        return
-    except vault.DecryptionFailed as e:
-        PENDING.pop(key, None)
-        await msg.reply_text(words.vault_unreadable(str(e)),
-                             parse_mode=ParseMode.MARKDOWN)
-        await ask_credentials(msg, chat.id)
-        await q.answer("stored credentials unreadable", show_alert=True)
-        return
-    except memory.InsufficientMemory as e:
-        PENDING.pop(key, None)
-        await msg.reply_text(words.low_memory(str(e) or ""),
-                             parse_mode=ParseMode.MARKDOWN)
-        await q.answer("not enough memory", show_alert=True)
-        return
-    except relay_site.NoStepsFound:
-        PENDING.pop(key, None)
-        await msg.reply_text(words.no_steps(), parse_mode=ParseMode.MARKDOWN)
-        await q.answer("the site read nothing this time", show_alert=True)
-        return
-    except relay_site.SiteChanged as e:
-        PENDING.pop(key, None)
-        await msg.reply_text(words.site_changed(str(e)),
-                             parse_mode=ParseMode.MARKDOWN)
-        await q.answer()
-        return
     except Exception as e:
-        await msg.reply_text(
-            "❌ Could not record: `%s`\n\nNothing was saved — send the "
-            "screenshot again when ready." % str(e)[:200],
-            parse_mode=ParseMode.MARKDOWN)
-        await q.answer()
-        session_mod.log(ctx, "commit error: %r" % (e,))
+        PENDING.pop(key, None)
+        alert, alarm, log_line = await failures.explain(
+            msg, e, operation="Commit",
+            start_prompt=lambda: ask_credentials(msg, chat.id))
+        if log_line:
+            session_mod.log(ctx, log_line)
+        await q.answer(alert, show_alert=alarm)
         return
 
     ledger.record(iso, st["steps"], reported=st["reported"], site_label=label,

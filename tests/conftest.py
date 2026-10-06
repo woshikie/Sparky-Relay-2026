@@ -33,15 +33,33 @@ os.environ.setdefault("RELAY_STATE_DIR", tempfile.mkdtemp(prefix="relay-pytest-"
 # parent still carrying the old attribute short-circuits the whole thing and
 # hands back the pre-purge module with no error. Popping the parents forces
 # the attribute to be re-bound to the fresh submodule.
-MODULES = ("relay", "relay.telegram", "relay.store", "relay.clock",
-           "relay.config", "relay.telegram.access", "relay.store.ledger",
+#: Every relay module the purge drops. Kept as an explicit list rather than
+#: a prefix scan so a new module is a conscious addition here -- and because a
+#: static list is what caught the failures.py staleness: it binds `memory` at
+#: import for its isinstance mapping, and a purge that does not drop it leaves
+#: the mapping comparing against the previous test's classes.
+#:
+#: relay.errors is deliberately absent: it is stateless -- just exception
+#: classes, no environment read -- so purging it only splits class identity
+#: between the raiser and pytest.raises. One generation forever is correct.
+#:
+#: The parent packages are in the list, and that is load-bearing, not tidy.
+#: `from relay.telegram import access` does NOT do a straight sys.modules
+#: lookup the way `import access` did: it imports the parent, then takes the
+#: `access` attribute off it, and only imports the submodule on
+#: AttributeError. A stale parent still carrying the old attribute
+#: short-circuits the whole thing and hands back the pre-purge module with no
+#: error. Popping the parents forces the attribute to be re-bound.
+MODULES = ("relay", "relay.telegram", "relay.store", "relay.site",
+           "relay.clock", "relay.config", "relay.console",
+           "relay.progress", "relay.telegram.access", "relay.store.ledger",
            "relay.store.vault", "relay.telegram.words",
            "relay.memory", "relay.telegram.datepicker",
-           "relay.site", "relay.site.driver", "relay.site.parsing",
+           "relay.site.driver", "relay.site.parsing",
            "relay.telegram.session", "relay.telegram.keyboards",
            "relay.telegram.prompts", "relay.telegram.commands",
            "relay.telegram.photo", "relay.telegram.callbacks",
-           "relay.telegram.app")
+           "relay.telegram.failures", "relay.telegram.app")
 
 
 # The bot's fixtures are imported as bare names, so the repo root has to be on
