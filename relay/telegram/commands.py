@@ -1,12 +1,12 @@
-"""Commands, the text router, and the nightly backup.
+"""Commands and the text router.
 
 on_text lives here rather than in prompts.py so the dependency points one
 way: the router dispatches to prompt stages and to command handlers alike,
-and sitting next to the handlers avoids a prompts<->commands cycle.
+and sitting next to the handlers avoids a prompts<->commands cycle. The
+nightly backup lives in store/backup.py, next to the ledger it dumps.
 """
 
 import asyncio
-import io
 from contextlib import suppress
 from typing import Any, cast
 
@@ -22,7 +22,6 @@ import relay.telegram.session as session_mod
 import relay.telegram.words as words
 from relay import config, memory
 from relay import progress as progress_mod
-from relay.clock import sg_now
 from relay.telegram.callbacks import PENDING
 from relay.telegram.keyboards import button_actions, kb_after_login, kb_reply
 from relay.telegram.prompts import (
@@ -35,6 +34,7 @@ from relay.telegram.prompts import (
     on_login,
     on_logout,
     prompt_stage,
+    refuse,
     scrub,
     set_stage,
     start_credential_stage,
@@ -109,7 +109,7 @@ async def on_log(update: Update, ctx: ContextTypes.DEFAULT_TYPE | None) -> None:
     assert chat is not None and msg is not None
     d = access.check(chat.id, getattr(chat, "username", None))
     if not d:
-        await msg.reply_text(words.access_refused(d), parse_mode=ParseMode.MARKDOWN)
+        await refuse(msg, d)
         return
     await msg.reply_text(
         words.log_lines(ledger.all_submissions()),
@@ -134,7 +134,7 @@ async def on_sync(update: Update, ctx: ContextTypes.DEFAULT_TYPE | None) -> None
     assert chat is not None and msg is not None
     d = access.check(chat.id, getattr(chat, "username", None))
     if not d:
-        await msg.reply_text(words.access_refused(d), parse_mode=ParseMode.MARKDOWN)
+        await refuse(msg, d)
         return
     if not has_credentials(chat.id):
         await msg.reply_text(words.need_credentials(), parse_mode=ParseMode.MARKDOWN)
@@ -172,7 +172,7 @@ async def on_status(update: Update, ctx: ContextTypes.DEFAULT_TYPE | None) -> No
     assert chat is not None and msg is not None
     d = access.check(chat.id, getattr(chat, "username", None))
     if not d:
-        await msg.reply_text(words.access_refused(d), parse_mode=ParseMode.MARKDOWN)
+        await refuse(msg, d)
         return
     subs = ledger.all_submissions()
     rep = memory.budget()
@@ -407,30 +407,3 @@ async def on_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE | None) -> None
             reply_markup=kb_after_login(),
         )
         return
-
-
-# ----------------------------------------------------------------------
-# scheduled
-# ----------------------------------------------------------------------
-
-
-async def backup_job(ctx: ContextTypes.DEFAULT_TYPE) -> None:
-    """Nightly ledger backup, delivered to Telegram itself."""
-    chat_ids = [cast(int, u["chat_id"]) for u in ledger.known_users()]
-    if not chat_ids:
-        return
-    ledger.init()
-    with open(ledger.DB, "rb") as f:
-        data = f.read()
-    stamp = sg_now().strftime("%Y-%m-%d")
-    fname = "relay-ledger-%s.sqlite3" % stamp
-    await ctx.bot.send_document(
-        chat_id=chat_ids[0],
-        document=io.BytesIO(data),
-        filename=fname,
-        caption="%s Ledger backup — %d Submission(s)."
-        % (words.EMOJI["backup"], len(ledger.all_submissions())),
-    )
-
-
-# ----------------------------------------------------------------------

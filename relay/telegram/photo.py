@@ -23,7 +23,7 @@ from relay import progress as progress_mod
 from relay.site import driver as relay_site
 from relay.telegram.callbacks import PENDING
 from relay.telegram.keyboards import kb_date_default
-from relay.telegram.prompts import ask_credentials
+from relay.telegram.prompts import ask_credentials, refuse
 
 # Longest edge of the Screenshot we will keep. The site downscales to 1200px
 # anyway, and smaller photos upload faster on a 1GB VM.
@@ -77,7 +77,7 @@ async def on_photo(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     assert chat is not None and msg is not None
     d = access.check(chat.id, getattr(chat, "username", None))
     if not d:
-        await msg.reply_text(words.access_refused(d), parse_mode=ParseMode.MARKDOWN)
+        await refuse(msg, d)
         return
 
     # One message, edited as the work happens. It used to be a fixed four-frame

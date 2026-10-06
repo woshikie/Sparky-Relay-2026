@@ -22,6 +22,7 @@ from relay.clock import sg_today as sg_today
 from relay.errors import NoCredentials as NoCredentials
 from relay.site import driver as relay_site  # noqa: F401
 from relay.site.parsing import parse_profile as parse_profile
+from relay.store.backup import backup_job as backup_job
 from relay.telegram.app import main as main
 from relay.telegram.app import on_ready as on_ready
 from relay.telegram.callbacks import (  # noqa: F401
@@ -35,7 +36,6 @@ from relay.telegram.callbacks import (  # noqa: F401
 from relay.telegram.commands import (  # noqa: F401
     _as_update,
     _run_button,
-    backup_job,
     on_log,
     on_start,
     on_status,

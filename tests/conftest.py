@@ -59,7 +59,7 @@ os.environ.setdefault("RELAY_STATE_DIR", tempfile.mkdtemp(prefix="relay-pytest-"
 #: error. Popping the parents forces the attribute to be re-bound.
 MODULES = ("relay", "relay.telegram", "relay.store", "relay.site",
            "relay.clock", "relay.config", "relay.console",
-           "relay.progress", "relay.telegram.access", "relay.store.ledger",
+           "relay.progress", "relay.telegram.access", "relay.store.backup", "relay.store.ledger",
            "relay.store.vault", "relay.telegram.words",
            "relay.memory", "relay.telegram.datepicker",
            "relay.site.driver", "relay.site.parsing",

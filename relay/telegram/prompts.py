@@ -52,7 +52,7 @@ async def on_login(update: Update, ctx: ContextTypes.DEFAULT_TYPE | None) -> Non
     assert chat is not None and msg is not None
     d = access.check(chat.id, getattr(chat, "username", None))
     if not d:
-        await msg.reply_text(words.access_refused(d), parse_mode=ParseMode.MARKDOWN)
+        await refuse(msg, d)
         return
     clear_stage(chat.id)
     await ask_credentials(msg, chat.id)
@@ -65,7 +65,7 @@ async def on_logout(update: Update, ctx: ContextTypes.DEFAULT_TYPE | None) -> No
     assert chat is not None and msg is not None
     d = access.check(chat.id, getattr(chat, "username", None))
     if not d:
-        await msg.reply_text(words.access_refused(d), parse_mode=ParseMode.MARKDOWN)
+        await refuse(msg, d)
         return
     clear_stage(chat.id)
     ledger.forget_credentials(chat.id)
@@ -143,6 +143,17 @@ async def ask_password(
         parse_mode=ParseMode.MARKDOWN,
         reply_markup=kb_for(chat_id),
     )
+
+
+async def refuse(msg: Message, decision: access.Decision) -> None:
+    """Tell a chat it cannot drive the Relay, and why.
+
+    The shared shape of every access refusal: the decision already knows
+    the reason, words already knows the copy. Handlers that need more
+    (on_start's claim/secret branches, with their keyboards) keep their
+    bespoke replies.
+    """
+    await msg.reply_text(words.access_refused(decision), parse_mode=ParseMode.MARKDOWN)
 
 
 def kb_for(chat_id: int) -> ReplyKeyboardMarkup:

@@ -19,9 +19,9 @@ import relay.store.ledger as ledger
 import relay.telegram.access as access
 import relay.telegram.session as session_mod
 from relay import config, console, memory
+from relay.store.backup import backup_job
 from relay.telegram.callbacks import cb_date, cb_ok
 from relay.telegram.commands import (
-    backup_job,
     on_log,
     on_start,
     on_status,
