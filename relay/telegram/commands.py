@@ -26,18 +26,18 @@ from relay.clock import sg_now
 from relay.telegram.callbacks import PENDING
 from relay.telegram.keyboards import button_actions, kb_after_login, kb_reply
 from relay.telegram.prompts import (
-    _clear_stage,
-    _credential_prompt_body,
-    _prompt_stage,
-    _scrub,
-    _set_stage,
-    _start_credential_stage,
     ask_credentials,
     ask_password,
+    clear_stage,
+    credential_prompt_body,
     has_credentials,
     kb_for,
     on_login,
     on_logout,
+    prompt_stage,
+    scrub,
+    set_stage,
+    start_credential_stage,
 )
 
 # ----------------------------------------------------------------------
@@ -95,9 +95,9 @@ async def on_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE | None) -> Non
         body = (
             words.welcome(getattr(chat, "first_name", None))
             + "\n\n"
-            + _credential_prompt_body()
+            + credential_prompt_body()
         )
-        _start_credential_stage(chat.id)
+        start_credential_stage(chat.id)
     await msg.reply_text(
         body, parse_mode=ParseMode.MARKDOWN, reply_markup=kb_for(chat.id)
     )
@@ -177,7 +177,7 @@ async def on_status(update: Update, ctx: ContextTypes.DEFAULT_TYPE | None) -> No
     subs = ledger.all_submissions()
     rep = memory.budget()
     creds = ledger.credentials_stored(chat.id)
-    st = _prompt_stage(chat.id) or {}
+    st = prompt_stage(chat.id) or {}
     preset_in_use = bool(st.get("preset")) and config.has_preset_credentials()
 
     if preset_in_use:
@@ -251,8 +251,8 @@ async def _run_button(
         return
 
     if action == "use_preset":
-        _clear_stage(chat.id)
-        _set_stage(chat.id, "ready", username=config.SITE_USERNAME, preset=True)
+        clear_stage(chat.id)
+        set_stage(chat.id, "ready", username=config.SITE_USERNAME, preset=True)
         await msg.reply_text(
             words.using_preset(config.SITE_USERNAME),
             parse_mode=ParseMode.MARKDOWN,
@@ -261,7 +261,7 @@ async def _run_button(
         return
 
     if action == "new_creds":
-        _set_stage(chat.id, "username")
+        set_stage(chat.id, "username")
         await msg.reply_text(
             words.ask_username(),
             parse_mode=ParseMode.MARKDOWN,
@@ -270,7 +270,7 @@ async def _run_button(
         return
 
     if action == "cancel":
-        _clear_stage(chat.id)
+        clear_stage(chat.id)
         await msg.reply_text(
             words.cancelled(),
             parse_mode=ParseMode.MARKDOWN,
@@ -294,7 +294,7 @@ async def _run_button(
     # A tapped command should leave the keyboard showing what comes next,
     # which for /login is the prompt rather than the standing commands.
     if stage is None:
-        pending = _prompt_stage(chat.id)
+        pending = prompt_stage(chat.id)
         if pending and pending.get("stage") in ("username", "password"):
             with suppress(TelegramError):
                 await msg.reply_text(
@@ -326,7 +326,7 @@ async def on_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE | None) -> None
     msg = update.effective_message
     assert chat is not None and msg is not None
     text = (msg.text or "").strip()
-    st = _prompt_stage(chat.id)
+    st = prompt_stage(chat.id)
 
     if text in button_actions():
         await _run_button(ctx, msg, chat, button_actions()[text], st)
@@ -343,7 +343,7 @@ async def on_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE | None) -> None
             # gets deleted, then say why it did not work. Falling through to
             # the "nothing to do" reply instead would leave a password sitting
             # in the chat with no explanation.
-            await _scrub(msg)
+            await scrub(msg)
             await msg.reply_text(
                 words.secret_throttled(d.retry_after), parse_mode=ParseMode.MARKDOWN
             )
@@ -351,7 +351,7 @@ async def on_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE | None) -> None
         # The rate limit is enforced inside present_secret, not here.
         r = access.present_secret(chat.id, text)
         # The message carried a secret: remove it from the chat immediately.
-        await _scrub(msg)
+        await scrub(msg)
         if r:
             await msg.reply_text(
                 words.secret_accepted(r.how), parse_mode=ParseMode.MARKDOWN
@@ -398,9 +398,9 @@ async def on_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE | None) -> None
             )
             return
         finally:
-            _clear_stage(chat.id)
-        await _scrub(msg)
-        _set_stage(chat.id, "ready", username=username, preset=False)
+            clear_stage(chat.id)
+        await scrub(msg)
+        set_stage(chat.id, "ready", username=username, preset=False)
         await msg.reply_text(
             words.credentials_saved(username),
             parse_mode=ParseMode.MARKDOWN,

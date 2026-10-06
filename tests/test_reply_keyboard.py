@@ -87,14 +87,14 @@ def test_the_keyboard_is_not_one_time(keyboard_bot):
 
 def test_kb_for_follows_the_prompt(keyboard_bot):
     """One function decides, so no path can send a keyboard that does not fit."""
-    keyboard_bot._clear_stage(1)
+    keyboard_bot.clear_stage(1)
     assert keyboard_bot.LABEL_SUBMIT in labels_of(keyboard_bot.kb_for(1))
-    keyboard_bot._set_stage(1, "choose_preset")
+    keyboard_bot.set_stage(1, "choose_preset")
     assert any("Use" in l for l in labels_of(keyboard_bot.kb_for(1)))
     assert keyboard_bot.LABEL_SUBMIT not in labels_of(keyboard_bot.kb_for(1))
-    keyboard_bot._set_stage(1, "username")
+    keyboard_bot.set_stage(1, "username")
     assert keyboard_bot.LABEL_CANCEL in labels_of(keyboard_bot.kb_for(1))
-    keyboard_bot._clear_stage(1)
+    keyboard_bot.clear_stage(1)
 
 
 # ------------------------------------------------------------- the dispatch
@@ -160,7 +160,7 @@ def test_the_log_button_answers(keyboard_bot):
 
 def test_the_login_button_starts_the_prompt(keyboard_bot):
     press(keyboard_bot, keyboard_bot.LABEL_LOGIN)
-    assert keyboard_bot._prompt_stage(1)["stage"] in ("username", "choose_preset")
+    assert keyboard_bot.prompt_stage(1)["stage"] in ("username", "choose_preset")
 
 
 def test_the_logout_button_forgets(keyboard_bot, ledger):
@@ -179,9 +179,9 @@ def test_the_submit_button_asks_for_a_screenshot(keyboard_bot):
 
 def test_the_cancel_button_stops_a_prompt(keyboard_bot):
     press(keyboard_bot, keyboard_bot.LABEL_LOGIN)
-    assert keyboard_bot._prompt_stage(1) is not None
+    assert keyboard_bot.prompt_stage(1) is not None
     upd = press(keyboard_bot, keyboard_bot.LABEL_CANCEL)
-    assert keyboard_bot._prompt_stage(1) is None
+    assert keyboard_bot.prompt_stage(1) is None
     assert "recorded" in upd.message.said.lower()
 
 
@@ -205,9 +205,9 @@ def test_a_button_reply_carries_a_keyboard(keyboard_bot):
 
 def test_a_button_is_not_mistaken_for_an_answer(keyboard_bot):
     press(keyboard_bot, keyboard_bot.LABEL_LOGIN)
-    stage = keyboard_bot._prompt_stage(1)["stage"]
+    stage = keyboard_bot.prompt_stage(1)["stage"]
     press(keyboard_bot, keyboard_bot.LABEL_SUBMIT)
-    assert keyboard_bot._prompt_stage(1)["stage"] == stage
+    assert keyboard_bot.prompt_stage(1)["stage"] == stage
 
 
 def test_a_button_mid_prompt_says_what_to_do(keyboard_bot):
@@ -219,14 +219,14 @@ def test_a_button_mid_prompt_says_what_to_do(keyboard_bot):
 def test_free_text_still_reaches_the_prompt(keyboard_bot):
     press(keyboard_bot, keyboard_bot.LABEL_LOGIN)
     press(keyboard_bot, "testuser")
-    stage = keyboard_bot._prompt_stage(1)["stage"]
+    stage = keyboard_bot.prompt_stage(1)["stage"]
     assert stage in ("password", "choose_preset")
 
 
 def test_an_unrecognised_label_is_not_a_button(keyboard_bot):
     press(keyboard_bot, keyboard_bot.LABEL_LOGIN)
     press(keyboard_bot, "someone-typed-this")
-    stage = keyboard_bot._prompt_stage(1)
+    stage = keyboard_bot.prompt_stage(1)
     assert stage is None or stage.get("username") == "someone-typed-this" \
         or stage.get("stage") != "username"
 

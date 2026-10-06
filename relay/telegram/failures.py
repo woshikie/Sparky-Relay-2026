@@ -31,10 +31,10 @@ from telegram import Message
 from telegram.constants import ParseMode
 
 from relay import memory
+from relay.errors import NoCredentials
 from relay.site import driver as relay_site
 from relay.store import vault as vault_mod
 from relay.telegram import words as words_mod
-from relay.telegram.prompts import _NoCredentials
 
 # The three flows that can fail into this mapping. Closed, not free text: a
 # fourth caller inventing its own headline must add it here, where the
@@ -128,7 +128,7 @@ def _site_changed(exc: BaseException) -> FailureKind:
 # insertion order, and none of the five is a subclass of another, so no
 # branch can shadow one above it.
 _CLASSIFY: dict[type[BaseException], Callable[[BaseException], FailureKind]] = {
-    _NoCredentials: _need_credentials,
+    NoCredentials: _need_credentials,
     vault_mod.DecryptionFailed: _vault_unreadable,
     memory.InsufficientMemory: _low_memory,
     relay_site.NoStepsFound: _no_steps,

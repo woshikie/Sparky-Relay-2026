@@ -19,6 +19,7 @@ from relay import config as config
 from relay import memory as memory
 from relay.clock import sg_now as sg_now
 from relay.clock import sg_today as sg_today
+from relay.errors import NoCredentials as NoCredentials
 from relay.site import driver as relay_site  # noqa: F401
 from relay.site.parsing import parse_profile as parse_profile
 from relay.telegram.app import main as main
@@ -72,19 +73,18 @@ from relay.telegram.photo import (  # noqa: F401
 from relay.telegram.prompts import (  # noqa: F401
     PROMPT_TTL,
     PROMPTING,
-    _clear_stage,
-    _NoCredentials,
-    _prompt_stage,
-    _scrub,
-    _set_stage,
     ask_credentials,
     ask_password,
     ask_username,
+    clear_stage,
     has_credentials,
     kb_for,
     on_credential_choice,
     on_login,
     on_logout,
+    prompt_stage,
+    scrub,
+    set_stage,
     site_credentials,
 )
 from relay.telegram.session import (  # noqa: F401

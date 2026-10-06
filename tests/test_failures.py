@@ -27,10 +27,10 @@ def failures():
 
 
 @pytest.fixture
-def _NoCredentials():
+def NoCredentials():
     import importlib
 
-    return importlib.import_module("relay.telegram.prompts")._NoCredentials
+    return importlib.import_module("relay.telegram.prompts").NoCredentials
 
 
 class FakeMessage:
@@ -60,9 +60,9 @@ def explained(failures, exc, operation="Upload", prompt=True):
 # ------------------------------------------------------- the two fixes
 
 
-def test_no_credentials_asks_for_them(failures, _NoCredentials):
+def test_no_credentials_asks_for_them(failures, NoCredentials):
     """The fix is supplying credentials, so the prompt starts."""
-    msg, (alert, alarm, log_line) = explained(failures, _NoCredentials("none stored"))
+    msg, (alert, alarm, log_line) = explained(failures, NoCredentials("none stored"))
     assert "username" in msg.said.lower() or "login" in msg.said.lower()
     assert msg.prompts_started == 1
     assert alert == "credentials needed" and alarm is True
@@ -81,9 +81,9 @@ def test_a_rotated_token_says_the_password_is_gone(failures):
     assert log_line is None
 
 
-def test_without_a_prompt_nothing_starts_one(failures, _NoCredentials):
+def test_without_a_prompt_nothing_starts_one(failures, NoCredentials):
     """The caller decides whether a prompt makes sense, not the mapping."""
-    msg, _ = explained(failures, _NoCredentials("none"), prompt=False)
+    msg, _ = explained(failures, NoCredentials("none"), prompt=False)
     assert msg.prompts_started == 0
     assert "username" in msg.said.lower() or "login" in msg.said.lower()
 
@@ -173,14 +173,14 @@ def test_the_error_text_is_capped(failures):
 # --------------------------------------------- classify: the pure table
 
 
-def _cases(failures, _NoCredentials):
+def _cases(failures, NoCredentials):
     import relay.store.vault as vault
     from relay import memory
     from relay.site import driver as relay_site
 
     return [
         (
-            _NoCredentials("none stored"),
+            NoCredentials("none stored"),
             ("login", "credentials needed", True, None, True),
         ),
         (
@@ -210,13 +210,13 @@ def _cases(failures, _NoCredentials):
         ("Commit", "Could not record"),
     ],
 )
-def test_classify_is_a_pure_table(failures, _NoCredentials, operation, headline):
+def test_classify_is_a_pure_table(failures, NoCredentials, operation, headline):
     """No Message, no event loop, no fakes: the mapping is just rows.
 
     Each row pins what the failure means; explain() only delivers it.
     """
     for exc, (fragment, alert, alarm, log_fragment, prompt) in _cases(
-        failures, _NoCredentials
+        failures, NoCredentials
     ):
         kind = failures.classify(exc, operation)
         assert fragment in kind.reply

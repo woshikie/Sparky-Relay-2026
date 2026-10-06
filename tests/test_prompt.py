@@ -9,48 +9,48 @@ from conftest import FAKE_TOKEN
 
 
 def _drive_username(bot, chat_id, username):
-    bot._set_stage(chat_id, "username")
-    bot._set_stage(chat_id, "password", username=username, preset=False)
+    bot.set_stage(chat_id, "username")
+    bot.set_stage(chat_id, "password", username=username, preset=False)
 
 
 # ------------------------------------------------------------------ staging
 
 def test_a_chat_starts_with_no_prompt(bot):
-    assert bot._prompt_stage(1) is None
+    assert bot.prompt_stage(1) is None
 
 
 def test_stages_advance_in_order(bot):
-    bot._set_stage(1, "username")
-    assert bot._prompt_stage(1)["stage"] == "username"
+    bot.set_stage(1, "username")
+    assert bot.prompt_stage(1)["stage"] == "username"
     _drive_username(bot, 1, "testuser")
-    assert bot._prompt_stage(1)["stage"] == "password"
+    assert bot.prompt_stage(1)["stage"] == "password"
 
 
 def test_the_username_survives_the_move_to_password(bot):
     _drive_username(bot, 1, "testuser")
-    assert bot._prompt_stage(1)["username"] == "testuser"
+    assert bot.prompt_stage(1)["username"] == "testuser"
 
 
 def test_clearing_a_stage_forgets_it(bot):
-    bot._set_stage(1, "username")
-    bot._clear_stage(1)
-    assert bot._prompt_stage(1) is None
+    bot.set_stage(1, "username")
+    bot.clear_stage(1)
+    assert bot.prompt_stage(1) is None
 
 
 def test_a_stale_prompt_is_forgotten(bot):
-    bot._set_stage(1, "username")
+    bot.set_stage(1, "username")
     bot.PROMPTING[1]["at"] -= bot.PROMPT_TTL + 1
-    assert bot._prompt_stage(1) is None
+    assert bot.prompt_stage(1) is None
 
 
 def test_a_fresh_prompt_survives(bot):
-    bot._set_stage(1, "username")
-    assert bot._prompt_stage(1) is not None
+    bot.set_stage(1, "username")
+    assert bot.prompt_stage(1) is not None
 
 
 def test_prompts_are_per_chat(bot):
-    bot._set_stage(1, "username")
-    assert bot._prompt_stage(2) is None
+    bot.set_stage(1, "username")
+    assert bot.prompt_stage(2) is None
 
 
 # ------------------------------------------------------- credential presence
@@ -66,7 +66,7 @@ def test_stored_credentials_count(bot, ledger):
 
 def test_a_preset_stage_needs_the_preset_to_still_exist(bot, monkeypatch):
     """Otherwise /status would claim to be ready and sign-in would fail later."""
-    bot._set_stage(1, "ready", username="testuser", preset=True)
+    bot.set_stage(1, "ready", username="testuser", preset=True)
     assert bot.has_credentials(1) is False       # no preset configured
 
     monkeypatch.setenv("SITE_USERNAME", "testuser")
@@ -76,7 +76,7 @@ def test_a_preset_stage_needs_the_preset_to_still_exist(bot, monkeypatch):
     for name in MODULES:
         sys.modules.pop(name, None)
     import relay.telegram as reloaded
-    reloaded._set_stage(1, "ready", username="testuser", preset=True)
+    reloaded.set_stage(1, "ready", username="testuser", preset=True)
     assert reloaded.has_credentials(1) is True
 
 
@@ -90,7 +90,7 @@ def test_preset_credentials_are_used_when_chosen(bot, monkeypatch):
     for name in MODULES:
         sys.modules.pop(name, None)
     import relay.telegram as reloaded
-    reloaded._set_stage(1, "ready", username="testuser", preset=True)
+    reloaded.set_stage(1, "ready", username="testuser", preset=True)
     assert reloaded.site_credentials(1) == ("testuser", "testpass123")
 
 
@@ -101,7 +101,7 @@ def test_stored_credentials_are_used_by_default(bot, ledger):
 
 def test_a_chat_with_no_credentials_raises(bot):
     """A named error, so the reply is 'send /login' rather than a traceback."""
-    with pytest.raises(bot._NoCredentials):
+    with pytest.raises(bot.NoCredentials):
         bot.site_credentials(1)
 
 
@@ -124,7 +124,7 @@ def test_a_rotated_token_is_distinguishable_from_a_missing_pair(bot, ledger):
     with pytest.raises(vault.DecryptionFailed):
         bot.site_credentials(1)
     ledger.forget_credentials(1)
-    with pytest.raises(bot._NoCredentials):
+    with pytest.raises(bot.NoCredentials):
         bot.site_credentials(1)
 
 

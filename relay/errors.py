@@ -15,3 +15,14 @@ class ConfigRefused(Exception):
     relay/__main__ turns it into a plain printed error and a non-zero exit,
     which is what a person running the bot actually needs to see.
     """
+
+
+class NoCredentials(Exception):
+    """No Site credentials supplied for this chat yet.
+
+    Raised by prompts.site_credentials, caught by the failure mapping: it is
+    the "send /login" branch, distinct from vault.DecryptionFailed ("your
+    stored password is gone, send it again"). Lives here, not in prompts,
+    because failures.py maps it and conftest never purges this module -- so
+    raiser, catcher, and pytest.raises always share one class identity.
+    """

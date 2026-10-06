@@ -167,7 +167,7 @@ def test_log_is_refused_to_a_stranger(bot, access):
 def test_login_is_refused_to_a_stranger(bot, access):
     upd = FakeUpdate(chat_id=6)
     run(bot.on_login(upd, None))
-    assert bot._prompt_stage(6) is None
+    assert bot.prompt_stage(6) is None
 
 
 def test_logout_is_refused_to_a_stranger(bot, access, ledger):
@@ -215,29 +215,29 @@ def test_login_starts_the_username_stage(bot, access):
     access.grant(1, "claim")
     upd = FakeUpdate(chat_id=1)
     run(bot.on_login(upd, None))
-    assert bot._prompt_stage(1)["stage"] == "username"
+    assert bot.prompt_stage(1)["stage"] == "username"
 
 
 def test_a_username_advances_to_the_password(bot, access):
     access.grant(1, "claim")
     run(bot.on_login(FakeUpdate(chat_id=1), None))
     run(bot.on_text(FakeUpdate(chat_id=1, text="testuser"), None))
-    assert bot._prompt_stage(1)["stage"] == "password"
-    assert bot._prompt_stage(1)["username"] == "testuser"
+    assert bot.prompt_stage(1)["stage"] == "password"
+    assert bot.prompt_stage(1)["username"] == "testuser"
 
 
 def test_a_short_username_is_refused(bot, access):
     access.grant(1, "claim")
     run(bot.on_login(FakeUpdate(chat_id=1), None))
     run(bot.on_text(FakeUpdate(chat_id=1, text="ab"), None))
-    assert bot._prompt_stage(1)["stage"] == "username"   # still asking
+    assert bot.prompt_stage(1)["stage"] == "username"   # still asking
 
 
 def test_a_long_username_is_refused(bot, access):
     access.grant(1, "claim")
     run(bot.on_login(FakeUpdate(chat_id=1), None))
     run(bot.on_text(FakeUpdate(chat_id=1, text="x" * 60), None))
-    assert bot._prompt_stage(1)["stage"] == "username"
+    assert bot.prompt_stage(1)["stage"] == "username"
 
 
 def test_a_password_is_stored_and_the_message_deleted(bot, access, ledger):
@@ -249,7 +249,7 @@ def test_a_password_is_stored_and_the_message_deleted(bot, access, ledger):
     assert ledger.load_credentials(1, bot.config.TELEGRAM_BOT_TOKEN) == \
         ("testuser", "testpass123")
     assert upd.message.deleted, "the message carrying the password is removed"
-    assert bot._prompt_stage(1)["stage"] == "ready"
+    assert bot.prompt_stage(1)["stage"] == "ready"
 
 
 def test_the_password_is_not_echoed(bot, access):
@@ -334,8 +334,8 @@ def test_a_non_secret_never_reaches_the_prompt(bot, access):
     access.grant(1, "claim")
     run(bot.on_login(FakeUpdate(chat_id=1), None))
     run(bot.on_text(FakeUpdate(chat_id=99, text="ignore me"), None))
-    assert bot._prompt_stage(99) is None
-    assert bot._prompt_stage(1)["stage"] == "username"
+    assert bot.prompt_stage(99) is None
+    assert bot.prompt_stage(1)["stage"] == "username"
 
 
 # ---------------------------------------------------------- preset choice
@@ -352,7 +352,7 @@ def test_the_preset_choice_is_offered_when_configured(bot, monkeypatch, tmp_path
     upd = FakeUpdate(chat_id=1)
     run(reloaded.on_start(upd, None))
     assert "preset credentials" in " ".join(t for t, _ in upd.message.replies)
-    assert reloaded._prompt_stage(1)["stage"] == "choose_preset"
+    assert reloaded.prompt_stage(1)["stage"] == "choose_preset"
 
 
 def test_choosing_the_preset_uses_it(bot, monkeypatch, tmp_path):
@@ -364,7 +364,7 @@ def test_choosing_the_preset_uses_it(bot, monkeypatch, tmp_path):
     from relay.store import ledger
     ledger.init()
     access.grant(1, "claim")
-    reloaded._set_stage(1, "choose_preset")
+    reloaded.set_stage(1, "choose_preset")
     q = FakeQuery("cred:preset", chat_id=1)
     upd = FakeUpdate(chat_id=1)
     upd.callback_query = q
@@ -381,11 +381,11 @@ def test_choosing_new_moves_to_the_username(bot, monkeypatch, tmp_path):
     from relay.store import ledger
     ledger.init()
     access.grant(1, "claim")
-    reloaded._set_stage(1, "choose_preset")
+    reloaded.set_stage(1, "choose_preset")
     upd = FakeUpdate(chat_id=1)
     upd.callback_query = FakeQuery("cred:new", chat_id=1)
     run(reloaded.on_credential_choice(upd, None))
-    assert reloaded._prompt_stage(1)["stage"] == "username"
+    assert reloaded.prompt_stage(1)["stage"] == "username"
 
 
 def test_a_stale_preset_button_is_refused(bot):
@@ -737,7 +737,7 @@ def test_a_throttled_chat_is_told_why_the_secret_was_deleted(bot, monkeypatch,
 def test_a_password_that_fails_to_store_says_so(bot, access, monkeypatch):
     """A vault failure must not look like a saved password."""
     access.grant(32, "manual")
-    bot._set_stage(32, "password", username="testuser")
+    bot.set_stage(32, "password", username="testuser")
 
     def boom(*a, **kw):
         raise vault.DecryptionFailed("the key no longer fits")
@@ -752,7 +752,7 @@ def test_a_password_that_fails_to_store_still_clears_the_stage(bot, access,
                                                                monkeypatch):
     """The stage is cleared in a finally, so a failure cannot wedge the prompt."""
     access.grant(33, "manual")
-    bot._set_stage(33, "password", username="testuser")
+    bot.set_stage(33, "password", username="testuser")
 
     def boom(*a, **kw):
         raise RuntimeError("disk full")
@@ -760,10 +760,10 @@ def test_a_password_that_fails_to_store_still_clears_the_stage(bot, access,
 
     upd = FakeUpdate(chat_id=33, text="testpass123")
     run(bot.on_text(upd, None))
-    assert bot._prompt_stage(33) is None
+    assert bot.prompt_stage(33) is None
 
 
-# ------------------------------------------------------------- _scrub
+# ------------------------------------------------------------- scrub
 
 def test_a_scrub_that_cannot_delete_says_so(bot):
     """A bot can delete in a private chat; when it cannot, say so rather than
@@ -779,7 +779,7 @@ def test_a_scrub_that_cannot_delete_says_so(bot):
             return self
 
     msg = Undeletable()
-    run(bot._scrub(msg))
+    run(bot.scrub(msg))
     assert "could not" in msg.said.lower() or "delete" in msg.said.lower()
 
 
@@ -794,12 +794,12 @@ def test_a_scrub_that_cannot_delete_or_reply_is_silent(bot):
         async def reply_text(self, text, **kw):
             raise TelegramError("nope")
 
-    run(bot._scrub(Hopeless()))
+    run(bot.scrub(Hopeless()))
 
 
 def test_a_scrub_that_deletes_cleanly_says_nothing(bot):
     msg = FakeMessage()
-    run(bot._scrub(msg))
+    run(bot.scrub(msg))
     assert msg.deleted
     assert msg.replies == []
 
@@ -814,11 +814,11 @@ def test_a_preset_that_is_no_longer_configured_is_refused(bot, monkeypatch):
     'preset is gone' error, not a generic 'no credentials'.
     """
     from relay.store import vault
-    bot._set_stage(1, "username", preset=True)
+    bot.set_stage(1, "username", preset=True)
     assert bot.config.has_preset_credentials() is False
     with pytest.raises(vault.DecryptionFailed):
         bot.site_credentials(1)
-    bot._clear_stage(1)
+    bot.clear_stage(1)
 
 
 # ------------------------------------------------------------ backup_job
@@ -900,7 +900,7 @@ def _photo_with_failing_session(bot, access, ledger, exc, tmp_path, monkeypatch,
 
 def test_a_photo_with_no_credentials_says_so(bot, access, ledger, tmp_path,
                                              monkeypatch, session):
-    upd = _photo_with_failing_session(bot, access, ledger, bot._NoCredentials(),
+    upd = _photo_with_failing_session(bot, access, ledger, bot.NoCredentials(),
                                       tmp_path, monkeypatch, session)
     run(bot.on_photo(upd, None))
     assert "username" in upd.message.said.lower()
@@ -1005,7 +1005,7 @@ def test_ask_credentials_with_no_presets_asks_for_a_username(bot, access):
     access.grant(50, "manual")
     msg = FakeMessage(chat_id=50)
     run(bot.ask_credentials(msg, 50))
-    assert bot._prompt_stage(50)["stage"] == "username"
+    assert bot.prompt_stage(50)["stage"] == "username"
     assert "username" in msg.said.lower()
 
 
@@ -1013,7 +1013,7 @@ def test_ask_username_sets_the_stage(bot, access):
     access.grant(51, "manual")
     msg = FakeMessage(chat_id=51)
     run(bot.ask_username(msg, 51))
-    assert bot._prompt_stage(51)["stage"] == "username"
+    assert bot.prompt_stage(51)["stage"] == "username"
 
 
 def test_ask_password_carries_the_username_forward(bot, access):
@@ -1021,7 +1021,7 @@ def test_ask_password_carries_the_username_forward(bot, access):
     access.grant(52, "manual")
     msg = FakeMessage(chat_id=52)
     run(bot.ask_password(msg, 52, username="testuser"))
-    st = bot._prompt_stage(52)
+    st = bot.prompt_stage(52)
     assert st["stage"] == "password"
     assert st["username"] == "testuser"
 
@@ -1030,7 +1030,7 @@ def test_ask_password_marks_a_preset(bot, access):
     access.grant(53, "manual")
     msg = FakeMessage(chat_id=53)
     run(bot.ask_password(msg, 53, username="testuser", preset=True))
-    assert bot._prompt_stage(53)["preset"] is True
+    assert bot.prompt_stage(53)["preset"] is True
 
 
 def test_kb_done_returns_the_standing_commands(bot):

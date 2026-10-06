@@ -293,7 +293,7 @@ def test_sign_in_uses_the_chats_own_credentials(bot, access, ledger,
 
 def test_sign_in_without_credentials_names_the_chat(bot, access, fake_relay):
     access.grant(1, "claim")
-    with pytest.raises(bot._NoCredentials):
+    with pytest.raises(bot.NoCredentials):
         run(bot.sign_in(1))
     assert fake_relay.login_calls == []
 

@@ -176,7 +176,7 @@ def test_need_credentials_explains_why_the_browser_is_required(words):
     assert "OCR" in text
 
 
-def test_a_failed_scrub_asks_the_user_to_delete(words):
+def test_a_failedscrub_asks_the_user_to_delete(words):
     assert "delete it yourself" in words.scrub_failed()
 
 
