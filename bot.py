@@ -428,7 +428,10 @@ async def _cb_date(update: Update, ctx):
     reported = st.get("reported")
 
     # Overwrite guard: only the downward direction is challenged.
-    prev = ledger.last_submission(iso)
+    # The site is the authority, not our record of what we wrote: a day the
+    # user entered by hand is invisible until a sync, and the guard has to know
+    # about it or it will overwrite a day the bot never touched.
+    prev = ledger.current_value(iso)
     st["prev"] = prev
     if prev and steps < prev["steps"]:
         await q.edit_message_text(
@@ -713,6 +716,80 @@ async def on_log(update: Update, ctx):
         reply_markup=kb_for(chat.id))
 
 
+async def on_sync(update: Update, ctx):
+    """Read the site's own record and store it. Submits nothing.
+
+    The point is the overwrite guard. A day the user entered by hand is real
+    and counts, but the bot has no record of it, so without a sync the guard
+    would treat it as a fresh day and overwrite it -- including downwards,
+    which is the one direction the guard exists to challenge.
+
+    Read-only by construction: it calls read_days(), which navigates and reads
+    and never touches the upload form.
+    """
+    chat = update.effective_chat
+    msg = update.effective_message
+    d = access.check(chat.id, getattr(chat, "username", None))
+    if not d:
+        await msg.reply_text(words.access_refused(d), parse_mode=ParseMode.MARKDOWN)
+        return
+    if not has_credentials(chat.id):
+        await msg.reply_text(words.need_credentials(),
+                             parse_mode=ParseMode.MARKDOWN)
+        await ask_credentials(msg, chat.id)
+        return
+
+    scratch = await msg.reply_text(words.syncing())
+    prog = await progress_mod.Progress(scratch).start()
+    try:
+        async with browser_session(prog) as r:
+            await sign_in(chat.id, prog)
+            days = await asyncio.to_thread(r.read_days)
+    except _NoCredentials:
+        await prog.stop()
+        await scratch.delete()
+        await msg.reply_text(words.need_credentials(),
+                             parse_mode=ParseMode.MARKDOWN)
+        await ask_credentials(msg, chat.id)
+        return
+    except vault.DecryptionFailed as e:
+        await prog.stop()
+        await scratch.delete()
+        await msg.reply_text(words.vault_unreadable(str(e)),
+                             parse_mode=ParseMode.MARKDOWN)
+        await ask_credentials(msg, chat.id)
+        return
+    except memory.InsufficientMemory as e:
+        await prog.stop()
+        await scratch.delete()
+        await msg.reply_text(words.low_memory(str(e)),
+                             parse_mode=ParseMode.MARKDOWN)
+        return
+    except relay_site.SiteChanged as e:
+        await prog.stop()
+        await scratch.delete()
+        await msg.reply_text(words.site_changed(str(e)),
+                             parse_mode=ParseMode.MARKDOWN)
+        return
+    except Exception as e:
+        await prog.stop()
+        await scratch.delete()
+        await msg.reply_text(" Sync failed: `%s`" % str(e)[:200],
+                             parse_mode=ParseMode.MARKDOWN)
+        log(ctx, "sync error: %r" % (e,))
+        return
+
+    if not days:
+        # Say so rather than reporting a successful sync of nothing, which
+        # would look identical to a site with no days on it.
+        await prog.close(words.sync_empty(), parse_mode=ParseMode.MARKDOWN)
+        return
+
+    written = ledger.record_site_days(days)
+    await prog.close(words.sync_report(days, written),
+                     parse_mode=ParseMode.MARKDOWN)
+
+
 async def on_status(update: Update, ctx):
     chat = update.effective_chat
     msg = update.effective_message
@@ -794,6 +871,7 @@ LABEL_LOGOUT = "🚪 Sign out"
 LABEL_STATUS = "📋 Status"
 LABEL_LOG = "📜 History"
 LABEL_HELP = "❓ Help"
+LABEL_SYNC = "🔄 Sync from site"
 LABEL_CANCEL = "❌ Cancel"
 LABEL_NEW_CREDS = "✏️ Different account"
 
@@ -812,6 +890,7 @@ BUTTON_COMMANDS = {
     LABEL_STATUS: "status",
     LABEL_LOG: "log",
     LABEL_HELP: "help",
+    LABEL_SYNC: "sync",
     LABEL_CANCEL: "cancel",
     LABEL_NEW_CREDS: "new_creds",
 }
@@ -861,6 +940,7 @@ async def _run_button(ctx, msg, chat, action, stage):
     handler = {
         "login": on_login, "logout": on_logout,
         "status": on_status, "log": on_log, "help": on_start,
+        "sync": on_sync,
     }.get(action)
     if handler is None:
         return
@@ -955,6 +1035,7 @@ def kb_reply():
             [KeyboardButton(LABEL_SUBMIT), KeyboardButton(LABEL_LOGIN)],
             [KeyboardButton(LABEL_STATUS), KeyboardButton(LABEL_LOG)],
             [KeyboardButton(LABEL_LOGOUT), KeyboardButton(LABEL_HELP)],
+            [KeyboardButton(LABEL_SYNC)],
         ],
         resize_keyboard=True,
         is_persistent=True,     # survives the client being restarted
@@ -1224,6 +1305,7 @@ def main():
     app.add_handler(CommandHandler("login", on_login))
     app.add_handler(CommandHandler("logout", on_logout))
     app.add_handler(CommandHandler("log", on_log))
+    app.add_handler(CommandHandler("sync", on_sync))
     app.add_handler(CommandHandler("status", on_status))
     app.add_handler(CallbackQueryHandler(cb_date, pattern=r"^dt:"))
     app.add_handler(CallbackQueryHandler(cb_ok, pattern=r"^ok:"))
