@@ -27,6 +27,11 @@ class FakeMessage:
         self.reply_to_message = None
 
     @property
+    def chat_id(self):
+        """The real Message has this; save_photo() uses it for the filename."""
+        return self.chat.id
+
+    @property
     def effective_chat(self):
         return self.chat
 
@@ -437,3 +442,91 @@ def test_status_reports_the_memory_budget(bot, granted):
     upd = FakeUpdate(chat_id=1)
     run(bot.on_status(upd, None))
     assert "can launch" in upd.message.replies[0][0]
+
+
+# ------------------------------------------------------------- save_photo
+
+class FakeFile:
+    def __init__(self, data):
+        self._data = data
+
+    async def download_as_bytearray(self):
+        return bytearray(self._data)
+
+
+class FakePhotoSize:
+    def __init__(self, data):
+        self._f = FakeFile(data)
+
+    async def get_file(self):
+        return self._f
+
+
+def _jpeg(width=400, height=300):
+    """A real JPEG, small enough to be a plausible screenshot."""
+    import io
+    from PIL import Image
+    buf = io.BytesIO()
+    Image.new("RGB", (width, height), (200, 30, 30)).save(buf, "JPEG")
+    return buf.getvalue()
+
+
+def test_save_photo_writes_a_jpeg(bot, tmp_path, monkeypatch):
+    """The screenshot is downscaled before it is handed to the Relay."""
+    monkeypatch.setattr(bot.config, "INBOX", str(tmp_path))
+    upd = FakeUpdate()
+    upd.message.photo = [FakePhotoSize(_jpeg())]
+    path = run(bot.save_photo(upd, None))
+    assert path and path.endswith(".jpg")
+    from PIL import Image
+    with Image.open(path) as im:
+        assert im.size == (400, 300)
+
+
+def test_save_photo_downscales_a_large_image(bot, tmp_path, monkeypatch):
+    """A 4000px screenshot is shrunk to MAX_EDGE, which is what keeps the
+    upload and the site's OCR fast on a 1GB host."""
+    monkeypatch.setattr(bot.config, "INBOX", str(tmp_path))
+    upd = FakeUpdate()
+    upd.message.photo = [FakePhotoSize(_jpeg(4000, 3000))]
+    path = run(bot.save_photo(upd, None))
+    from PIL import Image
+    with Image.open(path) as im:
+        assert max(im.size) == bot.MAX_EDGE
+
+
+def test_save_photo_accepts_a_document(bot, tmp_path, monkeypatch):
+    """A screenshot sent as a file rather than a photo is still an image."""
+    monkeypatch.setattr(bot.config, "INBOX", str(tmp_path))
+    upd = FakeUpdate()
+    upd.message.photo = []
+    upd.message.document = FakePhotoSize(_jpeg())
+    upd.message.document.mime_type = "image/jpeg"
+    path = run(bot.save_photo(upd, None))
+    assert path and path.endswith(".jpg")
+
+
+def test_save_photo_refuses_a_non_image_document(bot, tmp_path, monkeypatch):
+    """A PDF is not a screenshot, and must not be saved as one."""
+    monkeypatch.setattr(bot.config, "INBOX", str(tmp_path))
+    upd = FakeUpdate()
+    upd.message.photo = []
+    upd.message.document = FakePhotoSize(b"%PDF-1.4 not an image")
+    upd.message.document.mime_type = "application/pdf"
+    assert run(bot.save_photo(upd, None)) is None
+
+
+def test_save_photo_with_nothing_to_save_returns_none(bot):
+    upd = FakeUpdate()
+    upd.message.photo = []
+    upd.message.document = None
+    assert run(bot.save_photo(upd, None)) is None
+
+
+def test_save_photo_names_the_saved_file(bot, tmp_path, monkeypatch):
+    """The log line is how you find out what was actually written."""
+    monkeypatch.setattr(bot.config, "INBOX", str(tmp_path))
+    upd = FakeUpdate(chat_id=7, message_id=42)
+    upd.message.photo = [FakePhotoSize(_jpeg())]
+    path = run(bot.save_photo(upd, None))
+    assert "7-42.jpg" in path
