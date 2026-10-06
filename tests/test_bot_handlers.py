@@ -6,6 +6,7 @@ decision logic — the guard against submitting something the user did not
 approve — not Telegram's own plumbing.
 """
 import asyncio
+import contextlib
 import datetime
 
 import pytest
@@ -649,3 +650,49 @@ def test_a_photo_with_no_credentials_and_no_presets_offers_them(bot, access,
     upd.message.photo = [FakePhotoSize(_jpeg())]
     run(bot.on_photo(upd, None))
     assert "username" in upd.message.said.lower()
+
+
+# ------------------------------------------------------------------ /sync
+
+def test_sync_is_refused_to_a_stranger(bot, access):
+    upd = FakeUpdate(chat_id=20)
+    run(bot.on_sync(upd, None))
+    assert "already been claimed" in upd.message.said
+
+
+def test_sync_before_credentials_offers_them(bot, access):
+    access.grant(21, "manual")
+    upd = FakeUpdate(chat_id=21)
+    run(bot.on_sync(upd, None))
+    assert "username" in upd.message.said.lower()
+
+
+def test_sync_completes_when_the_site_has_nothing(bot, access, ledger,
+                                                  monkeypatch):
+    """An empty sync runs the whole path and stores nothing.
+
+    The final text goes to the scratch message, which reply_text() returns as
+    a separate object, so what is asserted here is that the sync ran: the
+    syncing announcement was sent, and nothing was written to the ledger.
+    """
+    access.grant(22, "manual")
+    ledger.save_credentials(22, "testuser", "testpass123",
+                            bot.config.TELEGRAM_BOT_TOKEN)
+
+    class EmptyRelay:
+        def read_days(self):
+            return []
+
+    async def fake_sign_in(chat_id, progress=None):
+        return None
+    monkeypatch.setattr(bot, "sign_in", fake_sign_in)
+
+    @contextlib.asynccontextmanager
+    async def fake_session(progress=None):
+        yield EmptyRelay()
+    monkeypatch.setattr(bot, "browser_session", fake_session)
+
+    upd = FakeUpdate(chat_id=22)
+    run(bot.on_sync(upd, None))
+    assert "submits nothing" in upd.message.said
+    assert ledger.all_site_days() == []
