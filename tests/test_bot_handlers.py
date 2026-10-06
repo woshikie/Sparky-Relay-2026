@@ -13,6 +13,7 @@ import sys
 from telegram.error import TelegramError
 
 import pytest
+from conftest import run
 
 
 # --------------------------------------------------------------- fakes
@@ -111,10 +112,6 @@ class FakeQuery:
     async def edit_message_reply_markup(self, reply_markup=None, **kw):
         self.message.markup = reply_markup
         return self.message
-
-
-def run(coro):
-    return asyncio.run(coro)
 
 
 @pytest.fixture

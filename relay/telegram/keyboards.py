@@ -13,7 +13,6 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton,
 from relay import config
 from relay.clock import sg_today
 from relay.telegram.datepicker import keyboard as month_grid
-import relay.telegram.words as words
 
 
 # ----------------------------------------------------------------------

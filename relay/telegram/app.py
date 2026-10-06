@@ -5,7 +5,7 @@ Application, and importing this module never starts polling.
 """
 from datetime import time as wallclock
 
-from telegram.ext import (Application, ApplicationBuilder, CallbackQueryHandler, CommandHandler, MessageHandler, filters)
+from telegram.ext import (ApplicationBuilder, CallbackQueryHandler, CommandHandler, MessageHandler, filters)
 
 from relay import config, console, memory
 import relay.store.ledger as ledger

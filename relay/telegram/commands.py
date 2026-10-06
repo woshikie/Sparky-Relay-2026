@@ -15,7 +15,6 @@ from relay import config, memory
 from relay import progress as progress_mod
 from relay.clock import sg_now
 import relay.store.ledger as ledger
-from relay.site import driver as relay_site
 import relay.telegram.access as access
 from relay.telegram.callbacks import PENDING
 from relay.telegram.keyboards import (button_actions, kb_after_login,

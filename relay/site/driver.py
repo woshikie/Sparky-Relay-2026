@@ -3,7 +3,6 @@
 Wraps the site in headless Firefox and exposes the upload flow as three steps:
 upload + read the Detected Steps, set the Activity Date, commit.
 """
-import datetime
 import os
 import re
 import time

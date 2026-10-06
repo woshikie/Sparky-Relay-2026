@@ -14,10 +14,7 @@ no visible way to reach anything but the preset choice.
 import asyncio
 
 import pytest
-
-
-def run(coro):
-    return asyncio.run(coro)
+from conftest import run
 
 
 @pytest.fixture

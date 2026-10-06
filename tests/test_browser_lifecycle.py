@@ -23,10 +23,7 @@ import inspect
 import importlib
 
 import pytest
-
-
-def run(coro):
-    return asyncio.run(coro)
+from conftest import run
 
 
 def reading(available, memory):

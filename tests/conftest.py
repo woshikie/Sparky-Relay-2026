@@ -6,12 +6,19 @@ awkward to test. So every test module is given a mode up front by
 `conftest.py`, and modules under test are re-imported when a test needs a
 different one.
 """
+import asyncio
 import importlib
 import os
 import sys
 import tempfile
 
 import pytest
+
+
+def run(coro):
+    """Drive one coroutine to completion. Every async test needs this, and
+    every copy was identical -- six of them, character for character."""
+    return asyncio.run(coro)
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 # tests/ next to the modules under test, so a bare `import vault` resolves.

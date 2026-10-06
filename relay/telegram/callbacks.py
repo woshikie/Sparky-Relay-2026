@@ -22,7 +22,6 @@ from relay.telegram.keyboards import (kb_confirm, kb_date_default,
 from relay.telegram.prompts import ask_credentials
 import relay.telegram.failures as failures
 import relay.telegram.session as session_mod
-from relay.telegram.session import log
 
 
 # Pending Screenshot state, keyed by (chat_id, message_id) of the Confirmation.

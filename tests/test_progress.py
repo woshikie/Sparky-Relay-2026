@@ -18,10 +18,7 @@ import time
 import pytest
 
 from relay import progress
-
-
-def run(coro):
-    return asyncio.run(coro)
+from conftest import run
 
 
 class FakeMessage:

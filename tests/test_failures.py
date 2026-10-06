@@ -10,6 +10,7 @@ the contract the callers rely on: the reply text, the callback answer triple,
 and whether the credentials prompt is started.
 """
 import pytest
+from conftest import run
 
 
 @pytest.fixture
@@ -45,11 +46,6 @@ class FakeMessage:
     @property
     def said(self):
         return " ".join(self.replies)
-
-
-def run(coro):
-    import asyncio
-    return asyncio.run(coro)
 
 
 def explained(failures, exc, operation="Upload", prompt=True):

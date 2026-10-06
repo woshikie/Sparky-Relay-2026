@@ -12,11 +12,7 @@ import datetime
 
 import pytest
 
-from conftest import FAKE_TOKEN
-
-
-def run(coro):
-    return asyncio.run(coro)
+from conftest import run, FAKE_TOKEN
 
 
 class FakeChat:
