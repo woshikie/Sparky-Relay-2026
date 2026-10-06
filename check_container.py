@@ -17,7 +17,7 @@ DETECT = re.compile(r"Detected steps\s*([\d,. ]+)", re.I)
 CASES = [("Saturday-3-October.jpg", 2831), ("Sunday-4-October.jpg", 6532)]
 
 
-def main():
+def main() -> int:
     print("container detected :", relay_site._in_container(), flush=True)
     print("cgroup budget      :", memory.describe(), flush=True)
     print("ledger             :", ledger.init(), flush=True)

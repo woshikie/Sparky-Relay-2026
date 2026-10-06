@@ -9,7 +9,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ENV_PATH = os.path.join(HERE, "secrets.env")
 
 
-def _load():
+def _load() -> dict[str, str]:
     """Secrets, from the environment first, then secrets.env.
 
     The environment wins so a container (which receives secrets as injected env
@@ -70,7 +70,7 @@ ACCESS_MODES = ("whitelist_claim", "blacklist", "shared_secret")
 _ACCESS_MODE = (ENV.get("ACCESS_MODE") or "").strip().lower()
 
 
-def _chat_ids(raw):
+def _chat_ids(raw: str | None) -> list[int]:
     out = []
     for part in (raw or "").replace(";", ",").split(","):
         part = part.strip()
@@ -142,7 +142,7 @@ KNOWN_CUTOFF = ENV.get("KNOWN_CUTOFF", "2026-11-02T15:59:00+00:00")
 BACKUP_TIME = ENV.get("BACKUP_TIME", "03:17")
 
 
-def has_preset_credentials():
+def has_preset_credentials() -> bool:
     """True when Preset Credentials are configured.
 
     They are an optimisation, never a requirement: the Credentials Prompt
@@ -151,7 +151,7 @@ def has_preset_credentials():
     return bool(SITE_USERNAME and SITE_PASSWORD)
 
 
-def require():
+def require() -> bool:
     """Fail loudly and specifically if a secret is missing.
 
     Only the bot token is mandatory. The Site credentials are optional because

@@ -12,6 +12,7 @@ import os
 from PIL import Image
 from telegram import Update
 from telegram.constants import ParseMode
+from telegram.ext import ContextTypes
 
 import relay.telegram.access as access
 import relay.telegram.failures as failures
@@ -34,28 +35,31 @@ MAX_EDGE = 1200
 # ----------------------------------------------------------------------
 
 
-async def save_photo(update: Update, ctx) -> str:
+async def save_photo(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> str | None:
     """Download the largest available photo to disk. Returns the path."""
     msg = update.effective_message
+    assert msg is not None
     photos = list(msg.photo or [])
     doc = msg.document
-    if not photos and not doc:
-        return None
     if photos:
-        f = photos[-1]
-        data = await f.get_file()
-    else:
+        data = await photos[-1].get_file()
+    elif doc is not None:
         if (doc.mime_type or "").split("/")[0] != "image":
             return None
         data = await doc.get_file()
+    else:
+        return None
     raw = await data.download_as_bytearray()
 
-    im = Image.open(io.BytesIO(bytes(raw)))
+    im: Image.Image = Image.open(io.BytesIO(bytes(raw)))
     im = im.convert("RGB")
     w, h = im.size
     scale = min(1.0, MAX_EDGE / float(max(w, h)))
     if scale < 1.0:
-        im = im.resize((max(1, int(w * scale)), max(1, int(h * scale))), Image.LANCZOS)
+        im = im.resize(
+            (max(1, int(w * scale)), max(1, int(h * scale))),
+            Image.Resampling.LANCZOS,
+        )
     outdir = config.INBOX
     os.makedirs(outdir, exist_ok=True)
     path = os.path.join(outdir, "%d-%d.jpg" % (msg.chat_id, msg.message_id))
@@ -67,9 +71,10 @@ async def save_photo(update: Update, ctx) -> str:
 # ----------------------------------------------------------------------
 
 
-async def on_photo(update: Update, ctx):
+async def on_photo(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     chat = update.effective_chat
     msg = update.effective_message
+    assert chat is not None and msg is not None
     d = access.check(chat.id, getattr(chat, "username", None))
     if not d:
         await msg.reply_text(words.access_refused(d), parse_mode=ParseMode.MARKDOWN)

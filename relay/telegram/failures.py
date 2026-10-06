@@ -24,6 +24,9 @@ silent ack), whether it shows as an alert, and a log line (or None).
 
 """
 
+from collections.abc import Awaitable, Callable
+
+from telegram import Message
 from telegram.constants import ParseMode
 
 from relay import memory
@@ -46,7 +49,12 @@ CATCH_ALL = {
 }
 
 
-async def explain(msg, exc, operation, start_prompt=None):
+async def explain(
+    msg: Message,
+    exc: BaseException,
+    operation: str,
+    start_prompt: Callable[[], Awaitable[None]] | None = None,
+) -> tuple[str | None, bool, str | None]:
     """Tell the user what went wrong. Never raises for a recognised failure.
 
     Returns (alert, alarm, log_line). Only the catch-all produces a log line;

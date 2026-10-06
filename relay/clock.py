@@ -9,11 +9,11 @@ import datetime
 from relay import config
 
 
-def sg_now():
+def sg_now() -> datetime.datetime:
     return datetime.datetime.now(datetime.UTC) + datetime.timedelta(
         hours=config.SGT_OFFSET_HOURS
     )
 
 
-def sg_today():
+def sg_today() -> datetime.date:
     return sg_now().date()

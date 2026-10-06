@@ -7,6 +7,7 @@ Application, and importing this module never starts polling.
 from datetime import time as wallclock
 
 from telegram.ext import (
+    Application,
     ApplicationBuilder,
     CallbackQueryHandler,
     CommandHandler,
@@ -35,7 +36,7 @@ from relay.telegram.prompts import on_credential_choice, on_login, on_logout
 # ----------------------------------------------------------------------
 
 
-def main():
+def main() -> None:
     # First thing, so a refusal is timestamped too -- a bot that dies on a
     # config error is exactly when you want the timestamp.
     #
@@ -128,5 +129,5 @@ def main():
         session_mod.get_relay().stop()
 
 
-async def on_ready(app):
+async def on_ready(app: Application) -> None:
     print("[relay] online as @%s" % (await app.bot.get_me()).username, flush=True)

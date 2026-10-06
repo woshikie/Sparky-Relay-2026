@@ -17,11 +17,13 @@ SAMPLES = os.path.join(HERE, "..", "workstation", "samples")
 CASES = [("Saturday-3-October.jpg", 2831), ("Sunday-4-October.jpg", 6532)]
 
 
-def avail():
-    return memory.mem_mb()
+def avail() -> float:
+    # mem_mb() is None when the host exposes no readable budget; a script
+    # just needs a number, and 0.0 keeps the arithmetic below total.
+    return memory.mem_mb() or 0.0
 
 
-def main():
+def main() -> int:
     ledger.init()
     print(memory.describe(), flush=True)
     baseline = avail()

@@ -77,7 +77,7 @@ MONTH_NUM.update(
 STEPS_RE = re.compile(r"^\+?([\d,]+)\s*steps?$", re.I)
 
 
-def parse_day(text):
+def parse_day(text: str | None) -> datetime.date | None:
     """'5 Oct 2026' -> datetime.date(2026, 10, 5), or None.
 
     Returns None rather than raising, because this is parsing a page: a row we
@@ -96,7 +96,7 @@ def parse_day(text):
         return None
 
 
-def parse_steps(text):
+def parse_steps(text: str | None) -> int | None:
     """'+4,272 steps' -> 4272, or None."""
     m = STEPS_RE.match((text or "").strip())
     if not m:
@@ -107,7 +107,7 @@ def parse_steps(text):
         return None
 
 
-def parse_profile(board_text):
+def parse_profile(board_text: str) -> dict[str, int | str | None] | None:
     """Pull the user's own totals out of the /home DOM text, if present.
 
     Returns {"total_steps", "total_points", "house"} with None for whatever is
