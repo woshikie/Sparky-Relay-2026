@@ -613,3 +613,39 @@ def test_status_refreshes_the_keyboard(bot, granted):
     upd = FakeUpdate(chat_id=1)
     run(bot.on_status(upd, None))
     assert upd.message.replies[0][1] is not None
+
+
+# ------------------------------------------------------------- on_photo
+
+def test_a_photo_before_credentials_asks_for_them(bot, access, ledger):
+    """The existing test asserts the reply; this one asserts the prompt."""
+    access.grant(3, "manual")
+    upd = FakeUpdate(chat_id=3)
+    upd.message.photo = [FakePhotoSize(_jpeg())]
+    run(bot.on_photo(upd, None))
+    assert "username" in upd.message.said.lower()
+
+
+def test_a_photo_from_an_unclaimed_chat_is_refused(bot, access):
+    """In whitelist_claim mode, a chat that has not claimed is refused.
+
+    The reply has to say why, or the user has no way to know whether to claim
+    or to switch Access Mode.
+    """
+    upd = FakeUpdate(chat_id=4)
+    upd.message.photo = [FakePhotoSize(_jpeg())]
+    run(bot.on_photo(upd, None))
+    assert "already been claimed" in upd.message.said
+    assert "whitelist" in upd.message.said
+
+
+def test_a_photo_with_no_credentials_and_no_presets_offers_them(bot, access,
+                                                                monkeypatch,
+                                                                tmp_path):
+    """No stored credentials and nothing preset: the prompt is due."""
+    monkeypatch.setattr(bot.config, "INBOX", str(tmp_path))
+    access.grant(8, "manual")
+    upd = FakeUpdate(chat_id=8)
+    upd.message.photo = [FakePhotoSize(_jpeg())]
+    run(bot.on_photo(upd, None))
+    assert "username" in upd.message.said.lower()
