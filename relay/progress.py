@@ -20,6 +20,9 @@ to a message, and a submission must never fail because a progress line did.
 
 import asyncio
 import time
+from collections.abc import Callable
+
+from telegram import Message
 
 # The order matters: it is the order the work happens in, so a reader can see
 # how far along they are at a glance.
@@ -51,20 +54,25 @@ class Progress:
     thread; `finish()` and `close()` must run on the loop.
     """
 
-    def __init__(self, message=None, clock=time.monotonic, loop=None):
+    def __init__(
+        self,
+        message: Message | None = None,
+        clock: Callable[[], float] = time.monotonic,
+        loop: asyncio.AbstractEventLoop | None = None,
+    ) -> None:
         self._msg = message
         self._clock = clock
         self._loop = loop or asyncio.get_event_loop()
-        self._done = []  # keys, in the order they were reached
-        self._current = None  # key being worked on now
+        self._done: list[str] = []  # keys, in the order they were reached
+        self._current: str | None = None  # key being worked on now
         self._started = self._clock()
         self._last_edit = 0.0
-        self._last_text = None
-        self._task = None
+        self._last_text: str | None = None
+        self._task: asyncio.Task[None] | None = None
 
     # --------------------------------------------------------- thread side
 
-    def note(self, step):
+    def note(self, step: str) -> None:
         """Record that `step` has begun. Returns immediately.
 
         Called from the worker thread, so: no loop calls, no awaits, no network.
@@ -77,7 +85,7 @@ class Progress:
             self._done.append(self._current)
         self._current = step
 
-    def finish(self, step=None):
+    def finish(self, step: str | None = None) -> None:
         """Mark the current step complete, from the worker thread."""
         if step:
             self.note(step)
@@ -87,7 +95,7 @@ class Progress:
 
     # ----------------------------------------------------------- loop side
 
-    def render(self):
+    def render(self) -> str:
         """The checklist, as plain text with no markup.
 
         No markup on purpose: this is edited many times a minute, and a
@@ -109,14 +117,14 @@ class Progress:
                 lines.append("%s %s" % (TODO, label))
         return "\n".join(lines)
 
-    async def _render_loop(self):
+    async def _render_loop(self) -> None:
         while True:
             await asyncio.sleep(MIN_INTERVAL)
             if self._clock() - self._last_edit < MIN_INTERVAL:
                 continue
             await self._edit(self.render())
 
-    async def _edit(self, text):
+    async def _edit(self, text: str) -> bool:
         """Best-effort edit. Returns whether it landed.
 
         Identical text is skipped here rather than in the poller, so `push()`
@@ -139,13 +147,13 @@ class Progress:
         self._last_text = text
         return True
 
-    async def start(self):
+    async def start(self) -> "Progress":
         """Begin reporting. Called once the message exists."""
         await self._edit(self.render())
         self._task = asyncio.ensure_future(self._render_loop())
         return self
 
-    async def push(self):
+    async def push(self) -> bool:
         """Render now, bypassing the pace but not the duplicate check.
 
         Step boundaries are the moments worth showing, so they should not wait
@@ -154,7 +162,7 @@ class Progress:
         """
         return await self._edit(self.render())
 
-    async def stop(self):
+    async def stop(self) -> None:
         """Stop the reporter, leaving the message as it is.
 
         Needed on failure paths, which delete the message outright: a reporter
@@ -172,7 +180,9 @@ class Progress:
             pass
         self._task = None
 
-    async def close(self, text=None, parse_mode=None):
+    async def close(
+        self, text: str | None = None, parse_mode: str | None = None
+    ) -> str | None:
         """Stop reporting and put the final text on the message.
 
         The last edit is the one that counts, so it is not throttled.
@@ -194,8 +204,8 @@ class Progress:
     # ------------------------------------------------------------- helpers
 
     @property
-    def reached(self):
+    def reached(self) -> list[str]:
         return list(self._done) + ([self._current] if self._current else [])
 
-    def elapsed(self):
+    def elapsed(self) -> int:
         return max(0, int(self._clock() - self._started))

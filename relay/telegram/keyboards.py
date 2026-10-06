@@ -25,7 +25,7 @@ from relay.telegram.datepicker import keyboard as month_grid
 # ----------------------------------------------------------------------
 
 
-def kb_date_default(steps, reported):
+def kb_date_default(steps: int, reported: str) -> InlineKeyboardMarkup:
     t = sg_today()
     y = t - datetime.timedelta(days=1)
     return InlineKeyboardMarkup(
@@ -48,7 +48,7 @@ def kb_date_default(steps, reported):
     )
 
 
-def kb_confirm(steps, reported, iso):
+def kb_confirm(steps: int, reported: str, iso: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [
             [
@@ -62,7 +62,7 @@ def kb_confirm(steps, reported, iso):
     )
 
 
-def kb_overwrite(new_steps, old_steps, iso):
+def kb_overwrite(new_steps: int, old_steps: int, iso: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [
             [
@@ -79,7 +79,7 @@ def kb_overwrite(new_steps, old_steps, iso):
     )
 
 
-def kb_pick_date(year, month):
+def kb_pick_date(year: int, month: int) -> InlineKeyboardMarkup:
     return month_grid(year, month, sg_today())
 
 
@@ -100,7 +100,7 @@ LABEL_CANCEL = "❌ Cancel"
 LABEL_NEW_CREDS = "✏️ Different account"
 
 
-def label_use_preset():
+def label_use_preset() -> str:
     """Label for the use-preset-credentials button.
 
     'Use <Original Author's username>' — the username is part of the button, so it has to come
@@ -123,7 +123,7 @@ BUTTON_COMMANDS = {
 }
 
 
-def button_actions():
+def button_actions() -> dict[str, str]:
     """The dispatch table, including the label that depends on config."""
     table = dict(BUTTON_COMMANDS)
     if config.has_preset_credentials():
@@ -131,12 +131,12 @@ def button_actions():
     return table
 
 
-def kb_done():
+def kb_done() -> ReplyKeyboardMarkup:
     """Back to the standing commands once a prompt is finished."""
     return kb_reply()
 
 
-def kb_reply():
+def kb_reply() -> ReplyKeyboardMarkup:
     """The standing commands, as ordinary buttons above the input box.
 
     A reply keyboard rather than inline, for two reasons: they are standing
@@ -157,7 +157,7 @@ def kb_reply():
     )
 
 
-def kb_credential_choice():
+def kb_credential_choice() -> ReplyKeyboardMarkup:
     """The preset-or-not question, also as a reply keyboard.
 
     It was inline, which meant the only visible buttons were those two and the
@@ -177,7 +177,7 @@ def kb_credential_choice():
     )
 
 
-def kb_prompt():
+def kb_prompt() -> ReplyKeyboardMarkup:
     """Mid-prompt: the answer has to be typed, so keep the keyboard minimal."""
     return ReplyKeyboardMarkup(
         [
@@ -189,7 +189,7 @@ def kb_prompt():
     )
 
 
-def kb_after_login():
+def kb_after_login() -> ReplyKeyboardMarkup:
     """Escape hatch on the standing keyboard, for reaching a different account."""
     return ReplyKeyboardMarkup(
         [

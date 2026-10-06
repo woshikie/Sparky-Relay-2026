@@ -20,6 +20,9 @@ someone taps:
 
 import calendar
 import datetime
+from typing import cast
+
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 MONTH_NAMES = (
     "January",
@@ -42,7 +45,7 @@ WEEKDAYS = ("Mo", "Tu", "We", "Th", "Fr", "Sa", "Su")
 PREFIX = "dt"
 
 
-def shift(year, month, delta):
+def shift(year: int, month: int, delta: int) -> tuple[int, int]:
     """(year, month) moved by `delta` months, wrapped.
 
     Python's date() refuses month 0 and month 13, so the wrap has to be done
@@ -52,12 +55,14 @@ def shift(year, month, delta):
     return index // 12, index % 12 + 1
 
 
-def month_title(year, month):
+def month_title(year: int, month: int) -> str:
     """'October 2026' — the caption the grid otherwise lacks."""
     return "%s %d" % (MONTH_NAMES[month - 1], year)
 
 
-def month_grid(year, month, today=None):
+def month_grid(
+    year: int, month: int, today: datetime.date | None = None
+) -> tuple[list[list[datetime.date | None]], datetime.date]:
     """Rows of 7 cells for the given month, Monday-first.
 
     Cells are `datetime.date` or None for the padding either side.
@@ -66,7 +71,7 @@ def month_grid(year, month, today=None):
     first = datetime.date(year, month, 1)
     lead = first.weekday()
     days = calendar.monthrange(year, month)[1]
-    cells = [None] * lead
+    cells: list[datetime.date | None] = [None] * lead
     for d in range(1, days + 1):
         cells.append(datetime.date(year, month, d))
     while len(cells) % 7:
@@ -74,19 +79,19 @@ def month_grid(year, month, today=None):
     return [cells[i : i + 7] for i in range(0, len(cells), 7)], today
 
 
-def selectable(day, today):
+def selectable(day: datetime.date, today: datetime.date) -> bool:
     """Only past and present days: the site has no future entries to replace."""
     return day <= today
 
 
-def keyboard(year, month, today=None):
+def keyboard(
+    year: int, month: int, today: datetime.date | None = None
+) -> InlineKeyboardMarkup:
     """InlineKeyboardMarkup for one month.
 
     `year`/`month` are clamped forward to the current month, because paging
     past today offers only dead buttons and reads as a broken calendar.
     """
-    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
-
     today = today or datetime.date.today()
     if (year, month) < (today.year, today.month):
         year, month = today.year, today.month
@@ -134,6 +139,8 @@ def keyboard(year, month, today=None):
     return InlineKeyboardMarkup(kb)
 
 
-def callback_captions(markup):
+def callback_captions(markup: InlineKeyboardMarkup) -> list[str]:
     """Every callback_data in the markup, for tests and for routing checks."""
-    return [b.callback_data for row in markup.inline_keyboard for b in row]
+    # PTB types callback_data as str | object (arbitrary-callback-data
+    # feature); this module only ever builds str buttons, hence the cast.
+    return [cast(str, b.callback_data) for row in markup.inline_keyboard for b in row]

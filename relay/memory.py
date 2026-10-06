@@ -15,6 +15,7 @@ cannot fit it. See docs/adr/0004-browser-lifecycle-on-1gb-host.md.
 """
 
 import os
+from typing import TypedDict
 
 # Peak observed for the whole Firefox tree while the OCR runs, plus headroom
 # for the 16.5MB recognition model to be decoded rather than just mapped.
@@ -28,7 +29,21 @@ MIN_FREE_MB = BROWSER_PEAK_MB
 BOT_FOOTPRINT_MB = 60
 
 
-def _read_meminfo():
+# A memory report: floats for megabytes, ints for the configured constants,
+# bools for the flags, None where the host exposes no readable budget.
+BudgetReport = dict[str, float | int | bool | None]
+
+
+class CgroupLimits(TypedDict):
+    """Per-key types for _cgroup_limits_mb: path is the only string."""
+
+    limit_mb: float | None
+    current_mb: float | None
+    anon_mb: float | None
+    path: str | None
+
+
+def _read_meminfo() -> dict[str, int]:
     vals = {}
     try:
         with open("/proc/meminfo") as f:
@@ -42,17 +57,17 @@ def _read_meminfo():
     return vals
 
 
-def mem_mb(field="MemAvailable"):
+def mem_mb(field: str = "MemAvailable") -> float | None:
     v = _read_meminfo().get(field)
     return None if v is None else v / 1024.0
 
 
-def total_mb():
+def total_mb() -> float | None:
     v = _read_meminfo().get("MemTotal")
     return None if v is None else v / 1024.0
 
 
-def budget_report():
+def budget_report() -> BudgetReport:
     info = _read_meminfo()
     total = info.get("MemTotal", 0) / 1024.0
     avail = info.get("MemAvailable", 0) / 1024.0
@@ -73,15 +88,18 @@ def budget_report():
 class InsufficientMemory(Exception):
     """Not enough free RAM to run the browser safely right now."""
 
-    def __init__(self, report):
+    def __init__(self, report: BudgetReport) -> None:
         self.report = report
         super().__init__(
             "need %dMB free to run the browser, have %dMB"
-            % (report["min_free_mb"], int(report["available_mb"] or 0))
+            % (
+                int(report["min_free_mb"] or 0),
+                int(report["available_mb"] or 0),
+            )
         )
 
 
-def require_memory():
+def require_memory() -> BudgetReport:
     """Raise rather than start a browser that is going to get OOM-killed."""
     rep = budget()
     # Missing data means we cannot reason about it; do not block.
@@ -90,7 +108,7 @@ def require_memory():
     return rep
 
 
-def container_env():
+def container_env() -> BudgetReport | None:
     """The memory budget that actually applies inside a cgroup, or None.
 
     Three things have to be reconciled:
@@ -135,7 +153,7 @@ def container_env():
     }
 
 
-def budget():
+def budget() -> BudgetReport:
     """The budget that actually applies: cgroup ceiling if capped, else host."""
     return container_env() or budget_report()
 
@@ -143,7 +161,7 @@ def budget():
 MB = 1024.0 * 1024.0
 
 
-def _cgroup_root():
+def _cgroup_root() -> str:
     """Where this process's memory files live (cgroup v2 and v1 differ)."""
     for p in ("/sys/fs/cgroup", "/sys/fs/cgroup/memory"):
         if os.path.exists(os.path.join(p, "memory.max")) or os.path.exists(
@@ -153,13 +171,18 @@ def _cgroup_root():
     return "/sys/fs/cgroup"
 
 
-def _cgroup_limits_mb():
+def _cgroup_limits_mb() -> CgroupLimits:
     """The cgroup memory ceiling and committed usage for this process, in MB.
 
     Reports `current` (all charged memory) and `anon` (memory that cannot be
     reclaimed). See container_env for why only the second one is a real cost.
     """
-    out = {"limit_mb": None, "current_mb": None, "anon_mb": None, "path": None}
+    out: CgroupLimits = {
+        "limit_mb": None,
+        "current_mb": None,
+        "anon_mb": None,
+        "path": None,
+    }
     base = _cgroup_root()
 
     # cgroup v2
@@ -193,7 +216,7 @@ def _cgroup_limits_mb():
     return out
 
 
-def _cgroup_anon_mb():
+def _cgroup_anon_mb() -> float | None:
     """Unreclaimable memory charged to this cgroup, in MB, or None.
 
     v2 exposes it as memory.stat's `anon`. v1 splits it across `total_rss` and
@@ -224,7 +247,7 @@ def _cgroup_anon_mb():
     return None
 
 
-def tune_firefox_env():
+def tune_firefox_env() -> dict[str, bool | int]:
     """Keep the engine from over-allocating on a small host.
 
     Best-effort: these are preferences, not guarantees, and a Firefox that
@@ -250,7 +273,7 @@ def tune_firefox_env():
     }
 
 
-def describe():
+def describe() -> str:
     rep = budget()
     ok = "yes" if rep["can_launch"] else "NO"
     if rep.get("cgroup"):
@@ -261,16 +284,21 @@ def describe():
             "committed of %.0fMB charged) | browser peak ~%dMB | "
             "can launch: %s"
             % (
-                rep["available_mb"],
+                rep["available_mb"] or 0,
                 rep["cgroup_limit_mb"] or 0,
                 rep["cgroup_committed_mb"] or 0,
                 rep["cgroup_current_mb"] or 0,
-                rep["browser_peak_mb"],
+                rep["browser_peak_mb"] or 0,
                 ok,
             )
         )
     return (
         "RAM: %.0fMB total, %.0fMB available | browser peak ~%dMB "
         "| can launch: %s"
-        % (rep["total_mb"], rep["available_mb"], rep["browser_peak_mb"], ok)
+        % (
+            rep["total_mb"] or 0,
+            rep["available_mb"] or 0,
+            rep["browser_peak_mb"] or 0,
+            ok,
+        )
     )

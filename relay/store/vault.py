@@ -46,7 +46,7 @@ class DecryptionFailed(Exception):
     """Wrong key, tampered ciphertext, or a vault written by another token."""
 
 
-def _derive(token):
+def _derive(token: str) -> bytes:
     if not token:
         raise DecryptionFailed("no bot token available to derive a key")
     return hashlib.scrypt(
@@ -59,7 +59,7 @@ def _derive(token):
     )
 
 
-def seal(token, plaintext):
+def seal(token: str, plaintext: str) -> str:
     """Encrypt a string. Returns a storable blob."""
     key = _derive(token)
     nonce = os.urandom(_NONCE_LEN)
@@ -71,7 +71,7 @@ def seal(token, plaintext):
     )
 
 
-def open_sealed(token, blob):
+def open_sealed(token: str, blob: str | None) -> str:
     """Decrypt a blob produced by seal(). Raises DecryptionFailed on any problem."""
     if not blob or not isinstance(blob, str):
         raise DecryptionFailed("empty or malformed vault entry")
@@ -100,7 +100,7 @@ def open_sealed(token, blob):
         raise DecryptionFailed("cannot decrypt: malformed vault entry") from err
 
 
-def can_open(token, blob):
+def can_open(token: str, blob: str | None) -> bool:
     try:
         open_sealed(token, blob)
         return True
@@ -108,7 +108,7 @@ def can_open(token, blob):
         return False
 
 
-def fingerprint(token, username):
+def fingerprint(token: str, username: str) -> str:
     """Non-reversible id for a credential pair, for display and comparison.
 
     Lets /status show "credentials for <Original Author's username> are present" without decrypting,

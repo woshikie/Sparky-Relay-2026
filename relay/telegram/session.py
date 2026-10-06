@@ -10,8 +10,13 @@ Session -- belongs to the process, not to any one Screenshot.
 import asyncio
 import contextlib
 import os
+from collections.abc import AsyncIterator
 from contextlib import suppress
+from typing import NoReturn
 
+from telegram.ext import ContextTypes
+
+import relay.progress as progress_mod
 import relay.telegram.prompts as prompts_mod
 from relay import config, memory
 from relay.site import driver
@@ -19,23 +24,29 @@ from relay.site import driver
 DBG = bool(os.environ.get("RELAY_DEBUG"))
 
 
-def log(ctx, msg):
+def log(ctx: ContextTypes.DEFAULT_TYPE | None, msg: str) -> None:
     if DBG and ctx is not None:
-        with suppress(Exception):
-            ctx.job_queue.run_once(
-                lambda _c: None, 0
-            )  # no-op; keeps job_queue referenced
+        queue = ctx.job_queue
+        if queue is not None:
+            with suppress(Exception):
+                queue.run_once(_noop_job, 0)  # no-op; keeps job_queue referenced
     print("[relay] %s" % msg, flush=True)
+
+
+async def _noop_job(_context: object) -> None:
+    """Debug no-op for log(): scheduled, never awaited for its result."""
 
 
 # The site's OCR runs in the page, so the browser is the expensive part: ~640MB
 # measured. On a 1GB host it must not be held open. One Relay at a time, and
 # only for as long as a Screenshot is in flight.
 _site_lock = asyncio.Lock()
-_relay = None
+_relay: driver.Relay | None = None
 
 
-def get_relay(progress=None) -> driver.Relay:
+def get_relay(
+    progress: progress_mod.Progress | None = None,
+) -> driver.Relay:
     """The single Relay, with a progress reporter if one is supplied.
 
     The reporter is attached per Screenshot rather than at construction: the
@@ -50,7 +61,9 @@ def get_relay(progress=None) -> driver.Relay:
 
 
 @contextlib.asynccontextmanager
-async def browser_session(progress=None):
+async def browser_session(
+    progress: progress_mod.Progress | None = None,
+) -> AsyncIterator[driver.Relay]:
     """Yield a started Relay, then close the browser.
 
     Transient by design: the browser exists for the duration of one Screenshot
@@ -70,7 +83,8 @@ async def browser_session(progress=None):
         # to catch both for one condition.
         rep = await asyncio.to_thread(memory.require_memory)
         print(
-            "[relay] launching browser (%.0fMB free)" % rep["available_mb"], flush=True
+            "[relay] launching browser (%.0fMB free)" % (rep["available_mb"] or 0),
+            flush=True,
         )
         try:
             await asyncio.to_thread(r.start)
@@ -87,7 +101,9 @@ async def browser_session(progress=None):
                 print("[relay] %.0fMB available after close" % mem_after, flush=True)
 
 
-async def site_login(ctx, force=False):
+async def site_login(
+    ctx: ContextTypes.DEFAULT_TYPE | None, force: bool = False
+) -> NoReturn:
     """Sign in using the credentials held for this chat.
 
     The old ledger "session_valid" shortcut is gone: it was never written to, so
@@ -97,7 +113,9 @@ async def site_login(ctx, force=False):
     raise RuntimeError("site_login(ctx) is superseded by browser_session()")
 
 
-async def sign_in(chat_id, progress=None):
+async def sign_in(
+    chat_id: int, progress: progress_mod.Progress | None = None
+) -> driver.Relay:
     """Sign the Relay in for this chat, or raise something we can explain.
 
     Called inside an open browser_session(), so the caller owns the browser
