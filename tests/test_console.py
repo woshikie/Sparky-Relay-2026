@@ -240,3 +240,30 @@ def test_stamp_shows_the_wall_clock():
     assert out.startswith(time.strftime("%H:%M:%S",
                                         time.localtime(1_700_000_000.0)))
     assert "+0.0s" in out
+
+
+# --------------------------------------------------- the remaining branches
+
+def test_a_caller_supplied_prefix_is_used(buf):
+    """For tests, and for anything that wants its own format."""
+    c = console.TimestampedStream(buf, clock=Clock(), prefix="T")
+    c.write("hello\n")
+    assert lines(buf)[0].startswith("T  ")
+
+
+def test_fileno_is_delegated():
+    """A library that asks for the descriptor must get a real answer."""
+    class WithFileno(io.StringIO):
+        def fileno(self):
+            return 7
+    assert console.TimestampedStream(WithFileno()).fileno() == 7
+
+
+def test_errors_is_reported_when_the_stream_has_one():
+    class WithErrors(io.StringIO):
+        errors = "replace"
+    assert console.TimestampedStream(WithErrors()).errors == "replace"
+
+
+def test_errors_is_none_when_the_stream_has_none():
+    assert console.TimestampedStream(io.StringIO()).errors is None
