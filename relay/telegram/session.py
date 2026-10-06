@@ -62,12 +62,19 @@ def get_relay(
 
 @contextlib.asynccontextmanager
 async def browser_session(
+    chat_id: int | None = None,
     progress: progress_mod.Progress | None = None,
 ) -> AsyncIterator[driver.Relay]:
-    """Yield a started Relay, then close the browser.
+    """Yield a signed-in Relay, then close the browser.
 
     Transient by design: the browser exists for the duration of one Screenshot
     and is torn down afterwards, so idle RAM is the bot process alone.
+
+    Sign-in happens inside, after start and before yield: every flow needs an
+    authenticated browser, and a forgotten sign_in used to surface one step
+    later as a confusing "the site changed" rather than a credential failure.
+    Passing chat_id None skips sign-in, for read-only decoration use (the
+    leaderboard read) -- never for anything that writes.
 
     This must be an *async* context manager. With the plain
     `contextlib.contextmanager` on an `async def`, every caller doing
@@ -88,6 +95,8 @@ async def browser_session(
         )
         try:
             await asyncio.to_thread(r.start)
+            if chat_id is not None:
+                await sign_in(chat_id, progress)
             yield r
         finally:
             print("[relay] closing browser", flush=True)
@@ -118,8 +127,10 @@ async def sign_in(
 ) -> driver.Relay:
     """Sign the Relay in for this chat, or raise something we can explain.
 
-    Called inside an open browser_session(), so the caller owns the browser
-    lifetime; this only resolves the credentials and logs in.
+    Called by browser_session() after start, so the yielded Relay is already
+    authenticated; the caller owns the browser lifetime and never signs in
+    separately. Kept public because the lifecycle tests pin it directly:
+    wrong credentials, rotated token, and never starting the browser itself.
 
     `progress` is threaded through rather than read off the Relay so a caller
     cannot silently get a reporter that belongs to an earlier Screenshot.

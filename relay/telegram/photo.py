@@ -100,8 +100,7 @@ async def on_photo(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     # Read the number. The browser closes as soon as we have it: on a 1GB host
     # holding ~640MB open while the user decides on a date is not affordable.
     try:
-        async with session_mod.browser_session(prog) as r:
-            await session_mod.sign_in(chat.id, prog)
+        async with session_mod.browser_session(chat.id, prog) as r:
             steps, reported = await asyncio.to_thread(r.upload, path)
     except Exception as e:
         await prog.stop()

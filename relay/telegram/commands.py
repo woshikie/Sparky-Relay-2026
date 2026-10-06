@@ -144,8 +144,7 @@ async def on_sync(update: Update, ctx: ContextTypes.DEFAULT_TYPE | None) -> None
     scratch = await msg.reply_text(words.syncing())
     prog = await progress_mod.Progress(scratch).start()
     try:
-        async with session_mod.browser_session(prog) as r:
-            await session_mod.sign_in(chat.id, prog)
+        async with session_mod.browser_session(chat.id, prog) as r:
             days = await asyncio.to_thread(r.read_days)
     except Exception as e:
         await prog.stop()

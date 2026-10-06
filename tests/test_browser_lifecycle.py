@@ -316,3 +316,37 @@ def test_sign_in_does_not_start_the_browser(bot, access, ledger, fake_relay):
     run(bot.sign_in(1))
     assert fake_relay.started == 0, "browser_session owns start/stop"
     assert fake_relay.stopped == 0
+
+
+def test_entering_with_a_chat_signs_in_before_yielding(bot, ledger, fake_relay):
+    """The collapsed dance: sign-in is part of entering, not a second call.
+
+    A forgotten sign_in used to surface one step later as a confusing "the
+    site changed" rather than a credential failure. Now the yielded Relay is
+    already authenticated.
+    """
+    ledger.save_credentials(1, "testuser", "pw", bot.config.TELEGRAM_BOT_TOKEN)
+
+    async def go():
+        async with bot.browser_session(1) as r:
+            assert r is fake_relay
+            assert fake_relay.login_calls == [("testuser", "pw")]
+
+    run(go())
+    assert fake_relay.started == 1 and fake_relay.stopped == 1
+
+
+def test_entering_without_a_chat_skips_sign_in(bot, fake_relay):
+    """chat_id None is the read-only mode: no credentials resolved.
+
+    The leaderboard read uses this deliberately; anything that writes passes
+    a chat and fails loudly on missing credentials instead of driving an
+    unauthed browser.
+    """
+
+    async def go():
+        async with bot.browser_session() as r:
+            assert r is fake_relay
+
+    run(go())
+    assert fake_relay.login_calls == []

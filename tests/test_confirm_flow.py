@@ -317,7 +317,7 @@ def test_a_changed_second_read_aborts_the_commit(pending, monkeypatch, session):
             return "should not get here"
 
     @contextlib.asynccontextmanager
-    async def fake_session(progress=None):
+    async def fake_session(chat_id=None, progress=None):
         yield R()
     monkeypatch.setattr(session, "browser_session", fake_session)
     async def fake_sign_in(chat_id, progress=None):
@@ -348,7 +348,7 @@ def test_an_unchanged_second_read_proceeds_to_commit(pending, monkeypatch, sessi
             return "Recorded 6,532 steps for 4 Oct 2026"
 
     @contextlib.asynccontextmanager
-    async def fake_session(progress=None):
+    async def fake_session(chat_id=None, progress=None):
         yield R()
     monkeypatch.setattr(session, "browser_session", fake_session)
     async def fake_sign_in(chat_id, progress=None):
@@ -378,7 +378,7 @@ def test_the_commit_reports_what_the_site_said(pending, monkeypatch, session):
             return "Recorded 6,532 steps for 4 Oct 2026"
 
     @contextlib.asynccontextmanager
-    async def fake_session(progress=None):
+    async def fake_session(chat_id=None, progress=None):
         yield R()
     monkeypatch.setattr(session, "browser_session", fake_session)
     async def fake_sign_in(chat_id, progress=None):

@@ -688,7 +688,7 @@ def test_sync_completes_when_the_site_has_nothing(bot, access, ledger,
     monkeypatch.setattr(session, "sign_in", fake_sign_in)
 
     @contextlib.asynccontextmanager
-    async def fake_session(progress=None):
+    async def fake_session(chat_id=None, progress=None):
         yield EmptyRelay()
     monkeypatch.setattr(session, "browser_session", fake_session)
 
@@ -888,7 +888,7 @@ def _photo_with_failing_session(bot, access, ledger, exc, tmp_path, monkeypatch,
                             bot.config.TELEGRAM_BOT_TOKEN)
 
     @contextlib.asynccontextmanager
-    async def failing(progress=None):
+    async def failing(chat_id=None, progress=None):
         raise exc
         yield
 
@@ -1177,7 +1177,7 @@ def test_the_recording_line_names_the_number_and_date(bot, access, monkeypatch,
             return "Recorded"
 
     @contextlib.asynccontextmanager
-    async def fake_session(progress=None):
+    async def fake_session(chat_id=None, progress=None):
         yield R()
     monkeypatch.setattr(session, "browser_session", fake_session)
     async def fake_sign_in(chat_id, progress=None):

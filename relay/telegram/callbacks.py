@@ -239,8 +239,7 @@ async def cb_ok(update: Update, ctx: ContextTypes.DEFAULT_TYPE | None) -> None:
     # instead of holding it once for as long as the user takes to decide.
     site_text = ""
     try:
-        async with session_mod.browser_session() as r:
-            await session_mod.sign_in(chat.id)
+        async with session_mod.browser_session(chat.id) as r:
             # Re-reading must agree with what the user confirmed, or the
             # Screenshot is not the one they agreed to submit.
             steps2, reported2 = await asyncio.to_thread(r.upload, st["path"])
