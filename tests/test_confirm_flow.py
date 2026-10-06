@@ -7,6 +7,7 @@ always challenged, an upgrade never is — so most of these tests are about whic
 direction is silent and which is not.
 """
 import asyncio
+import contextlib
 import datetime
 
 import pytest
@@ -288,3 +289,108 @@ def test_an_expired_confirm_says_so(pending):
     upd.effective_message = upd.callback_query.effective_message
     run(pending.cb_ok(upd, None))
     assert "expired" in " ".join(upd.callback_query.message.edits).lower()
+
+# ------------------------------------------- the second OCR pass in cb_ok
+
+def _confirm(bot, chat_id=1):
+    q = FakeQuery("ok:go", chat_id=chat_id)
+    upd = type("U", (), {})()
+    upd.callback_query = q
+    upd.effective_chat = q.effective_chat
+    upd.effective_message = q.effective_message
+    return q, upd
+
+
+def test_a_changed_second_read_aborts_the_commit(pending, monkeypatch):
+    """The re-read must agree with what the user confirmed.
+
+    The browser is closed after the first read to free RAM, so Commit re-opens
+    it and re-uploads. If the site reads a different number the second time,
+    the Screenshot is not the one the user agreed to, and nothing is written.
+    """
+    pending.PENDING[(1, 100)]["date"] = datetime.date(2026, 10, 4)
+    pending.PENDING[(1, 100)]["iso"] = "2026-10-04"
+    pending.PENDING[(1, 100)]["label"] = "October 4th, 2026"
+
+    class R:
+        def upload(self, path, mode="steps"):
+            return 9999, "9,999"
+        def set_date(self, d):
+            pass
+        def commit(self, steps):
+            return "should not get here"
+
+    @contextlib.asynccontextmanager
+    async def fake_session(progress=None):
+        yield R()
+    monkeypatch.setattr(pending, "browser_session", fake_session)
+    async def fake_sign_in(chat_id, progress=None):
+        return None
+    monkeypatch.setattr(pending, "sign_in", fake_sign_in)
+
+    q, upd = _confirm(pending)
+    run(pending.cb_ok(upd, None))
+    assert (1, 100) not in pending.PENDING, "the request is discarded"
+    assert "changed" in q.answers[0][0]
+
+
+def test_an_unchanged_second_read_proceeds_to_commit(pending, monkeypatch):
+    """The same number twice: the commit goes ahead."""
+    pending.PENDING[(1, 100)]["date"] = datetime.date(2026, 10, 4)
+    pending.PENDING[(1, 100)]["iso"] = "2026-10-04"
+    pending.PENDING[(1, 100)]["label"] = "October 4th, 2026"
+
+    committed = []
+
+    class R:
+        def upload(self, path, mode="steps"):
+            return 6532, "6,532"
+        def set_date(self, d):
+            pass
+        def commit(self, steps):
+            committed.append(steps)
+            return "Recorded 6,532 steps for 4 Oct 2026"
+
+    @contextlib.asynccontextmanager
+    async def fake_session(progress=None):
+        yield R()
+    monkeypatch.setattr(pending, "browser_session", fake_session)
+    async def fake_sign_in(chat_id, progress=None):
+        return None
+    monkeypatch.setattr(pending, "sign_in", fake_sign_in)
+
+    q, upd = _confirm(pending)
+    run(pending.cb_ok(upd, None))
+    assert committed == [6532]
+    # The final word is a reply, not an edit: the site's own text is the evidence.
+    assert "Recorded" in q.message.said
+
+
+def test_the_commit_reports_what_the_site_said(pending, monkeypatch):
+    """After Commit the site's own words are the evidence, not ours."""
+    import ledger as led
+    pending.PENDING[(1, 100)]["date"] = datetime.date(2026, 10, 4)
+    pending.PENDING[(1, 100)]["iso"] = "2026-10-04"
+    pending.PENDING[(1, 100)]["label"] = "October 4th, 2026"
+
+    class R:
+        def upload(self, path, mode="steps"):
+            return 6532, "6,532"
+        def set_date(self, d):
+            pass
+        def commit(self, steps):
+            return "Recorded 6,532 steps for 4 Oct 2026"
+
+    @contextlib.asynccontextmanager
+    async def fake_session(progress=None):
+        yield R()
+    monkeypatch.setattr(pending, "browser_session", fake_session)
+    async def fake_sign_in(chat_id, progress=None):
+        return None
+    monkeypatch.setattr(pending, "sign_in", fake_sign_in)
+
+    q, upd = _confirm(pending)
+    run(pending.cb_ok(upd, None))
+    row = led.last_submission("2026-10-04")
+    assert row and row["steps"] == 6532
+    assert "Recorded 6,532 steps" in q.message.said
