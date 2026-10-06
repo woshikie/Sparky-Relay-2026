@@ -30,7 +30,7 @@ def failures():
 def NoCredentials():
     import importlib
 
-    return importlib.import_module("relay.telegram.prompts").NoCredentials
+    return importlib.import_module("relay.errors").NoCredentials
 
 
 class FakeMessage:

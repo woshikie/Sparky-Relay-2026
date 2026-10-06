@@ -43,7 +43,8 @@ MONTH_NAMES = (
 WEEKDAYS = ("Mo", "Tu", "We", "Th", "Fr", "Sa", "Su")
 
 # The prefix lives in the codec now, next to every other wire shape.
-# Imported, not repeated: datepicker.PREFIX still resolves for the tests.
+# Aliased, not repeated, so datepicker.PREFIX keeps resolving.
+PREFIX = codec.PREFIX
 
 
 def shift(year: int, month: int, delta: int) -> tuple[int, int]:
