@@ -9,10 +9,12 @@ callbacks are its only callers.
 import asyncio
 import datetime
 from contextlib import suppress
+from typing import NotRequired, TypedDict, cast
 
-from telegram import Update
+from telegram import Message, Update
 from telegram.constants import ParseMode
 from telegram.error import TelegramError
+from telegram.ext import ContextTypes
 
 import relay.store.ledger as ledger
 import relay.telegram.access as access
@@ -29,11 +31,27 @@ from relay.telegram.keyboards import (
 )
 from relay.telegram.prompts import ask_credentials
 
+
 # Pending Screenshot state, keyed by (chat_id, message_id) of the Confirmation.
-PENDING = {}
+# Unlike the prompt stage bag, this record has a known shape: the intake
+# always sets path/steps/reported/scratch/date, and the date flow adds
+# iso/label/prev later. So it is a TypedDict, and a bare .get() on a required
+# key yields the value type rather than Any | None.
+class Pending(TypedDict):
+    path: str
+    steps: int
+    reported: str
+    scratch: Message
+    date: datetime.date | None
+    iso: NotRequired[str]
+    label: NotRequired[str]
+    prev: NotRequired[dict[str, object] | None]
 
 
-async def cb_date(update: Update, ctx):
+PENDING: dict[tuple[int, int], Pending] = {}
+
+
+async def cb_date(update: Update, ctx: ContextTypes.DEFAULT_TYPE | None) -> None:
     """Every date button routes here, so every one of them must be answered.
 
     A callback that raises leaves the button spinning in the client for good:
@@ -44,6 +62,7 @@ async def cb_date(update: Update, ctx):
     reached int() unguarded.
     """
     q = update.callback_query
+    assert q is not None
     try:
         await _cb_date(update, ctx)
     except Exception as e:
@@ -54,19 +73,20 @@ async def cb_date(update: Update, ctx):
             )
 
 
-async def _cb_date(update: Update, ctx):
+async def _cb_date(update: Update, ctx: ContextTypes.DEFAULT_TYPE | None) -> None:
     q = update.callback_query
     chat = update.effective_chat
-    msg = q.message
+    msg = update.effective_message
+    assert q is not None and chat is not None and msg is not None
     if not authorised(ctx, chat.id):
         await q.answer("not authorised", show_alert=True)
         return
     data = q.data or ""
     _, kind, *rest = data.split(":")
 
-    st = PENDING.get(
-        (chat.id, msg.reply_to_message.message_id if msg.reply_to_message else None)
-    )
+    st: Pending | None = None
+    if msg.reply_to_message is not None:
+        st = PENDING.get((chat.id, msg.reply_to_message.message_id))
     if st is None:
         # attach to the most recent pending for this chat
         cands = [k for k in PENDING if k[0] == chat.id]
@@ -120,6 +140,9 @@ async def _cb_date(update: Update, ctx):
         return
 
     date = st["date"]
+    # Every branch above either returned or assigned a date; the assert pins
+    # that, since the intake starts the record at None.
+    assert date is not None, "date button without a date"
     iso = date.isoformat()
     label = "%s %s, %d" % (date.strftime("%B"), ordinal(date.day), date.year)
     st["iso"] = iso
@@ -138,17 +161,21 @@ async def _cb_date(update: Update, ctx):
     # about it or it will overwrite a day the bot never touched.
     prev = ledger.current_value(iso)
     st["prev"] = prev
-    if prev and steps < prev["steps"]:
+    # current_value rows are dict[str, object]; the guard compares ints, and
+    # the site only ever stores ints, so this says so once instead of at
+    # every use below.
+    prev_steps = cast(int, prev["steps"]) if prev is not None else None
+    if prev_steps is not None and steps < prev_steps:
         await q.edit_message_text(
-            words.overwrite_warning(steps, prev["steps"], label),
+            words.overwrite_warning(steps, prev_steps, label),
             parse_mode=ParseMode.MARKDOWN,
-            reply_markup=kb_overwrite(steps, prev["steps"], iso),
+            reply_markup=kb_overwrite(steps, prev_steps, iso),
         )
         await q.answer("this would lower your recorded steps", show_alert=True)
         return
-    if prev and steps > prev["steps"]:
+    if prev_steps is not None and steps > prev_steps:
         await q.edit_message_text(
-            words.overwrite_upgrade(steps, prev["steps"], label),
+            words.overwrite_upgrade(steps, prev_steps, label),
             parse_mode=ParseMode.MARKDOWN,
         )
         await q.answer()
@@ -161,20 +188,22 @@ async def _cb_date(update: Update, ctx):
     await q.answer()
 
 
-def ordinal(n):
+def ordinal(n: int) -> str:
     if 11 <= (n % 100) <= 13:
         return "%dth" % n
     return "%d%s" % (n, {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th"))
 
 
-async def cb_ok(update: Update, ctx):
+async def cb_ok(update: Update, ctx: ContextTypes.DEFAULT_TYPE | None) -> None:
     q = update.callback_query
     chat = update.effective_chat
-    msg = q.message
+    msg = update.effective_message
+    assert q is not None and chat is not None and msg is not None
     if not authorised(ctx, chat.id):
         await q.answer("not authorised", show_alert=True)
         return
-    action = (q.data or "").split(":")[1]
+    data = q.data or ""
+    action = data.split(":")[1]
 
     cands = [k for k in PENDING if k[0] == chat.id]
     if not cands:
@@ -273,7 +302,7 @@ async def cb_ok(update: Update, ctx):
         await q.answer("recorded")
 
 
-def authorised(ctx, chat_id):
+def authorised(ctx: ContextTypes.DEFAULT_TYPE | None, chat_id: int) -> bool:
     """Deprecated shim. Access now lives in access.check().
 
     Kept so nothing calls a removed function, but every handler should ask

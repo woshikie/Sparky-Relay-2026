@@ -14,6 +14,7 @@ import datetime
 import os
 import sqlite3
 import time
+from collections.abc import Sequence
 
 import relay.store.vault as vault
 from relay import config
@@ -136,7 +137,7 @@ def all_submissions() -> list[dict[str, object]]:
 # ---------- site days ----------
 
 
-def record_site_days(rows: list[tuple[object, int]]) -> int:
+def record_site_days(rows: Sequence[tuple[datetime.date, int]]) -> int:
     """Store what the site reports. `rows` is [(date, steps), ...].
 
     Upsert, so re-syncing refreshes rather than duplicates. Returns the number

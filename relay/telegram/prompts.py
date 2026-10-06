@@ -7,10 +7,12 @@ chat sees, so no path can send a keyboard that does not fit the prompt.
 """
 
 import time
+from typing import Any
 
-from telegram import Update
+from telegram import Message, ReplyKeyboardMarkup, Update
 from telegram.constants import ParseMode
 from telegram.error import TelegramError
+from telegram.ext import ContextTypes
 
 import relay.store.ledger as ledger
 import relay.store.vault as vault
@@ -24,21 +26,21 @@ class _NoCredentials(Exception):
     """No Site credentials supplied for this chat yet."""
 
 
-def _credential_prompt_body():
+def _credential_prompt_body() -> str:
     """The prompt text, without choosing a keyboard for it."""
     if config.has_preset_credentials():
         return words.choose_preset(config.SITE_USERNAME)
     return words.ask_username()
 
 
-def _start_credential_stage(chat_id):
+def _start_credential_stage(chat_id: int) -> None:
     if config.has_preset_credentials():
         _set_stage(chat_id, "choose_preset")
     else:
         _set_stage(chat_id, "username")
 
 
-def has_credentials(chat_id):
+def has_credentials(chat_id: int) -> bool:
     """True if this chat can sign in right now."""
     st = _prompt_stage(chat_id) or {}
     if st.get("preset"):
@@ -46,10 +48,11 @@ def has_credentials(chat_id):
     return ledger.credentials_stored(chat_id) is not None
 
 
-async def on_login(update: Update, ctx):
+async def on_login(update: Update, ctx: ContextTypes.DEFAULT_TYPE | None) -> None:
     """(Re-)supply Site credentials at any time."""
     chat = update.effective_chat
     msg = update.effective_message
+    assert chat is not None and msg is not None
     d = access.check(chat.id, getattr(chat, "username", None))
     if not d:
         await msg.reply_text(words.access_refused(d), parse_mode=ParseMode.MARKDOWN)
@@ -58,10 +61,11 @@ async def on_login(update: Update, ctx):
     await ask_credentials(msg, chat.id)
 
 
-async def on_logout(update: Update, ctx):
+async def on_logout(update: Update, ctx: ContextTypes.DEFAULT_TYPE | None) -> None:
     """Drop the stored credentials and any prompt in progress."""
     chat = update.effective_chat
     msg = update.effective_message
+    assert chat is not None and msg is not None
     d = access.check(chat.id, getattr(chat, "username", None))
     if not d:
         await msg.reply_text(words.access_refused(d), parse_mode=ParseMode.MARKDOWN)
@@ -78,14 +82,16 @@ async def on_logout(update: Update, ctx):
 # ----------------------------------------------------------------------
 
 # Where a chat is in the Credentials Prompt, or the Shared Secret exchange.
-# chat_id -> {"stage": ..., "preset": bool}
-PROMPTING = {}
+# chat_id -> {"stage": ..., "preset": ...}. A plain stringly-typed bag:
+# the keys come and go by stage, which is exactly what _prompt_stage and
+# _set_stage exist to contain, so a TypedDict would fight the **kw below.
+PROMPTING: dict[int, dict[str, Any]] = {}
 
 # How long a half-finished prompt is worth holding before forgetting it.
 PROMPT_TTL = 600.0
 
 
-def _prompt_stage(chat_id):
+def _prompt_stage(chat_id: int) -> dict[str, Any] | None:
     st = PROMPTING.get(chat_id)
     if st and time.time() - st.get("at", 0) > PROMPT_TTL:
         PROMPTING.pop(chat_id, None)
@@ -93,16 +99,16 @@ def _prompt_stage(chat_id):
     return st
 
 
-def _set_stage(chat_id, stage, **kw):
+def _set_stage(chat_id: int, stage: str, **kw: object) -> dict[str, Any]:
     PROMPTING[chat_id] = dict(stage=stage, at=time.time(), **kw)
     return PROMPTING[chat_id]
 
 
-def _clear_stage(chat_id):
+def _clear_stage(chat_id: int) -> dict[str, Any] | None:
     return PROMPTING.pop(chat_id, None)
 
 
-async def ask_credentials(msg, chat_id):
+async def ask_credentials(msg: Message, chat_id: int) -> None:
     """Offer Preset Credentials if they exist, otherwise just ask."""
     if config.has_preset_credentials():
         _set_stage(chat_id, "choose_preset")
@@ -115,7 +121,7 @@ async def ask_credentials(msg, chat_id):
     await ask_username(msg, chat_id)
 
 
-async def ask_username(msg, chat_id):
+async def ask_username(msg: Message, chat_id: int) -> None:
     _set_stage(chat_id, "username")
     await msg.reply_text(
         words.ask_username(),
@@ -124,7 +130,9 @@ async def ask_username(msg, chat_id):
     )
 
 
-async def ask_password(msg, chat_id, username=None, preset=False):
+async def ask_password(
+    msg: Message, chat_id: int, username: str | None = None, preset: bool = False
+) -> None:
     """Move to the password step, carrying the username forward.
 
     The username has to survive the transition: it arrived in the previous
@@ -140,7 +148,7 @@ async def ask_password(msg, chat_id, username=None, preset=False):
     )
 
 
-def kb_for(chat_id):
+def kb_for(chat_id: int) -> ReplyKeyboardMarkup:
     """The keyboard this chat needs right now."""
     stage = _prompt_stage(chat_id)
     if not stage:
@@ -153,7 +161,9 @@ def kb_for(chat_id):
     return kb_reply()
 
 
-async def on_credential_choice(update: Update, ctx):
+async def on_credential_choice(
+    update: Update, ctx: ContextTypes.DEFAULT_TYPE | None
+) -> None:
     """Callback path for the preset choice.
 
     The choice is now a reply keyboard, so this is only reachable from the
@@ -163,11 +173,14 @@ async def on_credential_choice(update: Update, ctx):
     """
     q = update.callback_query
     chat = update.effective_chat
+    msg = update.effective_message
+    assert q is not None and chat is not None and msg is not None
     st = _prompt_stage(chat.id)
     if not st or st.get("stage") != "choose_preset":
         await q.answer("Nothing to choose — tap Sign in first.", show_alert=True)
         return
-    if q.data.endswith("preset"):
+    data = q.data or ""
+    if data.endswith("preset"):
         # Credentials came from the environment: nothing to store, and the
         # vault is not involved at all.
         _clear_stage(chat.id)
@@ -175,7 +188,7 @@ async def on_credential_choice(update: Update, ctx):
         await q.edit_message_text(
             words.using_preset(config.SITE_USERNAME), parse_mode=ParseMode.MARKDOWN
         )
-        await q.message.reply_text(
+        await msg.reply_text(
             words.send_a_screenshot(),
             parse_mode=ParseMode.MARKDOWN,
             reply_markup=kb_for(chat.id),
@@ -183,11 +196,11 @@ async def on_credential_choice(update: Update, ctx):
         await q.answer("using preset credentials")
     else:
         await q.edit_message_reply_markup(reply_markup=None)
-        await ask_username(q.message, chat.id)
+        await ask_username(msg, chat.id)
         await q.answer()
 
 
-async def _scrub(msg):
+async def _scrub(msg: Message) -> None:
     """Delete a message that carried a secret. Best effort.
 
     A bot can delete messages in a chat it administers, which covers private
@@ -204,7 +217,7 @@ async def _scrub(msg):
             pass
 
 
-def site_credentials(chat_id):
+def site_credentials(chat_id: int) -> tuple[str, str]:
     """(username, password) for a chat.
 
     Raises _NoCredentials when the chat has not supplied any, and

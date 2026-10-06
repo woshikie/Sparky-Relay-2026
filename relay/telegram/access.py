@@ -24,7 +24,14 @@ from relay import config
 class Decision:
     """The outcome of an access check, with enough detail to tell the user why."""
 
-    def __init__(self, allowed, why, how=None, retry_after=0, chat_id=None):
+    def __init__(
+        self,
+        allowed: bool,
+        why: str,
+        how: str | None = None,
+        retry_after: int = 0,
+        chat_id: int | None = None,
+    ) -> None:
         self.allowed = allowed
         self.why = why
         self.how = how
@@ -33,21 +40,21 @@ class Decision:
         # thread it through separately.
         self.chat_id = chat_id
 
-    def __bool__(self):
+    def __bool__(self) -> bool:
         return self.allowed
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return "Decision(allowed=%r, why=%r)" % (self.allowed, self.why)
 
 
-def _denied_by_config(chat_id):
+def _denied_by_config(chat_id: int) -> bool:
     """Chats refused by DENY_CHAT_IDS, or already on the deny list."""
     if config.DENY_CHAT_IDS and int(chat_id) in config.DENY_CHAT_IDS:
         return True
     return ledger.is_denied(chat_id)
 
 
-def check(chat_id, username=None):
+def check(chat_id: int, username: str | None = None) -> Decision:
     """May this chat drive the Relay? Always call this, never inline the rule."""
     chat_id = int(chat_id)
     ledger.remember_user(chat_id, username)
@@ -82,11 +89,11 @@ def check(chat_id, username=None):
 ledger.SECRET_WINDOW = 30.0
 
 
-def _last_try(chat_id):
+def _last_try(chat_id: int) -> float:
     return ledger.last_secret_attempt(chat_id)
 
 
-def claim(chat_id):
+def claim(chat_id: int) -> bool:
     """First-run claim. Returns True if this chat just claimed it."""
     with ledger.conn() as c:
         n = c.execute("SELECT COUNT(*) AS n FROM access").fetchone()["n"]
@@ -97,7 +104,7 @@ def claim(chat_id):
     return True
 
 
-def present_secret(chat_id, candidate):
+def present_secret(chat_id: int, candidate: str) -> Decision:
     """Check a Shared Secret. Returns a Decision.
 
     The rate limit is enforced here, at the single point where a candidate is
@@ -129,28 +136,28 @@ def present_secret(chat_id, candidate):
     return Decision(False, "secret_wrong", chat_id=chat_id)
 
 
-def grant(chat_id, how="manual"):
+def grant(chat_id: int, how: str = "manual") -> bool:
     ledger.grant(chat_id, how)
     return True
 
 
-def revoke(chat_id):
+def revoke(chat_id: int) -> bool:
     ledger.revoke(chat_id)
     return True
 
 
-def deny(chat_id, reason=""):
+def deny(chat_id: int, reason: str = "") -> bool:
     ledger.deny(chat_id, reason)
     return True
 
 
-def undeny(chat_id):
+def undeny(chat_id: int) -> bool:
     with ledger.conn() as c:
         c.execute("DELETE FROM denied WHERE chat_id=?", (int(chat_id),))
     return True
 
 
-def describe(markdown=True):
+def describe(markdown: bool = True) -> str:
     """Human summary for /status.
 
     `markdown=False` returns a plain fragment for embedding inside a bold span.

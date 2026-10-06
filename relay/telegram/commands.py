@@ -8,10 +8,12 @@ and sitting next to the handlers avoids a prompts<->commands cycle.
 import asyncio
 import io
 from contextlib import suppress
+from typing import Any, cast
 
-from telegram import Update
+from telegram import Chat, Message, Update
 from telegram.constants import ParseMode
 from telegram.error import TelegramError
+from telegram.ext import ContextTypes
 
 import relay.store.ledger as ledger
 import relay.telegram.access as access
@@ -41,7 +43,7 @@ from relay.telegram.prompts import (
 # ----------------------------------------------------------------------
 
 
-async def on_start(update: Update, ctx):
+async def on_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE | None) -> None:
     """Entry point. Access Mode decides whether anything else happens.
 
     Sends exactly one message. The greeting and the Credentials Prompt used to
@@ -51,6 +53,7 @@ async def on_start(update: Update, ctx):
     """
     chat = update.effective_chat
     msg = update.effective_message
+    assert chat is not None and msg is not None
     d = access.check(chat.id, getattr(chat, "username", None))
 
     if not d:
@@ -100,22 +103,22 @@ async def on_start(update: Update, ctx):
     )
 
 
-async def on_log(update: Update, ctx):
+async def on_log(update: Update, ctx: ContextTypes.DEFAULT_TYPE | None) -> None:
     chat = update.effective_chat
+    msg = update.effective_message
+    assert chat is not None and msg is not None
     d = access.check(chat.id, getattr(chat, "username", None))
     if not d:
-        await update.effective_message.reply_text(
-            words.access_refused(d), parse_mode=ParseMode.MARKDOWN
-        )
+        await msg.reply_text(words.access_refused(d), parse_mode=ParseMode.MARKDOWN)
         return
-    await update.effective_message.reply_text(
+    await msg.reply_text(
         words.log_lines(ledger.all_submissions()),
         parse_mode=ParseMode.MARKDOWN,
         reply_markup=kb_for(chat.id),
     )
 
 
-async def on_sync(update: Update, ctx):
+async def on_sync(update: Update, ctx: ContextTypes.DEFAULT_TYPE | None) -> None:
     """Read the site's own record and store it. Submits nothing.
 
     The point is the overwrite guard. A day the user entered by hand is real
@@ -128,6 +131,7 @@ async def on_sync(update: Update, ctx):
     """
     chat = update.effective_chat
     msg = update.effective_message
+    assert chat is not None and msg is not None
     d = access.check(chat.id, getattr(chat, "username", None))
     if not d:
         await msg.reply_text(words.access_refused(d), parse_mode=ParseMode.MARKDOWN)
@@ -163,9 +167,10 @@ async def on_sync(update: Update, ctx):
     await prog.close(words.sync_report(days, written), parse_mode=ParseMode.MARKDOWN)
 
 
-async def on_status(update: Update, ctx):
+async def on_status(update: Update, ctx: ContextTypes.DEFAULT_TYPE | None) -> None:
     chat = update.effective_chat
     msg = update.effective_message
+    assert chat is not None and msg is not None
     d = access.check(chat.id, getattr(chat, "username", None))
     if not d:
         await msg.reply_text(words.access_refused(d), parse_mode=ParseMode.MARKDOWN)
@@ -203,8 +208,8 @@ async def on_status(update: Update, ctx):
             who,
             access.describe(markdown=False),
             config.HEADLESS,
-            rep["available_mb"],
-            rep["browser_peak_mb"],
+            rep["available_mb"] or 0,
+            rep["browser_peak_mb"] or 0,
             "yes" if rep["can_launch"] else "NO",
             len(subs),
             ", ".join(
@@ -223,7 +228,13 @@ async def on_status(update: Update, ctx):
     )
 
 
-async def _run_button(ctx, msg, chat, action, stage):
+async def _run_button(
+    ctx: ContextTypes.DEFAULT_TYPE | None,
+    msg: Message,
+    chat: Chat,
+    action: str,
+    stage: dict[str, Any] | None,
+) -> None:
     """Dispatch a tapped reply-keyboard button."""
     if action == "submit":
         if stage and stage.get("stage") in ("username", "password"):
@@ -296,14 +307,15 @@ async def _run_button(ctx, msg, chat, action, stage):
                 )
 
 
-def _as_update(msg, chat):
+def _as_update(msg: Message, chat: Chat) -> Update:
     update = Update(0, message=msg)
     update._effective_chat = chat
-    update._effective_user = chat
+    # effective_user stays None: no handler reads it, and a Chat is not a
+    # User. (mypy caught the original line claiming otherwise.)
     return update
 
 
-async def on_text(update: Update, ctx):
+async def on_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE | None) -> None:
     """Handle the Credentials Prompt, the Shared Secret exchange, and buttons.
 
     Reply-keyboard buttons arrive here as ordinary text, so they are dispatched
@@ -313,6 +325,7 @@ async def on_text(update: Update, ctx):
     """
     chat = update.effective_chat
     msg = update.effective_message
+    assert chat is not None and msg is not None
     text = (msg.text or "").strip()
     st = _prompt_stage(chat.id)
 
@@ -365,13 +378,15 @@ async def on_text(update: Update, ctx):
         if len(text) < 3 or len(text) > 40:
             await msg.reply_text(words.bad_username(), parse_mode=ParseMode.MARKDOWN)
             return
-        await ask_password(msg, chat.id, username=text, preset=st.get("preset"))
+        await ask_password(msg, chat.id, username=text, preset=bool(st.get("preset")))
         return
 
     if st.get("stage") == "password":
         if not text:
             return
-        username = st.get("username")
+        # The password stage is unreachable without the username stage first,
+        # so this is str at runtime; the cast says so once, at the boundary.
+        username = cast(str, st.get("username"))
         # Store encrypted, then drop it. The plaintext is not kept anywhere.
         try:
             ledger.save_credentials(
@@ -400,9 +415,9 @@ async def on_text(update: Update, ctx):
 # ----------------------------------------------------------------------
 
 
-async def backup_job(ctx):
+async def backup_job(ctx: ContextTypes.DEFAULT_TYPE) -> None:
     """Nightly ledger backup, delivered to Telegram itself."""
-    chat_ids = [u["chat_id"] for u in ledger.known_users()]
+    chat_ids = [cast(int, u["chat_id"]) for u in ledger.known_users()]
     if not chat_ids:
         return
     ledger.init()
