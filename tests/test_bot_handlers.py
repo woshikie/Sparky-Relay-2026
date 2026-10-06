@@ -10,6 +10,8 @@ import contextlib
 import datetime
 import sys
 
+from telegram.error import TelegramError
+
 import pytest
 
 
@@ -1047,3 +1049,140 @@ def test_on_ready_announces_the_bot(bot, capsys):
             return type("M", (), {"username": "sparky_2026_bot"})()
     run(bot.on_ready(type("A", (), {"bot": FakeBot()})()))
     assert "sparky_2026_bot" in capsys.readouterr().out
+
+
+# ----------------------------------------------------------- parse_profile
+
+def test_the_profile_parser_finds_both_totals(bot):
+    """The rank line after Commit depends on these numbers."""
+    out = bot.parse_profile("24,860 total steps\n248 total points")
+    assert "24,860" in out
+    assert "248" in out
+
+
+def test_the_profile_parser_finds_only_steps(bot):
+    out = bot.parse_profile("24,860 total steps")
+    assert "24,860" in out
+    assert "points" not in out
+
+
+def test_the_profile_parser_finds_the_house(bot):
+    out = bot.parse_profile("YOUR HOUSE\n\nGryffindor")
+    assert "Gryffindor" in out
+
+
+def test_the_profile_parser_on_a_board_with_nothing(bot):
+    """A board with no totals must not raise, and must not invent numbers."""
+    assert bot.parse_profile("nothing here") == ""
+
+
+# --------------------------------------------------- the access-refused paths
+
+def test_login_is_refused_with_a_reason(bot, access):
+    """The refusal says why, so the user knows whether to claim or switch."""
+    upd = FakeUpdate(chat_id=60)
+    run(bot.on_login(upd, None))
+    assert "already been claimed" in upd.message.said
+    assert "whitelist" in upd.message.said
+
+
+def test_logout_is_refused_to_a_stranger(bot, access):
+    upd = FakeUpdate(chat_id=61)
+    run(bot.on_logout(upd, None))
+    assert "cannot drive" in upd.message.said or "already been claimed" in upd.message.said
+
+
+# ------------------------------------------------------- cb_date's guard
+
+def test_a_date_callback_that_raises_is_answered(bot, access):
+    """A callback that raises must not leave the button spinning."""
+    access.grant(70, "manual")
+    q = FakeQuery("dt:today")
+    q.message.reply_to_message = None
+    # Force _cb_date to raise by giving it a message with no reply_to_message
+    # and no pending -- the expired path. That must be answered, not hang.
+    upd = type("U", (), {})()
+    upd.callback_query = q
+    upd.effective_chat = q.effective_chat
+    upd.effective_message = q.effective_message
+    run(bot.cb_date(upd, None))
+    assert q.answers, "the callback was never answered"
+
+
+def test_a_date_callback_that_cannot_even_be_answered_is_survived(bot, access):
+    """If answering itself raises, the handler must not propagate.
+
+    The outer guard answers the query so the client stops spinning; if that
+    answer fails too, the exception must be swallowed rather than propagated.
+    """
+    access.grant(71, "manual")
+
+    class SilentQuery(FakeQuery):
+        async def answer(self, text=None, show_alert=False):
+            raise TelegramError("nope")
+
+    q = SilentQuery("dt:today")
+    q.message.reply_to_message = None
+    upd = type("U", (), {})()
+    upd.callback_query = q
+    upd.effective_chat = q.effective_chat
+    upd.effective_message = q.effective_message
+    run(bot.cb_date(upd, None))
+
+
+def test_an_unauthorised_date_callback_is_refused(bot, access):
+    access.deny(72, "spam")
+    q = FakeQuery("dt:today", chat_id=72)
+    upd = type("U", (), {})()
+    upd.callback_query = q
+    upd.effective_chat = q.effective_chat
+    upd.effective_message = q.effective_message
+    run(bot.cb_date(upd, None))
+    assert q.answers and q.answers[0][1], "an alert, not a silent change"
+
+
+# ------------------------------------------------------- cb_ok's early paths
+
+def test_a_confirm_from_an_unauthorised_chat_is_refused(bot, access):
+    access.deny(73, "spam")
+    q = FakeQuery("ok:go", chat_id=73)
+    upd = type("U", (), {})()
+    upd.callback_query = q
+    upd.effective_chat = q.effective_chat
+    upd.effective_message = q.effective_message
+    run(bot.cb_ok(upd, None))
+    assert q.answers and q.answers[0][1]
+
+
+def test_the_recording_line_names_the_number_and_date(bot, access, monkeypatch):
+    """The intermediate edit: the user sees it is working on their number."""
+    access.grant(74, "manual")
+    bot.PENDING[(74, 100)] = {
+        "path": "/tmp/x.jpg", "steps": 6532, "reported": "6,532",
+        "scratch": FakeMessage(), "date": datetime.date(2026, 10, 4),
+        "iso": "2026-10-04", "label": "October 4th, 2026"}
+
+    class R:
+        def upload(self, path, mode="steps"):
+            return 6532, "6,532"
+        def set_date(self, d):
+            pass
+        def commit(self, steps):
+            return "Recorded"
+
+    @contextlib.asynccontextmanager
+    async def fake_session(progress=None):
+        yield R()
+    monkeypatch.setattr(bot, "browser_session", fake_session)
+    async def fake_sign_in(chat_id, progress=None):
+        return None
+    monkeypatch.setattr(bot, "sign_in", fake_sign_in)
+
+    q = FakeQuery("ok:go", chat_id=74)
+    upd = type("U", (), {})()
+    upd.callback_query = q
+    upd.effective_chat = q.effective_chat
+    upd.effective_message = q.effective_message
+    run(bot.cb_ok(upd, None))
+    assert "6,532" in " ".join(q.message.edits)
+    assert "October 4th, 2026" in " ".join(q.message.edits)
