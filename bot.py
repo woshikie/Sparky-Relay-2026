@@ -1285,15 +1285,17 @@ async def backup_job(ctx):
 # ----------------------------------------------------------------------
 
 def main():
-    # First thing, so the refusal below is timestamped too -- a bot that dies
-    # on a config error is exactly when you want the timestamp.
+    # First thing, so a refusal is timestamped too -- a bot that dies on a
+    # config error is exactly when you want the timestamp.
+    #
+    # require() raises SystemExit carrying the message, which Python prints to
+    # stderr and exits 1. That is already "a plain message and a non-zero
+    # exit, not a traceback", so there is nothing to catch here. It used to
+    # catch errors.ConfigRefused, which require() never raises -- ConfigRefused
+    # is the import-time refusal for an invalid ACCESS_MODE, a different error
+    # on a different path.
     console.install()
-    try:
-        config.require()
-    except errors.ConfigRefused as e:
-        # A plain message and a non-zero exit, not a traceback.
-        sys.stderr.write("%s\n" % e)
-        raise SystemExit(2)
+    config.require()
     ledger.init()
     app = (ApplicationBuilder()
            .token(config.TELEGRAM_BOT_TOKEN)

@@ -969,3 +969,81 @@ def test_a_photo_failure_reports_on_the_original_message(bot, access, ledger,
         bot, access, ledger, RuntimeError("boom"), tmp_path, monkeypatch)
     run(bot.on_photo(upd, None))
     assert "Upload failed" in upd.message.said
+
+
+# ------------------------------------------------------------------- log()
+
+def test_log_is_quiet_without_a_context(bot, capsys):
+    """No context means no job_queue to touch, and the line still prints."""
+    bot.log(None, "hello")
+    assert "hello" in capsys.readouterr().out
+
+
+def test_log_with_a_context_prints(bot, capsys):
+    bot.log(type("C", (), {"job_queue": None})(), "hello")
+    assert "hello" in capsys.readouterr().out
+
+
+def test_log_survives_a_job_queue_that_raises(bot, capsys):
+    """A broken job_queue must not take down the log line."""
+    class BadQ:
+        def run_once(self, *a, **kw):
+            raise RuntimeError("no scheduler")
+    bot.log(type("C", (), {"job_queue": BadQ()})(), "hello")
+    assert "hello" in capsys.readouterr().out
+
+
+def test_the_old_site_login_entry_point_is_gone(bot):
+    """It was superseded by browser_session(); calling it must say so."""
+    with pytest.raises(RuntimeError):
+        run(bot.site_login(None))
+
+
+# ------------------------------------------------------- the prompt helpers
+
+def test_ask_credentials_with_no_presets_asks_for_a_username(bot, access):
+    access.grant(50, "manual")
+    msg = FakeMessage(chat_id=50)
+    run(bot.ask_credentials(msg, 50))
+    assert bot._prompt_stage(50)["stage"] == "username"
+    assert "username" in msg.said.lower()
+
+
+def test_ask_username_sets_the_stage(bot, access):
+    access.grant(51, "manual")
+    msg = FakeMessage(chat_id=51)
+    run(bot.ask_username(msg, 51))
+    assert bot._prompt_stage(51)["stage"] == "username"
+
+
+def test_ask_password_carries_the_username_forward(bot, access):
+    """The username has to survive the transition, or the password is orphaned."""
+    access.grant(52, "manual")
+    msg = FakeMessage(chat_id=52)
+    run(bot.ask_password(msg, 52, username="testuser"))
+    st = bot._prompt_stage(52)
+    assert st["stage"] == "password"
+    assert st["username"] == "testuser"
+
+
+def test_ask_password_marks_a_preset(bot, access):
+    access.grant(53, "manual")
+    msg = FakeMessage(chat_id=53)
+    run(bot.ask_password(msg, 53, username="testuser", preset=True))
+    assert bot._prompt_stage(53)["preset"] is True
+
+
+def test_kb_done_returns_the_standing_commands(bot):
+    labels = [b.text for row in bot.kb_done().keyboard for b in row]
+    assert any("Status" in l for l in labels)
+
+
+# ------------------------------------------------------------ on_ready
+
+def test_on_ready_announces_the_bot(bot, capsys):
+    """The first line in the log, and the only one before polling starts."""
+    class FakeBot:
+        async def get_me(self):
+            return type("M", (), {"username": "sparky_2026_bot"})()
+    run(bot.on_ready(type("A", (), {"bot": FakeBot()})()))
+    assert "sparky_2026_bot" in capsys.readouterr().out
