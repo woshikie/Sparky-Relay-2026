@@ -108,17 +108,25 @@ def test_the_plausibility_band_matches_the_site(bot, steps, plausible):
 # ------------------------------------------------------- pending / guard
 
 def test_pending_confirmations_are_keyed_per_chat(bot):
-    bot.PENDING[(1, 10)] = {"steps": 100}
-    assert bot.PENDING[(2, 10)] if False else True
-    assert (1, 10) in bot.PENDING
-    assert (2, 10) not in bot.PENDING
+    bot.pending.put((1, 10), {"steps": 100})
+    assert bot.pending.get((1, 10))["steps"] == 100
+    assert bot.pending.get((2, 10)) is None
 
 
 def test_the_most_recent_pending_wins(bot):
-    bot.PENDING[(1, 10)] = {"a": 1}
-    bot.PENDING[(1, 11)] = {"b": 2}
-    cands = [k for k in bot.PENDING if k[0] == 1]
-    assert max(cands, key=lambda k: k[1]) == (1, 11)
+    bot.pending.put((1, 10), {"a": 1})
+    bot.pending.put((1, 11), {"b": 2})
+    key, _ = bot.pending.latest_for_chat(1)
+    assert key == (1, 11)
+
+
+def test_expired_pendings_read_as_missing(bot):
+    """Expiry is lazy: a stale record reads as missing and is dropped."""
+    record = bot.pending.put((1, 10), {"steps": 100})
+    record["at"] -= 3600
+    assert bot.pending.get((1, 10)) is None
+    assert bot.pending.latest_for_chat(1) is None
+    assert bot.pending.count() == 0
 
 
 # ------------------------------------------------------- leaderboard parse

@@ -16,12 +16,12 @@ from telegram.ext import ContextTypes
 
 import relay.telegram.access as access
 import relay.telegram.failures as failures
+import relay.telegram.pending as pending_mod
 import relay.telegram.session as session_mod
 import relay.telegram.words as words
 from relay import config
 from relay import progress as progress_mod
 from relay.site import driver as relay_site
-from relay.telegram.callbacks import PENDING
 from relay.telegram.keyboards import kb_date_default
 from relay.telegram.prompts import ask_credentials, refuse
 
@@ -130,10 +130,13 @@ async def on_photo(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         reply_markup=kb_date_default(steps, reported),
     )
 
-    PENDING[(chat.id, msg.message_id)] = {
-        "path": path,
-        "steps": steps,
-        "reported": reported,
-        "scratch": scratch,
-        "date": None,
-    }
+    pending_mod.put(
+        (chat.id, msg.message_id),
+        {
+            "path": path,
+            "steps": steps,
+            "reported": reported,
+            "scratch": scratch,
+            "date": None,
+        },
+    )

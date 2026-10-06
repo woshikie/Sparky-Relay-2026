@@ -85,11 +85,11 @@ class FakeQuery:
 def pending(bot, access):
     """A granted chat with one Screenshot awaiting a date."""
     access.grant(1, "claim")
-    bot.PENDING.clear()
-    bot.PENDING[(1, 100)] = {
+    bot.pending.clear()
+    bot.pending.put((1, 100), {
         "path": "/tmp/x.jpg", "steps": 6532, "reported": "6,532",
         "scratch": FakeMessage(), "date": None,
-    }
+    })
     return bot
 
 
@@ -107,19 +107,19 @@ def press(bot, data, chat_id=1):
 
 def test_today_selects_today(pending):
     press(pending, "dt:today")
-    st = pending.PENDING[(1, 100)]
+    st = pending.pending.get((1, 100))
     assert st["date"] == pending.sg_today()
 
 
 def test_yesterday_selects_yesterday(pending):
     press(pending, "dt:yday")
-    st = pending.PENDING[(1, 100)]
+    st = pending.pending.get((1, 100))
     assert st["date"] == pending.sg_today() - datetime.timedelta(days=1)
 
 
 def test_a_calendar_day_is_used_verbatim(pending):
     press(pending, "dt:day:2026-10-03")
-    assert pending.PENDING[(1, 100)]["date"] == datetime.date(2026, 10, 3)
+    assert pending.pending.get((1, 100))["date"] == datetime.date(2026, 10, 3)
 
 
 def test_the_confirmation_shows_the_date_chosen(pending):
@@ -142,7 +142,7 @@ def test_today_reads_naturally_in_the_confirmation(pending):
 def test_going_back_restores_the_default_keyboard(pending):
     q = press(pending, "dt:back")
     assert q.message.markup is not None
-    assert pending.PENDING[(1, 100)]["date"] is None
+    assert pending.pending.get((1, 100))["date"] is None
 
 
 def test_opening_the_picker_shows_a_calendar(pending):
@@ -165,12 +165,12 @@ def test_a_dead_button_is_a_no_op(pending):
     q = press(pending, "dt:none")
     assert len(q.answers) == 1
     assert q.answers[0][1] is False
-    assert pending.PENDING[(1, 100)]["date"] is None
+    assert pending.pending.get((1, 100))["date"] is None
 
 
 def test_an_unrecognised_callback_is_a_no_op(pending):
     q = press(pending, "dt:whatever")
-    assert pending.PENDING[(1, 100)]["date"] is None
+    assert pending.pending.get((1, 100))["date"] is None
 
 
 # --------------------------------------------------------- the overwrite guard
@@ -190,8 +190,8 @@ def test_an_upgrade_is_not_challenged(pending, ledger):
 
 def test_a_downgrade_is_challenged(pending, ledger):
     """The asymmetric guard: lower means something went wrong upstream."""
-    pending.PENDING[(1, 100)]["steps"] = 700
-    pending.PENDING[(1, 100)]["reported"] = "700"
+    pending.pending.get((1, 100))["steps"] = 700
+    pending.pending.get((1, 100))["reported"] = "700"
     iso = pending.sg_today().isoformat()
     ledger.record(iso, 6532)
     q = press(pending, "dt:today")
@@ -202,7 +202,7 @@ def test_a_downgrade_is_challenged(pending, ledger):
 
 
 def test_the_downgrade_warning_is_answered_with_an_alert(pending, ledger):
-    pending.PENDING[(1, 100)]["steps"] = 700
+    pending.pending.get((1, 100))["steps"] = 700
     ledger.record(pending.sg_today().isoformat(), 6532)
     q = press(pending, "dt:today")
     assert any(a[1] for a in q.answers), "the popup should be an alert"
@@ -210,7 +210,7 @@ def test_the_downgrade_warning_is_answered_with_an_alert(pending, ledger):
 
 def test_a_downgrade_offers_no_plain_confirm(pending, ledger):
     """There must be no path that silently accepts the lower number."""
-    pending.PENDING[(1, 100)]["steps"] = 700
+    pending.pending.get((1, 100))["steps"] = 700
     ledger.record(pending.sg_today().isoformat(), 6532)
     q = press(pending, "dt:today")
     assert "Confirm" not in str(q.message.markup)
@@ -220,7 +220,7 @@ def test_the_guard_is_per_date_not_global(pending, ledger):
     """Yesterday's record must not block today's."""
     yesterday = (pending.sg_today() - datetime.timedelta(days=1)).isoformat()
     ledger.record(yesterday, 6532)
-    pending.PENDING[(1, 100)]["steps"] = 700
+    pending.pending.get((1, 100))["steps"] = 700
     q = press(pending, "dt:today")       # today, not yesterday
     assert "Overwrite" not in str(q.message.markup)
 
@@ -235,7 +235,7 @@ def test_an_equal_number_is_not_challenged(pending, ledger):
 # -------------------------------------------------------------- housekeeping
 
 def test_an_expired_request_says_so(pending):
-    pending.PENDING.clear()
+    pending.pending.clear()
     q = press(pending, "dt:today")
     assert "expired" in " ".join(q.message.edits).lower()
 
@@ -254,7 +254,7 @@ def test_cancel_discards_the_pending_request(pending):
     upd.effective_chat = upd.callback_query.effective_chat
     upd.effective_message = upd.callback_query.effective_message
     run(pending.cb_ok(upd, None))
-    assert (1, 100) not in pending.PENDING
+    assert pending.pending.get((1, 100)) is None
 
 
 def test_cancel_says_nothing_was_recorded(pending):
@@ -274,11 +274,11 @@ def test_confirm_without_a_date_is_refused(pending):
     upd.effective_message = upd.callback_query.effective_message
     run(pending.cb_ok(upd, None))
     assert "Pick a date" in str(upd.callback_query.answers[0][0])
-    assert (1, 100) in pending.PENDING, "the request survives to be retried"
+    assert pending.pending.get((1, 100)) is not None, "the request survives to be retried"
 
 
 def test_an_expired_confirm_says_so(pending):
-    pending.PENDING.clear()
+    pending.pending.clear()
     upd = type("U", (), {})()
     upd.callback_query = FakeQuery("ok:go")
     upd.effective_chat = upd.callback_query.effective_chat
@@ -304,9 +304,9 @@ def test_a_changed_second_read_aborts_the_commit(pending, monkeypatch, session):
     it and re-uploads. If the site reads a different number the second time,
     the Screenshot is not the one the user agreed to, and nothing is written.
     """
-    pending.PENDING[(1, 100)]["date"] = datetime.date(2026, 10, 4)
-    pending.PENDING[(1, 100)]["iso"] = "2026-10-04"
-    pending.PENDING[(1, 100)]["label"] = "October 4th, 2026"
+    pending.pending.get((1, 100))["date"] = datetime.date(2026, 10, 4)
+    pending.pending.get((1, 100))["iso"] = "2026-10-04"
+    pending.pending.get((1, 100))["label"] = "October 4th, 2026"
 
     class R:
         def upload(self, path, mode="steps"):
@@ -326,15 +326,15 @@ def test_a_changed_second_read_aborts_the_commit(pending, monkeypatch, session):
 
     q, upd = _confirm(pending)
     run(pending.cb_ok(upd, None))
-    assert (1, 100) not in pending.PENDING, "the request is discarded"
+    assert pending.pending.get((1, 100)) is None, "the request is discarded"
     assert "changed" in q.answers[0][0]
 
 
 def test_an_unchanged_second_read_proceeds_to_commit(pending, monkeypatch, session):
     """The same number twice: the commit goes ahead."""
-    pending.PENDING[(1, 100)]["date"] = datetime.date(2026, 10, 4)
-    pending.PENDING[(1, 100)]["iso"] = "2026-10-04"
-    pending.PENDING[(1, 100)]["label"] = "October 4th, 2026"
+    pending.pending.get((1, 100))["date"] = datetime.date(2026, 10, 4)
+    pending.pending.get((1, 100))["iso"] = "2026-10-04"
+    pending.pending.get((1, 100))["label"] = "October 4th, 2026"
 
     committed = []
 
@@ -365,9 +365,9 @@ def test_an_unchanged_second_read_proceeds_to_commit(pending, monkeypatch, sessi
 def test_the_commit_reports_what_the_site_said(pending, monkeypatch, session):
     """After Commit the site's own words are the evidence, not ours."""
     from relay.store import ledger as led
-    pending.PENDING[(1, 100)]["date"] = datetime.date(2026, 10, 4)
-    pending.PENDING[(1, 100)]["iso"] = "2026-10-04"
-    pending.PENDING[(1, 100)]["label"] = "October 4th, 2026"
+    pending.pending.get((1, 100))["date"] = datetime.date(2026, 10, 4)
+    pending.pending.get((1, 100))["iso"] = "2026-10-04"
+    pending.pending.get((1, 100))["label"] = "October 4th, 2026"
 
     class R:
         def upload(self, path, mode="steps"):

@@ -1,7 +1,7 @@
 """The confirmation flow: dates, the overwrite guard, and Commit.
 
-PENDING holds the Screenshots awaiting confirmation, keyed by
-(chat_id, message_id). The guard is one-directional by design: a downgrade is
+Pending confirmations live in telegram.pending, keyed by (chat_id,
+message_id). The guard is one-directional by design: a downgrade is
 always challenged, an upgrade never is. authorised() lives here because the
 callbacks are its only callers.
 """
@@ -9,9 +9,9 @@ callbacks are its only callers.
 import asyncio
 import datetime
 from contextlib import suppress
-from typing import NotRequired, TypedDict, cast
+from typing import cast
 
-from telegram import Message, Update
+from telegram import Update
 from telegram.constants import ParseMode
 from telegram.error import TelegramError
 from telegram.ext import ContextTypes
@@ -19,6 +19,7 @@ from telegram.ext import ContextTypes
 import relay.store.ledger as ledger
 import relay.telegram.access as access
 import relay.telegram.failures as failures
+import relay.telegram.pending as pending_mod
 import relay.telegram.session as session_mod
 import relay.telegram.words as words
 from relay.clock import sg_today
@@ -30,25 +31,6 @@ from relay.telegram.keyboards import (
     kb_pick_date,
 )
 from relay.telegram.prompts import ask_credentials
-
-
-# Pending Screenshot state, keyed by (chat_id, message_id) of the Confirmation.
-# Unlike the prompt stage bag, this record has a known shape: the intake
-# always sets path/steps/reported/scratch/date, and the date flow adds
-# iso/label/prev later. So it is a TypedDict, and a bare .get() on a required
-# key yields the value type rather than Any | None.
-class Pending(TypedDict):
-    path: str
-    steps: int
-    reported: str
-    scratch: Message
-    date: datetime.date | None
-    iso: NotRequired[str]
-    label: NotRequired[str]
-    prev: NotRequired[dict[str, object] | None]
-
-
-PENDING: dict[tuple[int, int], Pending] = {}
 
 
 async def cb_date(update: Update, ctx: ContextTypes.DEFAULT_TYPE | None) -> None:
@@ -84,19 +66,19 @@ async def _cb_date(update: Update, ctx: ContextTypes.DEFAULT_TYPE | None) -> Non
     data = q.data or ""
     _, kind, *rest = data.split(":")
 
-    st: Pending | None = None
+    st: pending_mod.Pending | None = None
     if msg.reply_to_message is not None:
-        st = PENDING.get((chat.id, msg.reply_to_message.message_id))
+        st = pending_mod.get((chat.id, msg.reply_to_message.message_id))
     if st is None:
         # attach to the most recent pending for this chat
-        cands = [k for k in PENDING if k[0] == chat.id]
-        if not cands:
+        found = pending_mod.latest_for_chat(chat.id)
+        if found is None:
             await q.answer(
                 "This request expired — send the screenshot again.", show_alert=True
             )
             await q.edit_message_text("Expired. Send the screenshot again.")
             return
-        st = PENDING[max(cands, key=lambda k: k[1])]
+        _, st = found
 
     if kind == "today":
         st["date"] = sg_today()
@@ -205,18 +187,17 @@ async def cb_ok(update: Update, ctx: ContextTypes.DEFAULT_TYPE | None) -> None:
     data = q.data or ""
     action = data.split(":")[1]
 
-    cands = [k for k in PENDING if k[0] == chat.id]
-    if not cands:
+    found = pending_mod.latest_for_chat(chat.id)
+    if found is None:
         await q.answer(
             "This request expired — send the screenshot again.", show_alert=True
         )
         await q.edit_message_text("Expired. Send the screenshot again.")
         return
-    key = max(cands, key=lambda k: k[1])
-    st = PENDING[key]
+    key, st = found
 
     if action == "cancel":
-        PENDING.pop(key, None)
+        pending_mod.pop(key)
         await q.edit_message_text(words.cancelled())
         await q.answer()
         return
@@ -244,7 +225,7 @@ async def cb_ok(update: Update, ctx: ContextTypes.DEFAULT_TYPE | None) -> None:
             # Screenshot is not the one they agreed to submit.
             steps2, reported2 = await asyncio.to_thread(r.upload, st["path"])
             if steps2 != st["steps"]:
-                PENDING.pop(key, None)
+                pending_mod.pop(key)
                 await msg.reply_text(
                     words.ocr_changed(st["reported"], reported2, label),
                     parse_mode=ParseMode.MARKDOWN,
@@ -254,7 +235,7 @@ async def cb_ok(update: Update, ctx: ContextTypes.DEFAULT_TYPE | None) -> None:
             await asyncio.to_thread(r.set_date, date)
             site_text = await asyncio.to_thread(r.commit, st["steps"])
     except Exception as e:
-        PENDING.pop(key, None)
+        pending_mod.pop(key)
         alert, alarm, log_line = await failures.explain(
             msg,
             e,
@@ -273,7 +254,7 @@ async def cb_ok(update: Update, ctx: ContextTypes.DEFAULT_TYPE | None) -> None:
         site_label=label,
         msg_id=msg.message_id,
     )
-    PENDING.pop(key, None)
+    pending_mod.pop(key)
 
     with suppress(TelegramError):
         await msg.reply_text(

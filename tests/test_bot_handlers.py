@@ -576,13 +576,13 @@ def test_status_says_when_nothing_is_denied(bot, granted):
 
 
 def test_status_counts_pending_confirmations(bot, granted):
-    bot.PENDING[(1, 100)] = {"path": "/tmp/x.jpg", "steps": 100,
+    bot.pending.put((1, 100), {"path": "/tmp/x.jpg", "steps": 100,
                               "reported": "100", "scratch": None,
-                              "date": None}
+                              "date": None})
     upd = FakeUpdate(chat_id=1)
     run(bot.on_status(upd, None))
     assert "Pending confirmations:** 1" in upd.message.replies[0][0]
-    bot.PENDING.clear()
+    bot.pending.clear()
 
 
 def test_status_says_when_nothing_is_pending(bot, granted):
@@ -1163,10 +1163,10 @@ def test_the_recording_line_names_the_number_and_date(bot, access, monkeypatch,
                                                       session):
     """The intermediate edit: the user sees it is working on their number."""
     access.grant(74, "manual")
-    bot.PENDING[(74, 100)] = {
+    bot.pending.put((74, 100), {
         "path": "/tmp/x.jpg", "steps": 6532, "reported": "6,532",
         "scratch": FakeMessage(), "date": datetime.date(2026, 10, 4),
-        "iso": "2026-10-04", "label": "October 4th, 2026"}
+        "iso": "2026-10-04", "label": "October 4th, 2026"})
 
     class R:
         def upload(self, path, mode="steps"):

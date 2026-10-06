@@ -14,6 +14,7 @@ place to patch. Everything re-exported below is read, never rebound.
 import relay.store.ledger as ledger  # noqa: F401
 import relay.store.vault as vault  # noqa: F401
 import relay.telegram.access as access  # noqa: F401  (re-exported for callers)
+import relay.telegram.pending as pending  # noqa: F401
 import relay.telegram.words as words  # noqa: F401
 from relay import config as config
 from relay import memory as memory
@@ -26,7 +27,6 @@ from relay.store.backup import backup_job as backup_job
 from relay.telegram.app import main as main
 from relay.telegram.app import on_ready as on_ready
 from relay.telegram.callbacks import (  # noqa: F401
-    PENDING,
     _cb_date,
     authorised,
     cb_date,

@@ -18,11 +18,11 @@ from telegram.ext import ContextTypes
 import relay.store.ledger as ledger
 import relay.telegram.access as access
 import relay.telegram.failures as failures
+import relay.telegram.pending as pending_mod
 import relay.telegram.session as session_mod
 import relay.telegram.words as words
 from relay import config, memory
 from relay import progress as progress_mod
-from relay.telegram.callbacks import PENDING
 from relay.telegram.keyboards import button_actions, kb_after_login, kb_reply
 from relay.telegram.prompts import (
     ask_credentials,
@@ -217,7 +217,7 @@ async def on_status(update: Update, ctx: ContextTypes.DEFAULT_TYPE | None) -> No
             )
             or "none",
             ", ".join(words.code(a["chat_id"]) for a in denied) or "none",
-            len(PENDING),
+            pending_mod.count(),
         )
     )
     # Refresh the keyboard so the buttons Telegram is showing match what the

@@ -65,7 +65,7 @@ MODULES = ("relay", "relay.telegram", "relay.store", "relay.site",
            "relay.site.driver", "relay.site.parsing",
            "relay.telegram.session", "relay.telegram.keyboards",
            "relay.telegram.prompts", "relay.telegram.commands",
-           "relay.telegram.photo", "relay.telegram.callbacks",
+           "relay.telegram.photo", "relay.telegram.pending", "relay.telegram.callbacks",
            "relay.telegram.failures", "relay.telegram.app")
 
 
@@ -184,7 +184,7 @@ def bot(config, ledger):
     """
     mod = importlib.import_module("relay.telegram")
     mod.PROMPTING.clear()
-    mod.PENDING.clear()
+    mod.pending.clear()
     return mod
 
 
