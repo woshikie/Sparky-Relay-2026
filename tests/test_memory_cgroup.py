@@ -305,8 +305,7 @@ def test_cgroup_root_finds_a_real_v2_group(monkeypatch):
     on the path where it actually finds something.
     """
     def exists(p):
-        p = str(p)
-        return p.endswith("memory.max") or p.endswith("memory.limit_in_bytes")
+        return str(p) == "/sys/fs/cgroup/memory.max"
     monkeypatch.setattr(memory.os.path, "exists", exists)
     assert memory._cgroup_root() == "/sys/fs/cgroup"
 
@@ -314,15 +313,20 @@ def test_cgroup_root_finds_a_real_v2_group(monkeypatch):
 def test_cgroup_root_prefers_v2_over_v1(monkeypatch):
     """v2 is checked first, and must win when both are present."""
     def exists(p):
-        p = str(p)
-        return p.endswith("memory.max") or p.endswith("memory.limit_in_bytes")
+        return str(p) in ("/sys/fs/cgroup/memory.max",
+                          "/sys/fs/cgroup/memory/memory.limit_in_bytes")
     monkeypatch.setattr(memory.os.path, "exists", exists)
     assert memory._cgroup_root() == "/sys/fs/cgroup"
 
 
 def test_cgroup_root_finds_a_v1_group(monkeypatch):
-    """v1 only: memory.limit_in_bytes, no memory.max."""
+    """v1 only: memory.limit_in_bytes under the v1 directory, no memory.max.
+
+    The path has to be the full v1 one. Matching any path ending in
+    'memory.limit_in_bytes' would also match the v2 directory's copy and
+    return the wrong root.
+    """
     def exists(p):
-        return str(p).endswith("memory.limit_in_bytes")
+        return str(p) == "/sys/fs/cgroup/memory/memory.limit_in_bytes"
     monkeypatch.setattr(memory.os.path, "exists", exists)
     assert memory._cgroup_root() == "/sys/fs/cgroup/memory"
