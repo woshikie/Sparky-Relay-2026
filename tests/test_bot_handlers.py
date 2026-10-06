@@ -8,6 +8,7 @@ approve — not Telegram's own plumbing.
 import asyncio
 import contextlib
 import datetime
+import sys
 
 import pytest
 
@@ -847,3 +848,31 @@ def test_the_backup_is_delivered_to_telegram_itself(bot, ledger, tmp_path):
 def test_the_backup_with_no_users_does_nothing(bot):
     """No users means no delivery, not an error."""
     run(bot.backup_job(type("C", (), {"bot": type("B", (), {})()})()))
+
+
+# ------------------------------------------------------------------ main()
+
+def test_main_exits_cleanly_when_the_token_is_missing(bot, monkeypatch, capsys):
+    """A missing token is the one config error that reaches main().
+
+    ACCESS_MODE is validated at import, so this is the branch that actually
+    runs: a plain message on stderr and a non-zero exit, not a traceback.
+
+    The exit is SystemExit carrying the message, which Python prints to stderr
+    and exits 1 -- so the code is the message, not 2.
+    """
+    monkeypatch.setattr(bot.config, "TELEGRAM_BOT_TOKEN", "")
+    with pytest.raises(SystemExit) as exc:
+        bot.main()
+    assert "missing configuration" in str(exc.value)
+    assert "TELEGRAM_BOT_TOKEN" in str(exc.value)
+
+
+def test_main_installs_the_timestamps(bot, monkeypatch):
+    """console.install() runs first, so even the refusal is timestamped."""
+    monkeypatch.setattr(bot.config, "TELEGRAM_BOT_TOKEN", "")
+    with pytest.raises(SystemExit):
+        bot.main()
+    import console as console_mod
+    assert isinstance(sys.stdout, console_mod.TimestampedStream)
+    console_mod.uninstall()
