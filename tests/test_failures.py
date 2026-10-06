@@ -9,6 +9,7 @@ Each test drives explain() directly with a fake message. What is asserted is
 the contract the callers rely on: the reply text, the callback answer triple,
 and whether the credentials prompt is started.
 """
+
 import pytest
 from conftest import run
 
@@ -21,14 +22,15 @@ def failures():
     module-level import would compare against the previous test's classes.
     """
     import importlib
+
     return importlib.import_module("relay.telegram.failures")
 
 
 @pytest.fixture
 def _NoCredentials():
     import importlib
-    return importlib.import_module(
-        "relay.telegram.prompts")._NoCredentials
+
+    return importlib.import_module("relay.telegram.prompts")._NoCredentials
 
 
 class FakeMessage:
@@ -57,6 +59,7 @@ def explained(failures, exc, operation="Upload", prompt=True):
 
 # ------------------------------------------------------- the two fixes
 
+
 def test_no_credentials_asks_for_them(failures, _NoCredentials):
     """The fix is supplying credentials, so the prompt starts."""
     msg, (alert, alarm, log_line) = explained(failures, _NoCredentials("none stored"))
@@ -68,8 +71,10 @@ def test_no_credentials_asks_for_them(failures, _NoCredentials):
 
 def test_a_rotated_token_says_the_password_is_gone(failures):
     import relay.store.vault as vault
-    msg, (alert, alarm, log_line) = explained(failures,
-        vault.DecryptionFailed("the key no longer fits"))
+
+    msg, (alert, alarm, log_line) = explained(
+        failures, vault.DecryptionFailed("the key no longer fits")
+    )
     assert "gone" in msg.said.lower() or "again" in msg.said.lower()
     assert msg.prompts_started == 1
     assert alert == "stored credentials unreadable" and alarm is True
@@ -85,10 +90,13 @@ def test_without_a_prompt_nothing_starts_one(failures, _NoCredentials):
 
 # ------------------------------------------------------ the dead ends
 
+
 def test_too_little_memory_names_the_numbers(failures):
     from relay import memory
-    msg, (alert, alarm, log_line) = explained(failures,
-        memory.InsufficientMemory({"available_mb": 10, "min_free_mb": 780}))
+
+    msg, (alert, alarm, log_line) = explained(
+        failures, memory.InsufficientMemory({"available_mb": 10, "min_free_mb": 780})
+    )
     assert "780" in msg.said
     assert alert == "not enough memory" and alarm is True
     assert log_line is None
@@ -96,6 +104,7 @@ def test_too_little_memory_names_the_numbers(failures):
 
 def test_nothing_read_says_so(failures):
     from relay.site import driver as relay_site
+
     msg, (alert, alarm, log_line) = explained(failures, relay_site.NoStepsFound())
     assert "could not read" in msg.said.lower()
     assert alert == "the site read nothing this time" and alarm is True
@@ -105,8 +114,10 @@ def test_nothing_read_says_so(failures):
 def test_a_changed_site_says_so_quietly(failures):
     """No alert popup: the user did nothing wrong, the page just moved."""
     from relay.site import driver as relay_site
-    msg, (alert, alarm, log_line) = explained(failures,
-        relay_site.SiteChanged("the upload form is gone"))
+
+    msg, (alert, alarm, log_line) = explained(
+        failures, relay_site.SiteChanged("the upload form is gone")
+    )
     assert "changed" in msg.said.lower()
     assert alert is None and alarm is False
     assert log_line is None
@@ -114,13 +125,17 @@ def test_a_changed_site_says_so_quietly(failures):
 
 # ---------------------------------------------------------- the unknown
 
+
 def test_an_unknown_failure_names_the_operation(failures):
     """The catch-all keeps each caller's headline: Upload, Sync, Commit."""
-    for operation, headline in (("Upload", "Upload failed"),
-                                ("Sync", "Sync failed"),
-                                ("Commit", "Could not record")):
-        msg, (alert, alarm, log_line) = explained(failures,
-            RuntimeError("boom"), operation=operation)
+    for operation, headline in (
+        ("Upload", "Upload failed"),
+        ("Sync", "Sync failed"),
+        ("Commit", "Could not record"),
+    ):
+        msg, (alert, alarm, _log_line) = explained(
+            failures, RuntimeError("boom"), operation=operation
+        )
         assert headline in msg.said, (operation, msg.said)
         assert alert is None and alarm is False
 
@@ -138,13 +153,84 @@ def test_the_log_line_uses_the_operation_name(failures):
     assert commit_line.startswith("commit error:")
 
 
-def test_an_unknown_operation_falls_back_to_the_commit_copy(failures):
-    """A new caller that forgets its headline still says something sane."""
-    msg, _ = explained(failures, RuntimeError("boom"), operation="SomethingElse")
-    assert "Could not record" in msg.said
+def test_an_unknown_operation_is_rejected(failures):
+    """A new caller that forgets its headline fails loudly.
+
+    The operations are a closed set (Upload, Sync, Commit); silently borrowing
+    the Commit copy hid typos, so now it raises instead.
+    """
+    msg = FakeMessage()
+    with pytest.raises(ValueError):
+        run(failures.explain(msg, RuntimeError("boom"), operation="SomethingElse"))
 
 
 def test_the_error_text_is_capped(failures):
     """A runaway exception message must not blow up the reply."""
     msg, _ = explained(failures, RuntimeError("x" * 500))
     assert len(msg.said) < 400
+
+
+# --------------------------------------------- classify: the pure table
+
+
+def _cases(failures, _NoCredentials):
+    import relay.store.vault as vault
+    from relay import memory
+    from relay.site import driver as relay_site
+
+    return [
+        (
+            _NoCredentials("none stored"),
+            ("login", "credentials needed", True, None, True),
+        ),
+        (
+            vault.DecryptionFailed("the key no longer fits"),
+            ("again", "stored credentials unreadable", True, None, True),
+        ),
+        (
+            memory.InsufficientMemory({"available_mb": 10, "min_free_mb": 780}),
+            ("780", "not enough memory", True, None, False),
+        ),
+        (
+            relay_site.NoStepsFound(),
+            ("could not read", "the site read nothing this time", True, None, False),
+        ),
+        (
+            relay_site.SiteChanged("the upload form is gone"),
+            ("changed", None, False, None, False),
+        ),
+    ]
+
+
+@pytest.mark.parametrize(
+    "operation, headline",
+    [
+        ("Upload", "Upload failed"),
+        ("Sync", "Sync failed"),
+        ("Commit", "Could not record"),
+    ],
+)
+def test_classify_is_a_pure_table(failures, _NoCredentials, operation, headline):
+    """No Message, no event loop, no fakes: the mapping is just rows.
+
+    Each row pins what the failure means; explain() only delivers it.
+    """
+    for exc, (fragment, alert, alarm, log_fragment, prompt) in _cases(
+        failures, _NoCredentials
+    ):
+        kind = failures.classify(exc, operation)
+        assert fragment in kind.reply
+        assert (kind.alert, kind.alarm, kind.prompt) == (alert, alarm, prompt)
+        if log_fragment is None:
+            assert kind.log_line is None
+        else:
+            assert log_fragment in kind.log_line
+    kind = failures.classify(RuntimeError("boom"), operation)
+    assert headline in kind.reply
+    assert (kind.alert, kind.alarm, kind.prompt) == (None, False, False)
+    assert kind.log_line is not None and operation.lower() in kind.log_line
+
+
+def test_classify_rejects_an_unknown_operation(failures):
+    with pytest.raises(ValueError):
+        failures.classify(RuntimeError("boom"), "SomethingElse")
