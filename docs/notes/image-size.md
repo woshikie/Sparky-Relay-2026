@@ -30,8 +30,9 @@ rasteriser `gallium-pipe` (98 MB) plus `libgallium-25.1.9.so` (40 MB).
 **None of it is used.** Headless OCR on this site is PaddleOCR v5 running as
 ONNX Runtime Web — WebAssembly and 2D canvas. There is no GPU, no GL context,
 and no video anywhere in the path. Verified: after the packages were removed
-from a running container, `make verify` still read both real screenshots
-correctly (2,831 and 6,532) and printed `CONTAINER OK`.
+from a running container, reading both real screenshots through the
+containerised browser still worked (2,831 and 6,532) and printed
+`CONTAINER OK`.
 
 But it cannot be reclaimed on Alpine. Tested directly:
 

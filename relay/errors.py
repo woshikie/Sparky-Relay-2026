@@ -11,7 +11,7 @@ class ConfigRefused(Exception):
     """The configuration is unusable, with the message for the operator.
 
     A named exception rather than a bare SystemExit so it is assertable in
-    tests and catchable by a wrapper that wants to add context. bot.sh turns it
-    into a plain printed error and a non-zero exit, which is what a person
-    running the bot actually needs to see.
+    tests and catchable by a wrapper that wants to add context.
+    relay/__main__ turns it into a plain printed error and a non-zero exit,
+    which is what a person running the bot actually needs to see.
     """

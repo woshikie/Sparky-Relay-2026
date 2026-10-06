@@ -23,9 +23,9 @@ from relay.site.parsing import parse_day, parse_steps
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 # The project root, not the module directory: the geckodriver binary is a
-# deployment artefact (setup.sh fetches it to bin/, the image copies it to
-# /app/bin), and it must not move every time this module does. Two levels up,
-# because this file lives at relay/site/driver.py.
+# deployment artefact (fetched to bin/ during setup, see README; the image
+# copies it to /app/bin). It must not move every time this module does.
+# Two levels up, because this file lives at relay/site/driver.py.
 ROOT = os.path.dirname(os.path.dirname(HERE))
 # State that must survive a restart lives under config.LEDGER_DB's directory, so
 # in a container it is the mounted volume rather than the (read-only) image.
@@ -190,7 +190,9 @@ class Relay:
         if self.driver:
             return
         if not os.path.exists(GECKO):
-            raise RuntimeError("geckodriver not found at %s\n  run: ./setup.sh" % GECKO)
+            raise RuntimeError(
+                "geckodriver not found at %s\n  see README for where to get it" % GECKO
+            )
         if not os.path.exists(config.FIREFOX_BIN):
             raise RuntimeError(
                 "firefox not found at %s\n  set FIREFOX_BIN in secrets.env"

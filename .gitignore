@@ -12,7 +12,7 @@ logs/
 .browserprofile/
 botprofile/
 
-# Downloaded by setup.sh
+# geckodriver binary (see README for the download)
 bin/
 geckodriver
 geckodriver.tar.gz

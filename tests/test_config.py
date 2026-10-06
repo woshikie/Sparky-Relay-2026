@@ -156,7 +156,7 @@ def test_the_failure_says_where_it_looked(monkeypatch, tmp_path):
     with pytest.raises(SystemExit) as exc:
         cfg.require()
     assert "secrets.env" in str(exc.value)
-    assert "run.sh" in str(exc.value)
+    assert "README" in str(exc.value)
 
 
 def test_the_failure_explains_that_credentials_are_optional(monkeypatch,

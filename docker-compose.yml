@@ -1,6 +1,6 @@
 # Relay — container run, podman or docker.
 #
-#   ./build.sh                            build the image
+#   podman build --format docker -t sparky-relay-2026:latest .
 #   set -a; . ./secrets.env; set +a       load secrets into the environment
 #   podman compose up -d relay            detached
 #   podman compose logs -f relay

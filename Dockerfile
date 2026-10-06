@@ -98,11 +98,8 @@ COPY relay ./relay
 # Verification helpers, so the built image can prove it can read the site's OCR
 # without needing the source tree on the host.
 COPY check_container.py check_lifecycle.py ./
-COPY bot.sh ./
 COPY CONTEXT.md README.md SITE-NOTES.md ./
 COPY docs ./docs
-
-RUN chmod +x /app/bot.sh
 
 # A browser parsing images from Telegram is exactly the thing that should not
 # be root. Alpine's adduser is BusyBox: -D no password, -H no home dir.
@@ -116,10 +113,13 @@ VOLUME ["/app/data"]
 # half-starting and looking like a hang.
 #
 # Podman silently drops HEALTHCHECK when building in the default OCI format, so
-# the image is built with --format docker (see build.sh). The compose file
-# repeats this check independently, which is what actually runs under podman.
+# build with --format docker (see README). The compose file repeats this check
+# independently, which is what actually runs under podman.
 HEALTHCHECK --interval=60s --timeout=15s --start-period=20s --retries=3 \
   CMD /app/.venv/bin/python -c "import sys; from relay import memory; print(memory.describe()); sys.exit(0 if memory.budget()['can_launch'] else 1)"
 
 STOPSIGNAL SIGTERM
-ENTRYPOINT ["/app/bot.sh"]
+# The venv holds everything the bot needs, and exec-form ENTRYPOINT forwards
+# SIGTERM straight to Python so the long-poll shuts down promptly instead of
+# waiting out the container's grace period.
+ENTRYPOINT ["/app/.venv/bin/python", "-m", "relay"]

@@ -460,14 +460,6 @@ def rank_line(
     return "%s %s" % (EMOJI["rank"], "  ·  ".join(bits))
 
 
-def unauthorized(chat_id: int) -> str:
-    return (
-        "⛔ This chat is not authorised to use the Relay.\n\n"
-        "Chat id: `%s`\n\n"
-        "Add it to `ALLOWED_CHAT_ID` in `secrets.env` to allow it." % chat_id
-    )
-
-
 def log_lines(subs: list[dict[str, object]]) -> str:
     if not subs:
         return "%s No Submissions recorded yet." % EMOJI["log"]
