@@ -77,18 +77,26 @@ Mesa. That path is not blocked by the reason Alpine was chosen — ADR 0005 was
 about the *apt* `firefox` package being a snap shim, which is a different thing
 from untarring Mozilla's release.
 
-Estimated result, not yet measured: Debian slim (~75 MB) + Firefox ESR tarball
+Estimated result, not measured: Debian slim (~75 MB) + Firefox ESR tarball
 (~250 MB) + Python + venv ≈ 500 MB.
 
-That is a real change with real risk, so it is a decision and not a change to
-make silently:
+### Decision: keep Alpine. 962 MB stands.
 
-- a different Firefox build, so the OCR path must be re-verified in-image
-  (`make verify`) and the memory peak re-measured — 640 MB was measured on
-  Firefox, and the whole 1 GB host budget hangs off that number
-- it trades a pinned Mozilla release for a distro package that moves underneath
-  us, which is the exact thing ADR 0005 was written to avoid
-- it stops being musl/Alpine, so the base's own update story changes
+Asked, and answered: no. The reasoning, so this does not get re-opened every
+few months:
 
-Until that is decided, ~990 MB is the floor for this design, and the number to
-judge it against is 360 MB of unused graphics libraries.
+- **Image size is not the constraint that hurts.** It sits on disk. The thing
+  that decides whether this bot works on a 1 GB host is the browser's 640 MB
+  peak, and Mesa's 360 MB of shared libraries are file-backed — they are mapped
+  on demand, not resident. Deleting them from the image would not lower the peak.
+- **The cost is not the size, it is the re-verification.** A different Firefox
+  build means re-running the OCR check *and* re-measuring the memory peak. That
+  peak is the single number the whole host budget hangs off, and it was measured
+  on Alpine's build. Trading a known 640 MB for an unknown is a bad deal for
+  460 MB of disk.
+- **It re-opens ADR 0005 for no gain in the dimension that matters.** The
+  reason for Alpine was a working, verified musl Firefox. That is still working.
+
+So the number to hold in mind when this comes up again: **360 MB of this image
+is an unused graphics stack that cannot be removed without changing base
+image, and changing base image is not worth it.**
