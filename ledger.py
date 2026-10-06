@@ -29,6 +29,17 @@ CREATE TABLE IF NOT EXISTS submissions (
   telegram_msg  INTEGER
 );
 
+-- What the site itself reports, read back through its own dashboard. Kept
+-- apart from `submissions`, which means "the bot wrote this": a day the user
+-- entered by hand is real and has to count for the overwrite guard, but it is
+-- not something the bot did, and /log must not claim otherwise.
+CREATE TABLE IF NOT EXISTS site_days (
+  activity_date TEXT PRIMARY KEY,
+  steps         INTEGER NOT NULL,
+  reported      TEXT,
+  synced_at     TEXT NOT NULL
+);
+
 -- One set of Site credentials per chat. Per-chat because Access Mode may admit
 -- more than one person, and a Submission always belongs to whoever's Site
 -- account the credentials belong to -- never the owner's, by accident.
@@ -117,6 +128,59 @@ def all_submissions():
             "SELECT * FROM submissions ORDER BY activity_date DESC"
         ).fetchall()
     return [dict(r) for r in rows]
+
+
+# ---------- site days ----------
+
+def record_site_days(rows):
+    """Store what the site reports. `rows` is [(date, steps), ...].
+
+    Upsert, so re-syncing refreshes rather than duplicates. Returns the number
+    of days written.
+    """
+    stamp = now()
+    with conn() as c:
+        for day, steps in rows:
+            iso = day.isoformat() if hasattr(day, "isoformat") else str(day)
+            c.execute(
+                "INSERT INTO site_days (activity_date, steps, reported, synced_at)"
+                " VALUES (?, ?, ?, ?)"
+                " ON CONFLICT(activity_date) DO UPDATE SET"
+                "   steps=excluded.steps, reported=excluded.reported,"
+                "   synced_at=excluded.synced_at",
+                (iso, int(steps), "{:,}".format(int(steps)), stamp))
+    return len(rows)
+
+
+def site_value(activity_date):
+    """What the site holds for a date, from the last sync. None if never synced."""
+    with conn() as c:
+        r = c.execute(
+            "SELECT * FROM site_days WHERE activity_date=?", (activity_date,)
+        ).fetchone()
+    return dict(r) if r else None
+
+
+def all_site_days():
+    with conn() as c:
+        rows = c.execute(
+            "SELECT * FROM site_days ORDER BY activity_date DESC"
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def current_value(activity_date):
+    """What the site holds for a date: the sync if we have one, else the bot's
+    own record of what it wrote.
+
+    The site is the authority. A day the user entered by hand is invisible to
+    the bot until a sync, and the overwrite guard has to know about it or it
+    will happily overwrite a day the bot never wrote.
+    """
+    row = site_value(activity_date)
+    if row:
+        return row
+    return last_submission(activity_date)
 
 
 def record(activity_date, steps, reported=None, site_label=None, msg_id=None):
