@@ -239,3 +239,25 @@ def test_describe_warns_in_blacklist_mode(monkeypatch, tmp_path):
     import ledger
     ledger.init()
     assert "anyone not denied" in access.describe()
+
+
+def test_a_decision_reprs_itself():
+    """A decision that ends up in a log line has to be readable."""
+    import access
+    d = access.Decision(True, "claim", chat_id=1)
+    assert "True" in repr(d) and "claim" in repr(d)
+
+
+def test_an_unknown_mode_is_refused(secret_access, monkeypatch):
+    """The fallback if a mode ever reaches check() unrecognised.
+
+    config validates the mode at import, so this is unreachable in practice.
+    It is covered anyway because the alternative to a refusal is a crash, and
+    the whole point of the fallback is that it cannot happen.
+    """
+    import access
+    import config as cfg
+    monkeypatch.setattr(cfg, "ACCESS_MODE", "something_else")
+    d = access.check(1, "someone")
+    assert bool(d) is False
+    assert d.why == "unknown_mode"
