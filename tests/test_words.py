@@ -280,3 +280,114 @@ def test_a_rank_line_reports_what_it_has(words):
 
 def test_a_rank_line_can_omit_the_house(words):
     assert words.rank_line(100, 1) != ""
+
+
+# --------------------------------------------------- the uncovered branches
+
+def test_access_refused_for_a_blacklist_denial(words):
+    """A refusal has to be actionable: which mode, and which chat."""
+    class D:
+        why = "denied"
+    out = words.access_refused(D())
+    assert "deny list" in out and "Chat id" in out
+
+
+def test_access_refused_for_a_throttled_secret(words):
+    """The rate limit is not a lockout, and the copy has to say so."""
+    class D:
+        why = "secret_throttled"
+        retry_after = 30
+    out = words.access_refused(D())
+    assert "rate limit" in out and "30" in out
+
+
+def test_access_refused_when_a_secret_is_needed(words):
+    class D:
+        why = "needs_secret"
+    assert "secret" in words.access_refused(D()).lower()
+
+
+def test_access_refused_when_someone_else_claimed(words):
+    class D:
+        why = "needs_claim"
+    assert words.access_refused(D())
+
+
+def test_access_refused_for_a_reason_with_no_specific_copy(words):
+    """The fallback: still names the mode and the chat."""
+    class D:
+        why = "something_else"
+    out = words.access_refused(D())
+    assert "Access Mode" in out and "Chat id" in out
+
+
+def test_already_claimed_says_so(words):
+    assert words.already_claimed()
+
+
+def test_secret_prompt_asks_for_the_secret(words):
+    assert "secret" in words.secret_prompt().lower()
+
+
+def test_implausible_names_the_number_it_refused(words):
+    """The number is the thing the user needs to see to understand."""
+    out = words.implausible("999,999")
+    assert "999,999" in out
+
+
+def test_ocr_read_when_the_number_is_implausible(words):
+    """The band exists to stop a bad read being recorded as fact."""
+    out = words.ocr_read(999999, "999,999", plausible=False)
+    assert "outside the range" in out
+
+
+def test_recorded_quotes_the_sites_own_line(words):
+    """After Commit the site's own words are the evidence, not ours."""
+    out = words.recorded("4,272", "October 5th, 2026", "2026-10-05",
+                         "Recorded 4,272 steps for 5 Oct 2026")
+    assert "Recorded 4,272 steps" in out
+
+
+def test_recorded_without_site_text_still_confirms(words):
+    assert "Recorded" in words.recorded("4,272", "October 5th, 2026",
+                                        "2026-10-05")
+
+
+def test_recorded_ignores_a_site_line_with_no_numbers(words):
+    """A blank or irrelevant line must not be quoted as evidence."""
+    out = words.recorded("4,272", "October 5th, 2026", "2026-10-05",
+                         "Welcome back")
+    assert ">" not in out
+
+
+def test_rank_line_with_everything(words):
+    out = words.rank_line(24860, 248, house="24,860", position="3rd")
+    assert "House" in out and "24,860" in out
+    assert "You" in out and "24,860" in out
+    assert "3rd" in out
+    assert "248" in out
+
+
+def test_rank_line_with_only_a_total(words):
+    """The common case: a total and nothing else to say about rank."""
+    out = words.rank_line(24860, None)
+    assert "24,860" in out
+    assert "House" not in out
+
+
+def test_rank_line_with_no_total_still_reports_points(words):
+    out = words.rank_line(None, 248)
+    assert "248" in out
+    assert "You" not in out
+
+
+def test_rank_line_with_nothing_at_all(words):
+    """Degenerate, but it must not raise."""
+    assert words.rank_line(None, None)
+
+
+def test_recorded_skips_a_blank_line_in_the_site_text(words):
+    """A blank line must be skipped, not quoted."""
+    out = words.recorded("4,272", "October 5th, 2026", "2026-10-05",
+                         "\nRecorded 4,272 steps for 5 Oct 2026")
+    assert "Recorded 4,272 steps" in out
