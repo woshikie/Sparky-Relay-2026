@@ -355,3 +355,131 @@ def test_a_real_clock_gives_a_sane_elapsed():
         p = progress.Progress(FakeMessage(), clock=time.monotonic)
         assert p.elapsed() == 0
     run(go())
+
+
+# --------------------------------------------------- the remaining branches
+
+def test_finish_does_not_duplicate_a_step_already_done():
+    """finish() on an already-finished step must not append it twice."""
+    async def go():
+        p = progress.Progress(FakeMessage())
+        p.note("browser")
+        p.finish()
+        p.finish("browser")          # already done: no-op
+        assert p.reached == ["browser"]
+    run(go())
+
+
+def test_the_poller_waits_out_the_interval_before_editing():
+    """The pace exists so a 429 costs a line rather than the submission."""
+    async def go():
+        clock = FakeClock()
+        m = FakeMessage()
+        p = await progress.Progress(m, clock=clock).start()
+        p.note("browser")
+        p.finish()
+        p.note("signin")
+        first = len(m.edits)
+        await asyncio.sleep(progress.MIN_INTERVAL * 1.5)
+        # Nothing happens until the interval has actually elapsed.
+        assert len(m.edits) == first
+        clock.advance(progress.MIN_INTERVAL + 0.1)
+        await asyncio.sleep(0)
+        # The loop is asleep for MIN_INTERVAL, so one tick is not enough.
+        assert len(m.edits) >= first
+    run(asyncio.wait_for(go(), timeout=10))
+
+
+def test_stop_swallows_a_task_that_raises():
+    """A poller that dies must not take the reporter down with it."""
+    async def go():
+        m = FakeMessage(fail_after=0)
+        p = await progress.Progress(m).start()
+        await p.stop()               # the task is already dead; must not raise
+        assert p._task is None
+    run(go())
+
+
+def test_close_without_a_message_returns_the_text():
+    """Used by callers that only want the string."""
+    async def go():
+        p = await progress.Progress(None).start()
+        assert await p.close("done") == "done"
+    run(go())
+
+
+def test_close_with_no_text_stops_without_editing():
+    async def go():
+        m = FakeMessage()
+        p = await progress.Progress(m).start()
+        n = len(m.edits)
+        await p.close()
+        assert len(m.edits) == n
+    run(go())
+
+
+def test_the_poller_edits_once_the_interval_has_passed():
+    """The other half of the pace: after the interval, it does edit."""
+    async def go():
+        clock = FakeClock()
+        m = FakeMessage()
+        p = await progress.Progress(m, clock=clock).start()
+        p.note("browser")
+        p.finish()
+        p.note("signin")             # a new line, so there is something to send
+        before = len(m.edits)
+        clock.advance(progress.MIN_INTERVAL + 0.5)
+        await asyncio.sleep(progress.MIN_INTERVAL + 0.5)
+        assert len(m.edits) > before, "the poller never edited"
+    run(asyncio.wait_for(go(), timeout=10))
+
+
+def test_stop_tolerates_a_poller_that_already_died(monkeypatch):
+    """A task that failed before cancellation must not raise in turn.
+
+    Cancelling a task that has already finished with an exception re-raises that
+    exception rather than CancelledError, so stop() needs the second except.
+    """
+    monkeypatch.setattr(progress, "MIN_INTERVAL", 0.01)
+    async def go():
+        m = FakeMessage(fail_after=0)   # every edit raises
+        p = await progress.Progress(m).start()
+        await asyncio.sleep(0.2)        # long enough for the poller to fail
+        await p.stop()                  # must not raise
+        assert p._task is None
+    run(go())
+
+
+def test_stop_tolerates_a_poller_that_died_on_its_own(monkeypatch):
+    """A task that failed before cancellation must not raise in stop().
+
+    _edit swallows every Telegram error, so the poller normally only ever ends
+    by cancellation. This covers the other way it can end: render() raising,
+    which fails the task outright. stop() must survive that too, or closing a
+    reporter would raise into the caller.
+    """
+    monkeypatch.setattr(progress, "MIN_INTERVAL", 0.01)
+
+    class BrokenClock:
+        """Survives construction and the first edit, then fails.
+
+        The clock is called once by __init__, once by start()'s render(), and
+        once more by _edit() after a successful edit -- all outside any guard.
+        Only after that does the poller's own render() call it, which is the
+        failure that kills the task.
+        """
+        def __init__(self):
+            self.calls = 0
+        def __call__(self):
+            self.calls += 1
+            if self.calls > 3:
+                raise RuntimeError("clock gone")
+            return 1000.0
+
+    async def go():
+        p = await progress.Progress(FakeMessage(), clock=BrokenClock()).start()
+        await asyncio.sleep(0.2)        # long enough for the task to fail
+        assert p._task.done()
+        await p.stop()                  # must not raise
+        assert p._task is None
+    run(go())
