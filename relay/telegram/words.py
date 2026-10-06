@@ -10,10 +10,12 @@ Two rules for anything in here:
    values need escaping.
 """
 
+import datetime
+
 from telegram.helpers import escape_markdown
 
 
-def md(text):
+def md(text: object) -> str:
     """Escape a value for interpolation into a Telegram Markdown message.
 
     This is python-telegram-bot's own `escape_markdown`, not a hand-rolled
@@ -34,7 +36,7 @@ def md(text):
     return escape_markdown(str(text))
 
 
-def code(text):
+def code(text: object) -> str:
     """Render a value as a code span, where Markdown is not interpreted.
 
     Preferred over escaping for identifiers and paths: it renders them as
@@ -74,7 +76,7 @@ HELP = (
 # --- access -------------------------------------------------------------
 
 
-def claimed():
+def claimed() -> str:
     return (
         "🔐 **This chat now owns the Relay.**\n\n"
         "Only chats listed in `/status` can drive it. Remove a chat from the "
@@ -82,7 +84,7 @@ def claimed():
     )
 
 
-def already_claimed():
+def already_claimed() -> str:
     return (
         "🔐 The Relay has already been claimed by another chat.\n\n"
         "Access Mode is `whitelist_claim`, so only the first chat to `/start` "
@@ -91,7 +93,7 @@ def already_claimed():
     )
 
 
-def secret_prompt():
+def secret_prompt() -> str:
     return (
         "🔑 This Relay needs a Shared Secret.\n\n"
         "Send it here and I will remember this chat. I delete the message as "
@@ -102,12 +104,12 @@ def secret_prompt():
     )
 
 
-def secret_accepted(how):
+def secret_accepted(how: str | None) -> str:
     label = (how or "").split(":", 1)[-1] or "a configured secret"
     return "🔑 Secret accepted (`%s`). This chat now has access." % label
 
 
-def secret_rejected():
+def secret_rejected() -> str:
     return (
         "❌ That is not a valid Shared Secret.\n\n"
         "I have deleted the message. Try again, or wait a moment if you are "
@@ -115,7 +117,7 @@ def secret_rejected():
     )
 
 
-def secret_throttled(wait):
+def secret_throttled(wait: float) -> str:
     return (
         "⏳ Too many attempts. Try again in %d second%s.\n\n"
         "This is a rate limit, not a lockout — you cannot be locked out."
@@ -123,7 +125,7 @@ def secret_throttled(wait):
     )
 
 
-def access_refused(decision):
+def access_refused(decision: object) -> str:
     why = getattr(decision, "why", "denied")
     if why == "denied":
         return (
@@ -145,11 +147,11 @@ def access_refused(decision):
     )
 
 
-def _chat_id_of(decision):
+def _chat_id_of(decision: object) -> object:
     return getattr(decision, "chat_id", "unknown")
 
 
-def _mode_or_unknown():
+def _mode_or_unknown() -> str:
     from relay import config
 
     return config.ACCESS_MODE
@@ -158,7 +160,7 @@ def _mode_or_unknown():
 # --- credentials prompt -------------------------------------------------
 
 
-def choose_preset(username):
+def choose_preset(username: str) -> str:
     return (
         "🔑 I have preset credentials for **%s**.\n\n"
         "Use those, or give me different ones? The password is never shown — "
@@ -166,7 +168,7 @@ def choose_preset(username):
     )
 
 
-def using_preset(username):
+def using_preset(username: str) -> str:
     return (
         "✅ Signing in as **%s** using the preset credentials.\n\n"
         "Nothing was stored. Send a screenshot whenever you are ready, or "
@@ -174,7 +176,7 @@ def using_preset(username):
     )
 
 
-def ask_username():
+def ask_username() -> str:
     return (
         "🔑 What is your site username?\n\n"
         "This is the name you sign in to the site with — not your Telegram "
@@ -182,14 +184,14 @@ def ask_username():
     )
 
 
-def bad_username():
+def bad_username() -> str:
     return (
         "That does not look like a username. The site needs 3–40 characters. "  # noqa: RUF001
         "Try again."
     )
 
 
-def ask_password():
+def ask_password() -> str:
     return (
         "🔑 And your site password.\n\n"
         "Send it as a message here and I will delete the message immediately. "
@@ -198,7 +200,7 @@ def ask_password():
     )
 
 
-def credentials_saved(username):
+def credentials_saved(username: str) -> str:
     return (
         "✅ Credentials saved for **%s**.\n\n"
         "Encrypted on disk, keyed on this bot's token. Rotating the token at "
@@ -208,14 +210,14 @@ def credentials_saved(username):
     )
 
 
-def credential_store_failed(detail):
+def credential_store_failed(detail: object) -> str:
     return (
         "❌ Could not save the credentials (`%s`).\n\n"
         "Nothing was stored and nothing was recorded. Try /login again." % detail
     )
 
 
-def need_credentials():
+def need_credentials() -> str:
     return (
         "🔑 I need your site credentials before I can do anything.\n\n"
         "Send /login and I will ask for them. Nothing is recorded until you "
@@ -224,7 +226,7 @@ def need_credentials():
     )
 
 
-def vault_unreadable(detail):
+def vault_unreadable(detail: object) -> str:
     return (
         "🔑 The stored credentials could not be read (`%s`).\n\n"
         "This normally means the bot token was rotated, which makes the old "
@@ -233,25 +235,25 @@ def vault_unreadable(detail):
     )
 
 
-def no_prompt():
+def no_prompt() -> str:
     return (
         "Nothing to do right now. Send a screenshot, or /login if you want to "
         "change your credentials."
     )
 
 
-def scrub_failed():
+def scrub_failed() -> str:
     return (
         "_I could not delete the message above. It contained a secret — "
         "please delete it yourself._"
     )
 
 
-def logged_out():
+def logged_out() -> str:
     return "🔑 Credentials forgotten. Send /login when you need them again."
 
 
-def welcome(name):
+def welcome(name: str | None) -> str:
     return (
         "👋 Hello%s\n\n"
         "Send a screenshot of your step tracker's day view and I will:\n"
@@ -262,7 +264,7 @@ def welcome(name):
     )
 
 
-def scanning(name):
+def scanning(name: str) -> str:
     """Announce that the Screenshot arrived.
 
     `name` is escaped: a Telegram username may contain `_`, which is an italic
@@ -273,7 +275,7 @@ def scanning(name):
     return "%s Reading **%s**…" % (EMOJI["scan"], md(name))
 
 
-def ocr_read(steps, reported, plausible=True):
+def ocr_read(steps: int, reported: str, plausible: bool = True) -> str:
     head = "%(ocr)s The site read **%(s)s** steps." % {
         "ocr": EMOJI["ocr"],
         "s": reported,
@@ -287,7 +289,7 @@ def ocr_read(steps, reported, plausible=True):
     )
 
 
-def choose_date(steps, reported, default_label):
+def choose_date(steps: int, reported: str, default_label: str) -> str:
     return (
         "%(date)s Which day do these **%(s)s** steps belong to?\n\n"
         "_Defaults to today. Pick a different date if this is yesterday's "
@@ -299,7 +301,7 @@ def choose_date(steps, reported, default_label):
     )
 
 
-def confirming(steps, reported, date_label, iso):
+def confirming(steps: int, reported: str, date_label: str, iso: str) -> str:
     return (
         "%(ok)s Confirming **%(s)s** steps for **%(dl)s**.\n\n"
         "Site read: `%(s)s`\n"
@@ -313,7 +315,7 @@ def confirming(steps, reported, date_label, iso):
     )
 
 
-def overwrite_warning(new_steps, old_steps, date_label):
+def overwrite_warning(new_steps: int, old_steps: int, date_label: str) -> str:
     diff = old_steps - new_steps
     return (
         "%(ow)s **You already have %(old)s steps recorded for %(dl)s.**\n"
@@ -331,7 +333,7 @@ def overwrite_warning(new_steps, old_steps, date_label):
     )
 
 
-def overwrite_upgrade(new_steps, old_steps, date_label):
+def overwrite_upgrade(new_steps: int, old_steps: int, date_label: str) -> str:
     return "%(ow)s **Update for %(dl)s:** %(old)s → %(new)s steps." % {
         "ow": EMOJI["overwrite"],
         "dl": date_label,
@@ -340,7 +342,7 @@ def overwrite_upgrade(new_steps, old_steps, date_label):
     }
 
 
-def no_steps():
+def no_steps() -> str:
     return (
         "❌ The site could not read a step count from that image, so I have "
         "not recorded anything.\n\n"
@@ -349,7 +351,7 @@ def no_steps():
     )
 
 
-def implausible(reported):
+def implausible(reported: str) -> str:
     return (
         "⚠️ The site read **%s** steps. That is not a plausible daily total, so "
         "I stopped rather than record it.\n\nTry a clearer screenshot of the "
@@ -357,7 +359,7 @@ def implausible(reported):
     )
 
 
-def low_memory(detail=""):
+def low_memory(detail: str = "") -> str:
     txt = (
         "⚠️ This host is too low on memory to run the browser right now, so I "
         "have not recorded anything.\n\n"
@@ -370,7 +372,7 @@ def low_memory(detail=""):
     return txt
 
 
-def ocr_changed(was, now, date_label):
+def ocr_changed(was: object, now: object, date_label: str) -> str:
     return (
         "⚠️ **The site's read changed between the two passes.**\n\n"
         "When you confirmed: `%s`\nJust now: `%s`\n\n"
@@ -380,7 +382,7 @@ def ocr_changed(was, now, date_label):
     )
 
 
-def site_changed(what):
+def site_changed(what: object) -> str:
     return (
         "⚠️ The site did not look the way I expect (%s).\n\n"
         "I have stopped rather than guess — nothing was recorded. This usually "
@@ -388,7 +390,7 @@ def site_changed(what):
     )
 
 
-def login_failed(reason):
+def login_failed(reason: object) -> str:
     return (
         "❌ I could not sign in to the site (%s).\n\n"
         "If the password changed, update `SITE_PASSWORD` in `secrets.env`. "
@@ -396,7 +398,9 @@ def login_failed(reason):
     )
 
 
-def recorded(reported, date_label, iso, site_text=None):
+def recorded(
+    reported: str, date_label: str, iso: str, site_text: str | None = None
+) -> str:
     txt = (
         "%(ok)s **Recorded %(s)s steps for %(dl)s.**\n\n"
         "The site confirmed the Submission."
@@ -418,7 +422,7 @@ def recorded(reported, date_label, iso, site_text=None):
     return txt
 
 
-def send_a_screenshot():
+def send_a_screenshot() -> str:
     return (
         "Send me a screenshot of your step tracker's **day view** — the one "
         "showing the daily total, not week or month.\n\n"
@@ -427,18 +431,23 @@ def send_a_screenshot():
     )
 
 
-def cancel_prompt_first():
+def cancel_prompt_first() -> str:
     return (
         "You are part-way through telling me your credentials.\n\n"
         "Finish it, or tap Cancel to stop. Then send the screenshot."
     )
 
 
-def cancelled():
+def cancelled() -> str:
     return "\U0001f5d1️ Discarded. Nothing was recorded."
 
 
-def rank_line(total_steps, total_points, house=None, position=None):
+def rank_line(
+    total_steps: int | None,
+    total_points: int | None,
+    house: str | None = None,
+    position: str | None = None,
+) -> str:
     bits = []
     if house:
         bits.append("House: **%s**" % house)
@@ -451,7 +460,7 @@ def rank_line(total_steps, total_points, house=None, position=None):
     return "%s %s" % (EMOJI["rank"], "  ·  ".join(bits))
 
 
-def unauthorized(chat_id):
+def unauthorized(chat_id: int) -> str:
     return (
         "⛔ This chat is not authorised to use the Relay.\n\n"
         "Chat id: `%s`\n\n"
@@ -459,7 +468,7 @@ def unauthorized(chat_id):
     )
 
 
-def log_lines(subs):
+def log_lines(subs: list[dict[str, object]]) -> str:
     if not subs:
         return "%s No Submissions recorded yet." % EMOJI["log"]
     out = [EMOJI["log"] + " **Recent Submissions**", ""]
@@ -474,11 +483,11 @@ def log_lines(subs):
 # ---------- sync ----------
 
 
-def syncing():
+def syncing() -> str:
     return "%s Reading the site's own record. This submits nothing." % EMOJI["sync"]
 
 
-def sync_empty():
+def sync_empty() -> str:
     """The site showed no days at all.
 
     Distinct from a successful sync of zero, which would look the same as a
@@ -492,7 +501,7 @@ def sync_empty():
     )
 
 
-def sync_report(days, written):
+def sync_report(days: list[tuple[datetime.date, int]], written: int) -> str:
     """What the site holds, and how much of it was new to the bot.
 
     `days` is [(date, steps), ...] newest first. The count is stated rather
