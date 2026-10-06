@@ -55,6 +55,7 @@ EMOJI = {
     "rank": "\U0001F3C5",
     "backup": "\U0001F4BE",
     "log": "\U0001F4DC",
+    "sync": "\U0001F504",
 }
 
 HELP = (
@@ -446,4 +447,40 @@ def log_lines(subs):
     for s in subs[:15]:
         out.append("`%s`  **%s** steps   _%s_" % (
             s["activity_date"], "{:,}".format(s["steps"]), s["recorded_at"]))
+    return "\n".join(out)
+
+
+# ---------- sync ----------
+
+def syncing():
+    return "%s Reading the site's own record. This submits nothing." % EMOJI["sync"]
+
+
+def sync_empty():
+    """The site showed no days at all.
+
+    Distinct from a successful sync of zero, which would look the same as a
+    site with nothing on it -- and would leave the overwrite guard blind.
+    """
+    return ("%s The site showed no days I could read.\n\n"
+            "Nothing was stored, so the overwrite guard is unchanged. "
+            "If you have days on the site, the dashboard may have changed -- "
+            "send a screenshot and we will see." % EMOJI["sync"])
+
+
+def sync_report(days, written):
+    """What the site holds, and how much of it was new to the bot.
+
+    `days` is [(date, steps), ...] newest first. The count is stated rather
+    than left implied, because the site's list is "Recent submissions" and is
+    bounded by whatever it chooses to show.
+    """
+    out = [EMOJI["sync"] + " **Synced %d day%s from the site**"
+           % (written, "" if written == 1 else "s"), ""]
+    for day, steps in days[:15]:
+        out.append("`%s`  **%s** steps" % (
+            day.strftime("%Y-%m-%d"), "{:,}".format(steps)))
+    out.append("")
+    out.append("_Read through the site's own dashboard. "
+              "Nothing was submitted._")
     return "\n".join(out)
