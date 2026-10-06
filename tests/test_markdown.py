@@ -11,6 +11,7 @@ bold with `*`, italic with `_`, and fixed-width with backticks. These checks
 model that closely enough to catch unbalanced markers, which is the failure
 that matters.
 """
+import datetime
 import re
 
 import pytest
@@ -62,15 +63,21 @@ def test_the_shape_sweep_reaches_every_string():
 # rank_line() formats its totals with a thousands separator, so a string raised
 # for reasons that had nothing to do with formatting.
 NUMERIC = ("steps", "total_steps", "total_points", "count", "n", "new_steps",
-           "old_steps", "wait", "retry_after")
+           "old_steps", "wait", "retry_after", "written")
 SUBMISSIONS = [{"activity_date": "2026-10-04", "steps": 6532,
                 "reported": "6,532", "recorded_at": "2026-10-05T21:00:00"}]
+
+# What read_days() hands back: (date, steps) pairs, newest first.
+SYNC_DAYS = [(datetime.date(2026, 10, 5), 4272),
+             (datetime.date(2026, 10, 4), 6532)]
 
 
 def _value_for(param):
     name = param.name
     if name == "subs":
         return SUBMISSIONS
+    if name == "days":
+        return SYNC_DAYS
     if name in NUMERIC:
         return 1000
     if name in ("decision",):
