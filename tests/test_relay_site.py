@@ -497,3 +497,113 @@ def test_an_absent_button_is_none_not_an_error():
     driver = FakeDriver(body="", buttons=[])
     r = relay_with(driver)
     assert r._btn("nope") is None
+
+
+# ------------------------------------------------------- the small helpers
+
+def test_in_container_from_the_environment(monkeypatch):
+    """The env var is the reliable signal; /proc/1/cgroup is not."""
+    monkeypatch.setenv("container", "podman")
+    assert relay_site._in_container() is True
+
+
+def test_in_container_from_the_marker_file(monkeypatch, tmp_path):
+    monkeypatch.delenv("container", raising=False)
+    monkeypatch.delenv("IN_CONTAINER", raising=False)
+    monkeypatch.setattr(relay_site.os.path, "exists",
+                        lambda p: p == "/.dockerenv")
+    assert relay_site._in_container() is True
+
+
+def test_not_in_container_on_bare_metal(monkeypatch):
+    monkeypatch.delenv("container", raising=False)
+    monkeypatch.delenv("IN_CONTAINER", raising=False)
+    monkeypatch.setattr(relay_site.os.path, "exists", lambda p: False)
+    monkeypatch.setattr(relay_site.os, "getpid", lambda: 4242)
+    assert relay_site._in_container() is False
+
+
+def test_text_strips_the_element_text():
+    r = relay_site.Relay.__new__(relay_site.Relay)
+    assert r._text(FakeElement("  hello  ")) == "hello"
+
+
+def test_text_tolerates_a_detached_node():
+    """React re-renders on every state change, so a node can vanish mid-read."""
+    class Gone:
+        @property
+        def text(self):
+            raise relay_site.StaleElementReferenceException("detached")
+    r = relay_site.Relay.__new__(relay_site.Relay)
+    assert r._text(Gone()) is None
+
+
+def test_text_tolerates_any_other_failure():
+    class Broken:
+        @property
+        def text(self):
+            raise RuntimeError("nope")
+    r = relay_site.Relay.__new__(relay_site.Relay)
+    assert r._text(Broken()) is None
+
+
+def test_the_calendar_header_is_read_from_the_page(monkeypatch):
+    """The caption is how the bot knows which month the picker is showing."""
+    r = relay_site.Relay.__new__(relay_site.Relay)
+    r.driver = type("D", (), {})()
+    r.driver.find_elements = lambda *a, **kw: [
+        FakeElement("Some other text"), FakeElement("October 2026")]
+    assert r._calendar_header() == "October 2026"
+
+
+def test_the_calendar_header_is_none_when_absent(monkeypatch):
+    r = relay_site.Relay.__new__(relay_site.Relay)
+    r.driver = type("D", (), {})()
+    r.driver.find_elements = lambda *a, **kw: [FakeElement("nothing")]
+    assert r._calendar_header() is None
+
+
+def test_the_calendar_header_ignores_a_blank_caption():
+    r = relay_site.Relay.__new__(relay_site.Relay)
+    r.driver = type("D", (), {})()
+    r.driver.find_elements = lambda *a, **kw: [FakeElement("  ")]
+    assert r._calendar_header() is None
+
+
+def test_require_raises_when_the_condition_fails():
+    """The guard that turns a wrong page into an explainable error."""
+    r = relay_site.Relay.__new__(relay_site.Relay)
+    with pytest.raises(relay_site.SiteChanged):
+        r._require(False, "the page is not what we expected")
+
+
+def test_require_passes_when_the_condition_holds():
+    r = relay_site.Relay.__new__(relay_site.Relay)
+    r._require(True, "never used")
+
+
+def test_authed_is_true_when_the_nav_exposes_upload():
+    r = relay_site.Relay.__new__(relay_site.Relay)
+    link = type("A", (), {})()
+    link.get_attribute = lambda k: "/upload"
+    r.driver = type("D", (), {})()
+    r.driver.find_elements = lambda *a, **kw: [link]
+    assert r._authed() is True
+
+
+def test_authed_is_false_when_the_nav_does_not():
+    r = relay_site.Relay.__new__(relay_site.Relay)
+    link = type("A", (), {})()
+    link.get_attribute = lambda k: "/home"
+    r.driver = type("D", (), {})()
+    r.driver.find_elements = lambda *a, **kw: [link]
+    assert r._authed() is False
+
+
+def test_authed_is_false_when_the_page_is_gone():
+    """A driver that throws must read as 'not signed in', not as a crash."""
+    r = relay_site.Relay.__new__(relay_site.Relay)
+    r.driver = type("D", (), {})()
+    r.driver.find_elements = lambda *a, **kw: (_ for _ in ()).throw(
+        RuntimeError("page gone"))
+    assert r._authed() is False
