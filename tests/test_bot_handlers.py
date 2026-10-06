@@ -696,3 +696,68 @@ def test_sync_completes_when_the_site_has_nothing(bot, access, ledger,
     run(bot.on_sync(upd, None))
     assert "submits nothing" in upd.message.said
     assert ledger.all_site_days() == []
+
+
+# -------------------------------------------- the remaining on_text branches
+
+def test_an_empty_message_when_a_secret_is_needed_is_ignored(bot, monkeypatch,
+                                                             tmp_path):
+    """A blank message must not be treated as a secret attempt."""
+    from conftest import reload_with
+    reload_with(monkeypatch, ACCESS_MODE="shared_secret",
+                RELAY_STATE_DIR=str(tmp_path))
+    import bot as reloaded
+    upd = FakeUpdate(chat_id=30, text="")
+    run(reloaded.on_text(upd, None))
+    assert upd.message.replies == []
+
+
+def test_a_throttled_chat_is_told_why_the_secret_was_deleted(bot, monkeypatch,
+                                                             tmp_path):
+    """The message carrying a secret is scrubbed even when it did not work.
+
+    Falling through to the 'nothing to do' reply would leave a password
+    sitting in the chat with no explanation.
+    """
+    from conftest import reload_with
+    reload_with(monkeypatch, ACCESS_MODE="shared_secret",
+                SHARED_SECRETS="testuser:s3cret-passphrase",
+                RELAY_STATE_DIR=str(tmp_path))
+    import bot as reloaded
+    import ledger
+    ledger.init()
+    ledger.init_secrets_from_env("testuser:s3cret-passphrase")
+    run(reloaded.on_text(FakeUpdate(chat_id=31, text="guess"), None))
+    upd = FakeUpdate(chat_id=31, text="s3cret-passphrase")
+    run(reloaded.on_text(upd, None))
+    assert upd.message.deleted
+    assert "not a lockout" in upd.message.said
+
+
+def test_a_password_that_fails_to_store_says_so(bot, access, monkeypatch):
+    """A vault failure must not look like a saved password."""
+    access.grant(32, "manual")
+    bot._set_stage(32, "password", username="testuser")
+
+    def boom(*a, **kw):
+        raise vault.DecryptionFailed("the key no longer fits")
+    monkeypatch.setattr(bot.ledger, "save_credentials", boom)
+
+    upd = FakeUpdate(chat_id=32, text="testpass123")
+    run(bot.on_text(upd, None))
+    assert "could not" in upd.message.said.lower() or "failed" in upd.message.said.lower()
+
+
+def test_a_password_that_fails_to_store_still_clears_the_stage(bot, access,
+                                                               monkeypatch):
+    """The stage is cleared in a finally, so a failure cannot wedge the prompt."""
+    access.grant(33, "manual")
+    bot._set_stage(33, "password", username="testuser")
+
+    def boom(*a, **kw):
+        raise RuntimeError("disk full")
+    monkeypatch.setattr(bot.ledger, "save_credentials", boom)
+
+    upd = FakeUpdate(chat_id=33, text="testpass123")
+    run(bot.on_text(upd, None))
+    assert bot._prompt_stage(33) is None
