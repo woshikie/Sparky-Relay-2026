@@ -119,7 +119,7 @@ VOLUME ["/app/data"]
 # the image is built with --format docker (see build.sh). The compose file
 # repeats this check independently, which is what actually runs under podman.
 HEALTHCHECK --interval=60s --timeout=15s --start-period=20s --retries=3 \
-  CMD /app/.venv/bin/python -c "import sys, memory; print(memory.describe()); sys.exit(0 if memory.budget()['can_launch'] else 1)"
+  CMD /app/.venv/bin/python -c "import sys; from relay import memory; print(memory.describe()); sys.exit(0 if memory.budget()['can_launch'] else 1)"
 
 STOPSIGNAL SIGTERM
 ENTRYPOINT ["/app/bot.sh"]
