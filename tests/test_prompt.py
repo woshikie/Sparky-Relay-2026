@@ -75,7 +75,7 @@ def test_a_preset_stage_needs_the_preset_to_still_exist(bot, monkeypatch):
     import sys
     for name in MODULES:
         sys.modules.pop(name, None)
-    import bot as reloaded
+    import relay.telegram as reloaded
     reloaded._set_stage(1, "ready", username="testuser", preset=True)
     assert reloaded.has_credentials(1) is True
 
@@ -89,7 +89,7 @@ def test_preset_credentials_are_used_when_chosen(bot, monkeypatch):
     import sys
     for name in MODULES:
         sys.modules.pop(name, None)
-    import bot as reloaded
+    import relay.telegram as reloaded
     reloaded._set_stage(1, "ready", username="testuser", preset=True)
     assert reloaded.site_credentials(1) == ("testuser", "testpass123")
 

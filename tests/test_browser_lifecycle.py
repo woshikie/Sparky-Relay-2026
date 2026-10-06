@@ -68,15 +68,16 @@ class FakeRelay:
 
 
 @pytest.fixture
-def fake_relay(monkeypatch, bot, memory):
+def fake_relay(monkeypatch, session, memory):
     fake = FakeRelay()
-    # get_relay now takes the progress reporter, which may be None.
-    monkeypatch.setattr(bot, "get_relay", lambda progress=None: fake)
+    # get_relay takes the progress reporter, which may be None. Patched where
+    # it is defined: the call sites go through the session module object.
+    monkeypatch.setattr(session, "get_relay", lambda progress=None: fake)
     # asyncio.Lock binds itself to the first loop that waits on it, and each
     # test here runs its own asyncio.run(). Reuse across loops hangs rather than
     # fails, so hand each test a fresh one. In production the lock is created
     # once and used by one long-lived loop.
-    monkeypatch.setattr(bot, "_site_lock", asyncio.Lock())
+    monkeypatch.setattr(session, "_site_lock", asyncio.Lock())
     monkeypatch.setattr(memory, "budget",
                         lambda: reading(900.0, memory))
     return fake

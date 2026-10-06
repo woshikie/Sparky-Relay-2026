@@ -204,7 +204,7 @@ def test_start_in_shared_secret_mode_prompts(bot, monkeypatch, tmp_path):
     reload_with(monkeypatch, ACCESS_MODE="shared_secret",
                 RELAY_STATE_DIR=str(tmp_path))
     from relay.telegram import access
-    import bot as reloaded
+    import relay.telegram as reloaded
     from relay.store import ledger
     ledger.init()
     upd = FakeUpdate(chat_id=13)
@@ -288,7 +288,7 @@ def test_a_correct_secret_is_accepted_and_the_message_deleted(bot, monkeypatch,
                 SHARED_SECRETS="testuser:s3cret-passphrase",
                 RELAY_STATE_DIR=str(tmp_path))
     from relay.telegram import access
-    import bot as reloaded
+    import relay.telegram as reloaded
     from relay.store import ledger
     ledger.init()
     ledger.init_secrets_from_env("testuser:s3cret-passphrase")
@@ -306,7 +306,7 @@ def test_a_wrong_secret_is_rejected_and_the_message_deleted(bot, monkeypatch,
                 SHARED_SECRETS="testuser:s3cret-passphrase",
                 RELAY_STATE_DIR=str(tmp_path))
     from relay.telegram import access
-    import bot as reloaded
+    import relay.telegram as reloaded
     from relay.store import ledger
     ledger.init()
     ledger.init_secrets_from_env("testuser:s3cret-passphrase")
@@ -322,7 +322,7 @@ def test_a_throttled_chat_is_told_to_wait(bot, monkeypatch, tmp_path):
                 SHARED_SECRETS="testuser:s3cret-passphrase",
                 RELAY_STATE_DIR=str(tmp_path))
     from relay.telegram import access
-    import bot as reloaded
+    import relay.telegram as reloaded
     from relay.store import ledger
     ledger.init()
     ledger.init_secrets_from_env("testuser:s3cret-passphrase")
@@ -348,7 +348,7 @@ def test_the_preset_choice_is_offered_when_configured(bot, monkeypatch, tmp_path
     reload_with(monkeypatch, SITE_USERNAME="testuser", SITE_PASSWORD="pw",
                 RELAY_STATE_DIR=str(tmp_path))
     from relay.telegram import access
-    import bot as reloaded
+    import relay.telegram as reloaded
     from relay.store import ledger
     ledger.init()
     access.grant(1, "claim")
@@ -363,7 +363,7 @@ def test_choosing_the_preset_uses_it(bot, monkeypatch, tmp_path):
     reload_with(monkeypatch, SITE_USERNAME="testuser", SITE_PASSWORD="pw",
                 RELAY_STATE_DIR=str(tmp_path))
     from relay.telegram import access
-    import bot as reloaded
+    import relay.telegram as reloaded
     from relay.store import ledger
     ledger.init()
     access.grant(1, "claim")
@@ -380,7 +380,7 @@ def test_choosing_new_moves_to_the_username(bot, monkeypatch, tmp_path):
     reload_with(monkeypatch, SITE_USERNAME="testuser", SITE_PASSWORD="pw",
                 RELAY_STATE_DIR=str(tmp_path))
     from relay.telegram import access
-    import bot as reloaded
+    import relay.telegram as reloaded
     from relay.store import ledger
     ledger.init()
     access.grant(1, "claim")
@@ -671,7 +671,7 @@ def test_sync_before_credentials_offers_them(bot, access):
 
 
 def test_sync_completes_when_the_site_has_nothing(bot, access, ledger,
-                                                  monkeypatch):
+                                                  monkeypatch, session):
     """An empty sync runs the whole path and stores nothing.
 
     The final text goes to the scratch message, which reply_text() returns as
@@ -688,12 +688,12 @@ def test_sync_completes_when_the_site_has_nothing(bot, access, ledger,
 
     async def fake_sign_in(chat_id, progress=None):
         return None
-    monkeypatch.setattr(bot, "sign_in", fake_sign_in)
+    monkeypatch.setattr(session, "sign_in", fake_sign_in)
 
     @contextlib.asynccontextmanager
     async def fake_session(progress=None):
         yield EmptyRelay()
-    monkeypatch.setattr(bot, "browser_session", fake_session)
+    monkeypatch.setattr(session, "browser_session", fake_session)
 
     upd = FakeUpdate(chat_id=22)
     run(bot.on_sync(upd, None))
@@ -709,7 +709,7 @@ def test_an_empty_message_when_a_secret_is_needed_is_ignored(bot, monkeypatch,
     from conftest import reload_with
     reload_with(monkeypatch, ACCESS_MODE="shared_secret",
                 RELAY_STATE_DIR=str(tmp_path))
-    import bot as reloaded
+    import relay.telegram as reloaded
     upd = FakeUpdate(chat_id=30, text="")
     run(reloaded.on_text(upd, None))
     assert upd.message.replies == []
@@ -726,7 +726,7 @@ def test_a_throttled_chat_is_told_why_the_secret_was_deleted(bot, monkeypatch,
     reload_with(monkeypatch, ACCESS_MODE="shared_secret",
                 SHARED_SECRETS="testuser:s3cret-passphrase",
                 RELAY_STATE_DIR=str(tmp_path))
-    import bot as reloaded
+    import relay.telegram as reloaded
     from relay.store import ledger
     ledger.init()
     ledger.init_secrets_from_env("testuser:s3cret-passphrase")
@@ -882,7 +882,8 @@ def test_main_installs_the_timestamps(bot, monkeypatch):
 
 # ------------------------------------------- on_photo's failure branches
 
-def _photo_with_failing_session(bot, access, ledger, exc, tmp_path, monkeypatch):
+def _photo_with_failing_session(bot, access, ledger, exc, tmp_path, monkeypatch,
+                                session):
     """A photo where the browser session raises `exc`."""
     monkeypatch.setattr(bot.config, "INBOX", str(tmp_path))
     access.grant(40, "manual")
@@ -894,73 +895,73 @@ def _photo_with_failing_session(bot, access, ledger, exc, tmp_path, monkeypatch)
         raise exc
         yield
 
-    monkeypatch.setattr(bot, "browser_session", failing)
+    monkeypatch.setattr(session, "browser_session", failing)
     upd = FakeUpdate(chat_id=40)
     upd.message.photo = [FakePhotoSize(_jpeg())]
     return upd
 
 
 def test_a_photo_with_no_credentials_says_so(bot, access, ledger, tmp_path,
-                                             monkeypatch):
+                                             monkeypatch, session):
     upd = _photo_with_failing_session(bot, access, ledger, bot._NoCredentials(),
-                                      tmp_path, monkeypatch)
+                                      tmp_path, monkeypatch, session)
     run(bot.on_photo(upd, None))
     assert "username" in upd.message.said.lower()
 
 
 def test_a_photo_with_a_rotated_token_says_the_password_is_gone(
-        bot, access, ledger, tmp_path, monkeypatch):
+        bot, access, ledger, tmp_path, monkeypatch, session):
     """A rotated bot token means the vault key no longer fits. The old password
     is unrecoverable by design, and the reply has to say so."""
     from relay.store import vault
     upd = _photo_with_failing_session(
         bot, access, ledger, vault.DecryptionFailed("the key no longer fits"),
-        tmp_path, monkeypatch)
+        tmp_path, monkeypatch, session)
     run(bot.on_photo(upd, None))
     assert "gone" in upd.message.said.lower() or "again" in upd.message.said.lower()
 
 
 def test_a_photo_with_too_little_memory_says_so(bot, access, ledger, tmp_path,
-                                                monkeypatch):
+                                                monkeypatch, session):
     upd = _photo_with_failing_session(
         bot, access, ledger,
         bot.memory.InsufficientMemory({"available_mb": 10, "min_free_mb": 780}),
-        tmp_path, monkeypatch)
+        tmp_path, monkeypatch, session)
     run(bot.on_photo(upd, None))
     assert "memory" in upd.message.said.lower()
 
 
 def test_a_photo_where_the_site_read_nothing_says_so(bot, access, ledger,
-                                                     tmp_path, monkeypatch):
+                                                     tmp_path, monkeypatch, session):
     upd = _photo_with_failing_session(
         bot, access, ledger, bot.relay_site.NoStepsFound(),
-        tmp_path, monkeypatch)
+        tmp_path, monkeypatch, session)
     run(bot.on_photo(upd, None))
     assert "could not read" in upd.message.said.lower()
 
 
 def test_a_photo_where_the_site_changed_says_so(bot, access, ledger, tmp_path,
-                                                monkeypatch):
+                                                monkeypatch, session):
     upd = _photo_with_failing_session(
         bot, access, ledger,
         bot.relay_site.SiteChanged("the upload form is gone"),
-        tmp_path, monkeypatch)
+        tmp_path, monkeypatch, session)
     run(bot.on_photo(upd, None))
     assert "changed" in upd.message.said.lower()
 
 
 def test_a_photo_that_fails_for_any_other_reason_says_so(bot, access, ledger,
-                                                         tmp_path, monkeypatch):
+                                                         tmp_path, monkeypatch, session):
     """The catch-all: a submission must never fail because of a progress line."""
     upd = _photo_with_failing_session(
         bot, access, ledger, RuntimeError("something unexpected"),
-        tmp_path, monkeypatch)
+        tmp_path, monkeypatch, session)
     run(bot.on_photo(upd, None))
     assert "failed" in upd.message.said.lower()
 
 
 def test_a_photo_failure_reports_on_the_original_message(bot, access, ledger,
-                                                         tmp_path, monkeypatch):
+                                                         tmp_path, monkeypatch, session):
     """The failure reply goes to the message the user sent, not the checklist.
 
     The scratch is a separate object that reply_text() returns, so the
@@ -968,7 +969,7 @@ def test_a_photo_failure_reports_on_the_original_message(bot, access, ledger,
     user would never see it.
     """
     upd = _photo_with_failing_session(
-        bot, access, ledger, RuntimeError("boom"), tmp_path, monkeypatch)
+        bot, access, ledger, RuntimeError("boom"), tmp_path, monkeypatch, session)
     run(bot.on_photo(upd, None))
     assert "Upload failed" in upd.message.said
 
@@ -1054,26 +1055,33 @@ def test_on_ready_announces_the_bot(bot, capsys):
 # ----------------------------------------------------------- parse_profile
 
 def test_the_profile_parser_finds_both_totals(bot):
-    """The rank line after Commit depends on these numbers."""
-    out = bot.parse_profile("24,860 total steps\n248 total points")
-    assert "24,860" in out
-    assert "248" in out
+    """Parsing returns numbers, not copy: formatting is the caller's job."""
+    assert bot.parse_profile("24,860 total steps\n248 total points") == {
+        "total_steps": 24860, "total_points": 248, "house": None}
 
 
 def test_the_profile_parser_finds_only_steps(bot):
-    out = bot.parse_profile("24,860 total steps")
-    assert "24,860" in out
-    assert "points" not in out
+    assert bot.parse_profile("24,860 total steps") == {
+        "total_steps": 24860, "total_points": None, "house": None}
 
 
 def test_the_profile_parser_finds_the_house(bot):
-    out = bot.parse_profile("YOUR HOUSE\n\nGryffindor")
-    assert "Gryffindor" in out
+    assert bot.parse_profile("YOUR HOUSE\n\nGryffindor") == {
+        "total_steps": None, "total_points": None, "house": "Gryffindor"}
 
 
 def test_the_profile_parser_on_a_board_with_nothing(bot):
     """A board with no totals must not raise, and must not invent numbers."""
-    assert bot.parse_profile("nothing here") == ""
+    assert bot.parse_profile("nothing here") is None
+
+
+def test_a_profile_formats_into_the_rank_line(bot):
+    """The rank line after Commit: numbers in, copy out."""
+    profile = bot.parse_profile("24,860 total steps\n248 total points")
+    line = bot.words.rank_line(profile["total_steps"], profile["total_points"],
+                               profile["house"])
+    assert "24,860" in line
+    assert "248" in line
 
 
 # --------------------------------------------------- the access-refused paths
@@ -1154,7 +1162,8 @@ def test_a_confirm_from_an_unauthorised_chat_is_refused(bot, access):
     assert q.answers and q.answers[0][1]
 
 
-def test_the_recording_line_names_the_number_and_date(bot, access, monkeypatch):
+def test_the_recording_line_names_the_number_and_date(bot, access, monkeypatch,
+                                                      session):
     """The intermediate edit: the user sees it is working on their number."""
     access.grant(74, "manual")
     bot.PENDING[(74, 100)] = {
@@ -1173,10 +1182,10 @@ def test_the_recording_line_names_the_number_and_date(bot, access, monkeypatch):
     @contextlib.asynccontextmanager
     async def fake_session(progress=None):
         yield R()
-    monkeypatch.setattr(bot, "browser_session", fake_session)
+    monkeypatch.setattr(session, "browser_session", fake_session)
     async def fake_sign_in(chat_id, progress=None):
         return None
-    monkeypatch.setattr(bot, "sign_in", fake_sign_in)
+    monkeypatch.setattr(session, "sign_in", fake_sign_in)
 
     q = FakeQuery("ok:go", chat_id=74)
     upd = type("U", (), {})()

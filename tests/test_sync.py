@@ -28,7 +28,7 @@ import pytest
 
 @pytest.fixture
 def bot():
-    return importlib.import_module("bot")
+    return importlib.import_module("relay.telegram")
 
 
 @pytest.fixture

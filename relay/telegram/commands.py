@@ -1,0 +1,391 @@
+"""Commands, the text router, and the nightly backup.
+
+on_text lives here rather than in prompts.py so the dependency points one
+way: the router dispatches to prompt stages and to command handlers alike,
+and sitting next to the handlers avoids a prompts<->commands cycle.
+"""
+import asyncio
+import io
+
+from telegram import Update
+from telegram.constants import ParseMode
+from telegram.error import TelegramError
+
+from relay import config, memory
+from relay import progress as progress_mod
+from relay.clock import sg_now
+import relay.store.ledger as ledger
+import relay.store.vault as vault
+from relay.site import driver as relay_site
+import relay.telegram.access as access
+from relay.telegram.callbacks import PENDING
+from relay.telegram.keyboards import (button_actions, kb_after_login,
+                                        kb_reply)
+from relay.telegram.prompts import (_NoCredentials, _clear_stage,
+                                     _credential_prompt_body, _prompt_stage,
+                                     _scrub, _set_stage,
+                                     _start_credential_stage, ask_credentials,
+                                     ask_password, has_credentials, kb_for,
+                                     on_login, on_logout)
+import relay.telegram.session as session_mod
+import relay.telegram.words as words
+
+
+# ----------------------------------------------------------------------
+
+async def on_start(update: Update, ctx):
+    """Entry point. Access Mode decides whether anything else happens.
+
+    Sends exactly one message. The greeting and the Credentials Prompt used to
+    be separate replies, which read as the bot talking to itself; the prompt now
+    rides along on the same message, with the reply keyboard attached so the
+    commands are one tap away.
+    """
+    chat = update.effective_chat
+    msg = update.effective_message
+    d = access.check(chat.id, getattr(chat, "username", None))
+
+    if not d:
+        if d.why == "needs_claim":
+            # First-run claim: whoever got here first owns the Relay.
+            if access.claim(chat.id):
+                await msg.reply_text(words.claimed(),
+                                     parse_mode=ParseMode.MARKDOWN,
+                                     reply_markup=kb_reply())
+            else:
+                await msg.reply_text(words.already_claimed(),
+                                     parse_mode=ParseMode.MARKDOWN,
+                                     reply_markup=kb_reply())
+            return
+        if d.why == "needs_secret":
+            await msg.reply_text(words.secret_prompt(),
+                                 parse_mode=ParseMode.MARKDOWN,
+                                 reply_markup=kb_reply())
+            return
+        await msg.reply_text(words.access_refused(d),
+                             parse_mode=ParseMode.MARKDOWN,
+                             reply_markup=kb_reply())
+        return
+
+    if has_credentials(chat.id):
+        body = words.welcome(getattr(chat, "first_name", None))
+    else:
+        # One message: the greeting, then the prompt. The keyboard below it is
+        # whatever this chat needs *now*, so the commands are never more than
+        # one tap away and the prompt is answered by tapping, not typing.
+        body = words.welcome(getattr(chat, "first_name", None)) + "\n\n" + \
+            _credential_prompt_body()
+        _start_credential_stage(chat.id)
+    await msg.reply_text(body, parse_mode=ParseMode.MARKDOWN,
+                         reply_markup=kb_for(chat.id))
+
+
+async def on_log(update: Update, ctx):
+    chat = update.effective_chat
+    d = access.check(chat.id, getattr(chat, "username", None))
+    if not d:
+        await update.effective_message.reply_text(words.access_refused(d),
+                                                  parse_mode=ParseMode.MARKDOWN)
+        return
+    await update.effective_message.reply_text(
+        words.log_lines(ledger.all_submissions()), parse_mode=ParseMode.MARKDOWN,
+        reply_markup=kb_for(chat.id))
+
+
+async def on_sync(update: Update, ctx):
+    """Read the site's own record and store it. Submits nothing.
+
+    The point is the overwrite guard. A day the user entered by hand is real
+    and counts, but the bot has no record of it, so without a sync the guard
+    would treat it as a fresh day and overwrite it -- including downwards,
+    which is the one direction the guard exists to challenge.
+
+    Read-only by construction: it calls read_days(), which navigates and reads
+    and never touches the upload form.
+    """
+    chat = update.effective_chat
+    msg = update.effective_message
+    d = access.check(chat.id, getattr(chat, "username", None))
+    if not d:
+        await msg.reply_text(words.access_refused(d), parse_mode=ParseMode.MARKDOWN)
+        return
+    if not has_credentials(chat.id):
+        await msg.reply_text(words.need_credentials(),
+                             parse_mode=ParseMode.MARKDOWN)
+        await ask_credentials(msg, chat.id)
+        return
+
+    scratch = await msg.reply_text(words.syncing())
+    prog = await progress_mod.Progress(scratch).start()
+    try:
+        async with session_mod.browser_session(prog) as r:
+            await session_mod.sign_in(chat.id, prog)
+            days = await asyncio.to_thread(r.read_days)
+    except _NoCredentials:
+        await prog.stop()
+        await scratch.delete()
+        await msg.reply_text(words.need_credentials(),
+                             parse_mode=ParseMode.MARKDOWN)
+        await ask_credentials(msg, chat.id)
+        return
+    except vault.DecryptionFailed as e:
+        await prog.stop()
+        await scratch.delete()
+        await msg.reply_text(words.vault_unreadable(str(e)),
+                             parse_mode=ParseMode.MARKDOWN)
+        await ask_credentials(msg, chat.id)
+        return
+    except memory.InsufficientMemory as e:
+        await prog.stop()
+        await scratch.delete()
+        await msg.reply_text(words.low_memory(str(e)),
+                             parse_mode=ParseMode.MARKDOWN)
+        return
+    except relay_site.SiteChanged as e:
+        await prog.stop()
+        await scratch.delete()
+        await msg.reply_text(words.site_changed(str(e)),
+                             parse_mode=ParseMode.MARKDOWN)
+        return
+    except Exception as e:
+        await prog.stop()
+        await scratch.delete()
+        await msg.reply_text(" Sync failed: `%s`" % str(e)[:200],
+                             parse_mode=ParseMode.MARKDOWN)
+        session_mod.log(ctx, "sync error: %r" % (e,))
+        return
+
+    if not days:
+        # Say so rather than reporting a successful sync of nothing, which
+        # would look identical to a site with no days on it.
+        await prog.close(words.sync_empty(), parse_mode=ParseMode.MARKDOWN)
+        return
+
+    written = ledger.record_site_days(days)
+    await prog.close(words.sync_report(days, written),
+                     parse_mode=ParseMode.MARKDOWN)
+
+
+async def on_status(update: Update, ctx):
+    chat = update.effective_chat
+    msg = update.effective_message
+    d = access.check(chat.id, getattr(chat, "username", None))
+    if not d:
+        await msg.reply_text(words.access_refused(d), parse_mode=ParseMode.MARKDOWN)
+        return
+    subs = ledger.all_submissions()
+    rep = memory.budget()
+    creds = ledger.credentials_stored(chat.id)
+    st = _prompt_stage(chat.id) or {}
+    preset_in_use = bool(st.get("preset")) and config.has_preset_credentials()
+
+    if preset_in_use:
+        who = "%s (preset from config)" % words.code(config.SITE_USERNAME)
+    elif creds:
+        who = "%s (stored, encrypted)" % words.code(creds["username"])
+    else:
+        who = "none — send /login"
+
+    granted = ledger.all_access()
+    denied = ledger.all_denied()
+    txt = (
+        "**Relay status**\n\n"
+        "**Site:** %s\n"
+        "**Signing in as:** %s\n"
+        # access.describe() carries its own ** markers, and nesting those inside
+        # another ** pair made the whole reply unparseable. Plain fragment.
+        "**Access:** %s\n"
+        "**Browser:** headless=%s, launched per Screenshot\n"
+        "**Memory:** %.0fMB usable (browser needs ~%dMB) — can launch: **%s**\n"
+        "**Submissions recorded:** %d\n"
+        "**Chats with access:** %s\n"
+        "**Chats denied:** %s\n"
+        "**Pending confirmations:** %d"
+        % (words.code(config.SITE_BASE), who,
+           access.describe(markdown=False), config.HEADLESS,
+           rep["available_mb"], rep["browser_peak_mb"],
+           "yes" if rep["can_launch"] else "NO", len(subs),
+           ", ".join("%s (%s)" % (words.code(a["chat_id"]),
+                                  words.md(a["how"])) for a in granted) or "none",
+           ", ".join(words.code(a["chat_id"]) for a in denied) or "none",
+           len(PENDING))
+    )
+    # Refresh the keyboard so the buttons Telegram is showing match what the
+    # bot can actually do right now.
+    await msg.reply_text(txt, parse_mode=ParseMode.MARKDOWN,
+                         reply_markup=kb_for(chat.id))
+
+
+async def _run_button(ctx, msg, chat, action, stage):
+    """Dispatch a tapped reply-keyboard button."""
+    if action == "submit":
+        if stage and stage.get("stage") in ("username", "password"):
+            await msg.reply_text(
+                words.cancel_prompt_first(), parse_mode=ParseMode.MARKDOWN,
+                reply_markup=kb_for(chat.id))
+            return
+        await msg.reply_text(words.send_a_screenshot(),
+                             parse_mode=ParseMode.MARKDOWN,
+                             reply_markup=kb_for(chat.id))
+        return
+
+    if action == "use_preset":
+        _clear_stage(chat.id)
+        _set_stage(chat.id, "ready", username=config.SITE_USERNAME, preset=True)
+        await msg.reply_text(words.using_preset(config.SITE_USERNAME),
+                             parse_mode=ParseMode.MARKDOWN,
+                             reply_markup=kb_for(chat.id))
+        return
+
+    if action == "new_creds":
+        _set_stage(chat.id, "username")
+        await msg.reply_text(words.ask_username(), parse_mode=ParseMode.MARKDOWN,
+                             reply_markup=kb_for(chat.id))
+        return
+
+    if action == "cancel":
+        _clear_stage(chat.id)
+        await msg.reply_text(words.cancelled(), parse_mode=ParseMode.MARKDOWN,
+                             reply_markup=kb_for(chat.id))
+        return
+
+    handler = {
+        "login": on_login, "logout": on_logout,
+        "status": on_status, "log": on_log, "help": on_start,
+        "sync": on_sync,
+    }.get(action)
+    if handler is None:
+        return
+    # Re-enter through the command handlers so there is one implementation of
+    # each, not a second copy here that could fall behind.
+    await handler(_as_update(msg, chat), ctx)
+    # A tapped command should leave the keyboard showing what comes next,
+    # which for /login is the prompt rather than the standing commands.
+    if stage is None:
+        pending = _prompt_stage(chat.id)
+        if pending and pending.get("stage") in ("username", "password"):
+            try:
+                await msg.reply_text(words.ask_password()
+                                     if pending.get("stage") == "password"
+                                     else words.ask_username(),
+                                     parse_mode=ParseMode.MARKDOWN,
+                                     reply_markup=kb_for(chat.id))
+            except TelegramError:
+                pass
+
+
+def _as_update(msg, chat):
+    update = Update(0, message=msg)
+    update._effective_chat = chat
+    update._effective_user = chat
+    return update
+
+
+async def on_text(update: Update, ctx):
+    """Handle the Credentials Prompt, the Shared Secret exchange, and buttons.
+
+    Reply-keyboard buttons arrive here as ordinary text, so they are dispatched
+    first. That has to happen before the prompt handling: mid-prompt the bot
+    expects a username or a password, and a tapped "Submit steps" button must
+    not be mistaken for either.
+    """
+    chat = update.effective_chat
+    msg = update.effective_message
+    text = (msg.text or "").strip()
+    st = _prompt_stage(chat.id)
+
+    if text in button_actions():
+        await _run_button(ctx, msg, chat, button_actions()[text], st)
+        return
+
+    # --- Access gate first: an unauthorised chat gets nothing, and its input
+    # --- is never treated as a secret.
+    d = access.check(chat.id, getattr(chat, "username", None))
+    if d.why in ("needs_secret", "secret_throttled"):
+        if not text:
+            return
+        if d.why == "secret_throttled":
+            # Still treat this as a secret attempt, so the message carrying it
+            # gets deleted, then say why it did not work. Falling through to
+            # the "nothing to do" reply instead would leave a password sitting
+            # in the chat with no explanation.
+            await _scrub(msg)
+            await msg.reply_text(words.secret_throttled(d.retry_after),
+                                 parse_mode=ParseMode.MARKDOWN)
+            return
+        # The rate limit is enforced inside present_secret, not here.
+        r = access.present_secret(chat.id, text)
+        # The message carried a secret: remove it from the chat immediately.
+        await _scrub(msg)
+        if r:
+            await msg.reply_text(words.secret_accepted(r.how),
+                                 parse_mode=ParseMode.MARKDOWN)
+            await ask_credentials(msg, chat.id)
+        elif r.why == "secret_throttled":
+            await msg.reply_text(words.secret_throttled(r.retry_after),
+                                 parse_mode=ParseMode.MARKDOWN)
+        else:
+            await msg.reply_text(words.secret_rejected(),
+                                 parse_mode=ParseMode.MARKDOWN)
+        return
+
+    if not st:
+        # No prompt in progress and access is fine: treat as an unknown
+        # command rather than silently swallowing it.
+        await msg.reply_text(words.no_prompt(), parse_mode=ParseMode.MARKDOWN)
+        return
+
+    if st.get("stage") == "username":
+        if not text:
+            return
+        if len(text) < 3 or len(text) > 40:
+            await msg.reply_text(words.bad_username(), parse_mode=ParseMode.MARKDOWN)
+            return
+        await ask_password(msg, chat.id, username=text, preset=st.get("preset"))
+        return
+
+    if st.get("stage") == "password":
+        if not text:
+            return
+        username = st.get("username")
+        # Store encrypted, then drop it. The plaintext is not kept anywhere.
+        try:
+            ledger.save_credentials(chat.id, username, text,
+                                    config.TELEGRAM_BOT_TOKEN,
+                                    preset=False)
+        except Exception as e:
+            await msg.reply_text(words.credential_store_failed(str(e)[:120]),
+                                 parse_mode=ParseMode.MARKDOWN)
+            return
+        finally:
+            _clear_stage(chat.id)
+        await _scrub(msg)
+        _set_stage(chat.id, "ready", username=username, preset=False)
+        await msg.reply_text(words.credentials_saved(username),
+                             parse_mode=ParseMode.MARKDOWN,
+                             reply_markup=kb_after_login())
+        return
+
+
+# ----------------------------------------------------------------------
+# scheduled
+# ----------------------------------------------------------------------
+
+async def backup_job(ctx):
+    """Nightly ledger backup, delivered to Telegram itself."""
+    chat_ids = [u["chat_id"] for u in ledger.known_users()]
+    if not chat_ids:
+        return
+    ledger.init()
+    with open(ledger.DB, "rb") as f:
+        data = f.read()
+    stamp = sg_now().strftime("%Y-%m-%d")
+    fname = "relay-ledger-%s.sqlite3" % stamp
+    await ctx.bot.send_document(
+        chat_id=chat_ids[0], document=io.BytesIO(data), filename=fname,
+        caption="%s Ledger backup — %d Submission(s)." % (
+            words.EMOJI["backup"],
+            len(ledger.all_submissions())))
+
+
+# ----------------------------------------------------------------------

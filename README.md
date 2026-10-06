@@ -40,7 +40,7 @@ leaderboard account. See [ADR 0006](docs/adr/0006-access-modes-and-prompted-cred
 
 | File | Role |
 |---|---|
-| `bot.py` | Telegram handlers and the confirm flow |
+| `relay/telegram/` | handlers, prompts, keyboards, access, copy |
 | `access.py` | the Access Modes, behind one `check()` |
 | `relay/site.py` | headless Firefox: upload, read, date, commit |
 | `vault.py` | AES-GCM sealing for a supplied password |

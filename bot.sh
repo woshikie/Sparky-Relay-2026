@@ -19,4 +19,4 @@ mkdir -p logs inbox
 
 # exec so SIGTERM from the container runtime reaches Python directly and the
 # long-poll shuts down promptly instead of waiting out the grace period.
-exec ./.venv/bin/python -u bot.py "$@"
+exec ./.venv/bin/python -m relay "$@"

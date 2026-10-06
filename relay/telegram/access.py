@@ -16,8 +16,8 @@ who can write to a live leaderboard account.
 import time
 
 from relay import config
-from relay.store import ledger
-from relay.telegram import words
+import relay.store.ledger as ledger
+import relay.telegram.words as words
 
 
 class Decision:

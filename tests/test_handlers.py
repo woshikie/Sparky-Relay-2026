@@ -125,9 +125,10 @@ def test_the_most_recent_pending_wins(bot):
 
 def test_totals_are_parsed_out_of_the_home_page(bot):
     text = "YOUR HOUSE\nEsplanade\nHouse standings\n1\nIstana\n4,034,765"
-    line = bot.parse_profile(text)
-    # No total-steps markup in this sample, so nothing to claim.
-    assert line == "" or "Esplanade" in line
+    profile = bot.parse_profile(text)
+    # No total-steps markup in this sample, so nothing to claim beyond the house.
+    assert profile == {"total_steps": None, "total_points": None,
+                       "house": "Esplanade"}
 
 
 def test_a_home_page_with_totals_is_summarised(bot):
@@ -139,17 +140,18 @@ def test_a_home_page_with_totals_is_summarised(bot):
     to convert — it reports what the site said.
     """
     text = "YOUR HOUSE\nEsplanade\nHouse standings\nTotal steps\n11,225\nTotal points\n10"
-    line = bot.parse_profile(text)
-    assert "11,225" in line
-    assert "Esplanade" in line
+    profile = bot.parse_profile(text)
+    assert profile["total_points"] == 11225
+    assert profile["house"] == "Esplanade"
 
 
 def test_nothing_is_invented_from_an_unrecognisable_page(bot):
-    assert bot.parse_profile("nothing useful here") == ""
+    assert bot.parse_profile("nothing useful here") is None
 
 
 # ------------------------------------------------------------- profile text
 
 def test_a_profile_line_without_totals_still_names_the_house(bot):
-    line = bot.parse_profile("YOUR HOUSE\nEsplanade\nHouse standings")
-    assert "Esplanade" in line
+    profile = bot.parse_profile("YOUR HOUSE\nEsplanade\nHouse standings")
+    assert profile == {"total_steps": None, "total_points": None,
+                       "house": "Esplanade"}

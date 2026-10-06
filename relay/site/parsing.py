@@ -70,3 +70,27 @@ def parse_steps(text):
         return int(m.group(1).replace(",", ""))
     except ValueError:
         return None
+
+
+def parse_profile(board_text):
+    """Pull the user's own totals out of the /home DOM text, if present.
+
+    Returns {"total_steps", "total_points", "house"} with None for whatever is
+    missing, or None when the board holds nothing at all. Formatting is the
+    caller's job: this module reads the Site, it does not write Telegram copy.
+    """
+    total_steps = total_points = None
+    m = re.search(r"([\d,]+)\s*\n?\s*total steps", board_text, re.I)
+    if m:
+        total_steps = int(m.group(1).replace(",", ""))
+    m = re.search(r"([\d,]+)\s*\n?\s*total points", board_text, re.I)
+    if m:
+        total_points = int(m.group(1).replace(",", ""))
+    house = None
+    m = re.search(r"YOUR HOUSE\s*\n+\s*([A-Za-z]+)", board_text)
+    if m:
+        house = m.group(1)
+    if total_steps is None and total_points is None and house is None:
+        return None
+    return {"total_steps": total_steps, "total_points": total_points,
+            "house": house}

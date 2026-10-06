@@ -301,7 +301,7 @@ def _confirm(bot, chat_id=1):
     return q, upd
 
 
-def test_a_changed_second_read_aborts_the_commit(pending, monkeypatch):
+def test_a_changed_second_read_aborts_the_commit(pending, monkeypatch, session):
     """The re-read must agree with what the user confirmed.
 
     The browser is closed after the first read to free RAM, so Commit re-opens
@@ -323,10 +323,10 @@ def test_a_changed_second_read_aborts_the_commit(pending, monkeypatch):
     @contextlib.asynccontextmanager
     async def fake_session(progress=None):
         yield R()
-    monkeypatch.setattr(pending, "browser_session", fake_session)
+    monkeypatch.setattr(session, "browser_session", fake_session)
     async def fake_sign_in(chat_id, progress=None):
         return None
-    monkeypatch.setattr(pending, "sign_in", fake_sign_in)
+    monkeypatch.setattr(session, "sign_in", fake_sign_in)
 
     q, upd = _confirm(pending)
     run(pending.cb_ok(upd, None))
@@ -334,7 +334,7 @@ def test_a_changed_second_read_aborts_the_commit(pending, monkeypatch):
     assert "changed" in q.answers[0][0]
 
 
-def test_an_unchanged_second_read_proceeds_to_commit(pending, monkeypatch):
+def test_an_unchanged_second_read_proceeds_to_commit(pending, monkeypatch, session):
     """The same number twice: the commit goes ahead."""
     pending.PENDING[(1, 100)]["date"] = datetime.date(2026, 10, 4)
     pending.PENDING[(1, 100)]["iso"] = "2026-10-04"
@@ -354,10 +354,10 @@ def test_an_unchanged_second_read_proceeds_to_commit(pending, monkeypatch):
     @contextlib.asynccontextmanager
     async def fake_session(progress=None):
         yield R()
-    monkeypatch.setattr(pending, "browser_session", fake_session)
+    monkeypatch.setattr(session, "browser_session", fake_session)
     async def fake_sign_in(chat_id, progress=None):
         return None
-    monkeypatch.setattr(pending, "sign_in", fake_sign_in)
+    monkeypatch.setattr(session, "sign_in", fake_sign_in)
 
     q, upd = _confirm(pending)
     run(pending.cb_ok(upd, None))
@@ -366,7 +366,7 @@ def test_an_unchanged_second_read_proceeds_to_commit(pending, monkeypatch):
     assert "Recorded" in q.message.said
 
 
-def test_the_commit_reports_what_the_site_said(pending, monkeypatch):
+def test_the_commit_reports_what_the_site_said(pending, monkeypatch, session):
     """After Commit the site's own words are the evidence, not ours."""
     from relay.store import ledger as led
     pending.PENDING[(1, 100)]["date"] = datetime.date(2026, 10, 4)
@@ -384,10 +384,10 @@ def test_the_commit_reports_what_the_site_said(pending, monkeypatch):
     @contextlib.asynccontextmanager
     async def fake_session(progress=None):
         yield R()
-    monkeypatch.setattr(pending, "browser_session", fake_session)
+    monkeypatch.setattr(session, "browser_session", fake_session)
     async def fake_sign_in(chat_id, progress=None):
         return None
-    monkeypatch.setattr(pending, "sign_in", fake_sign_in)
+    monkeypatch.setattr(session, "sign_in", fake_sign_in)
 
     q, upd = _confirm(pending)
     run(pending.cb_ok(upd, None))

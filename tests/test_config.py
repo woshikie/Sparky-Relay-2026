@@ -239,9 +239,9 @@ def test_a_missing_mode_fails_before_anything_else():
 def test_the_import_guard_prints_rather_than_traces():
     """An operator should see the message, not a traceback.
 
-    bot.py imports config, so a plain `import bot` with a bad ACCESS_MODE is
-    the realistic failure. If it surfaced a traceback, the useful half of the
-    message would be buried under import frames.
+    relay/__main__.py imports config, so running the bot with a bad
+    ACCESS_MODE is the realistic failure. If it surfaced a traceback, the
+    useful half of the message would be buried under import frames.
     """
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     env = {
@@ -251,10 +251,10 @@ def test_the_import_guard_prints_rather_than_traces():
         "RELAY_STATE_DIR": tempfile.mkdtemp(prefix="relay-subproc-"),
         "TELEGRAM_BOT_TOKEN": FAKE_TOKEN,
     }
-    # `import bot` surfaces the guard as a traceback, because config raises
-    # during import and there is nothing around it yet. The path that matters
-    # is running the bot, which catches it and prints the message.
-    p = subprocess.run([sys.executable, "bot.py"], env=env, cwd=root,
+    # Running the bot catches the refusal and prints the message. A bare
+    # import would surface it as a traceback instead, because config raises
+    # during import and there is nothing around it yet.
+    p = subprocess.run([sys.executable, "-m", "relay"], env=env, cwd=root,
                        capture_output=True, text=True)
     assert p.returncode == 2
     assert "Traceback" not in p.stderr

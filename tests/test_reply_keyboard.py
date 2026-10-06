@@ -258,7 +258,7 @@ def test_start_uses_the_reply_keyboard_for_the_preset_choice(keyboard_bot,
     reload_with(monkeypatch, SITE_USERNAME="testuser", SITE_PASSWORD="pw",
                 RELAY_STATE_DIR=str(tmp_path))
     from relay.telegram import access as acc
-    import bot as reloaded
+    import relay.telegram as reloaded
     from relay.store import ledger as led
     led.init()
     acc.grant(2, "claim")

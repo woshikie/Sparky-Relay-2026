@@ -33,11 +33,15 @@ os.environ.setdefault("RELAY_STATE_DIR", tempfile.mkdtemp(prefix="relay-pytest-"
 # parent still carrying the old attribute short-circuits the whole thing and
 # hands back the pre-purge module with no error. Popping the parents forces
 # the attribute to be re-bound to the fresh submodule.
-MODULES = ("relay", "relay.telegram", "relay.store",
+MODULES = ("relay", "relay.telegram", "relay.store", "relay.clock",
            "relay.config", "relay.telegram.access", "relay.store.ledger",
-           "relay.store.vault", "bot", "relay.telegram.words",
-           "relay.memory", "relay.telegram.datepicker", "relay.site",
-           "relay.site.driver", "relay.site.parsing")
+           "relay.store.vault", "relay.telegram.words",
+           "relay.memory", "relay.telegram.datepicker",
+           "relay.site", "relay.site.driver", "relay.site.parsing",
+           "relay.telegram.session", "relay.telegram.keyboards",
+           "relay.telegram.prompts", "relay.telegram.commands",
+           "relay.telegram.photo", "relay.telegram.callbacks",
+           "relay.telegram.app")
 
 
 # The bot's fixtures are imported as bare names, so the repo root has to be on
@@ -148,6 +152,24 @@ def memory(config):
 
 @pytest.fixture
 def bot(config, ledger):
-    mod = importlib.import_module("bot")
+    """The telegram package: the public surface the tests reach for.
+
+    Imported fresh after every purge, like everything else. The submodules do
+    the work; this is the documented API over them.
+    """
+    mod = importlib.import_module("relay.telegram")
     mod.PROMPTING.clear()
+    mod.PENDING.clear()
     return mod
+
+
+@pytest.fixture
+def session():
+    """The browser lifecycle and the process singletons.
+
+    Tests patch the seams (browser_session, sign_in, get_relay) here, where
+    they are defined. The call sites go through the session module object, so
+    there is exactly one place to patch -- patching the package attribute
+    would silently do nothing.
+    """
+    return importlib.import_module("relay.telegram.session")

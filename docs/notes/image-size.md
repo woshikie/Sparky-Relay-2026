@@ -58,7 +58,7 @@ does not use.
 
 | change                                       | saved |
 |---------------------------------------------|-------|
-| `py3-pillow` — bot.py uses the pip wheel     |  ~15 MB |
+| `py3-pillow` — photo.py uses the pip wheel     |  ~15 MB |
 | `pip` itself, once the wheels are in          |   12 MB |
 | `py3-pip`, `py3-virtualenv` → build stage    |  ~13 MB |
 | `curl` + `libcurl` + `c-ares` → build stage   |   ~5 MB |

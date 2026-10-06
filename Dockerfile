@@ -68,7 +68,7 @@ ENV PYTHONUNBUFFERED=1 \
 # than pinning an ESR tarball. See docs/adr/0005-alpine-base.md.
 #
 # What is deliberately NOT installed, having been measured as unused:
-#   py3-pillow  bot.py imports PIL, but it gets the pip wheel from the venv
+#   py3-pillow  photo.py imports PIL, but it gets the pip wheel from the venv
 #               stage. Alpine's copy is a second, larger install of the same
 #               library, plus libimagequant/openjpeg that nothing else needs.
 #   py3-pip,
@@ -94,7 +94,6 @@ WORKDIR /app
 
 RUN mkdir -p /app/data
 
-COPY bot.py ./
 COPY relay ./relay
 # Verification helpers, so the built image can prove it can read the site's OCR
 # without needing the source tree on the host.

@@ -19,7 +19,7 @@ from relay.telegram import datepicker
 
 @pytest.fixture
 def bot():
-    return importlib.import_module("bot")
+    return importlib.import_module("relay.telegram")
 
 
 def captions(markup):

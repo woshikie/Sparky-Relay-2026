@@ -47,7 +47,7 @@ def test_nothing_echoes_a_preset_password(words, bot, monkeypatch):
     from conftest import MODULES
     for m in MODULES:
         sys.modules.pop(m, None)
-    import bot as reloaded
+    import relay.telegram as reloaded
     w = reloaded.words
     for name in ("choose_preset", "using_preset", "credentials_saved"):
         assert "PRESETPASS-SECRET" not in str(getattr(w, name)("testuser"))
