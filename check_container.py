@@ -11,7 +11,7 @@ import time
 
 from relay import config, memory
 from relay.site import driver as relay_site
-from relay.store import ledger
+from relay.store import db
 
 DETECT = re.compile(r"Detected steps\s*([\d,. ]+)", re.I)
 CASES = [("Saturday-3-October.jpg", 2831), ("Sunday-4-October.jpg", 6532)]
@@ -20,7 +20,7 @@ CASES = [("Saturday-3-October.jpg", 2831), ("Sunday-4-October.jpg", 6532)]
 def main() -> int:
     print("container detected :", relay_site._in_container(), flush=True)
     print("cgroup budget      :", memory.describe(), flush=True)
-    print("ledger             :", ledger.init(), flush=True)
+    print("ledger             :", db.init(), flush=True)
     print("firefox            :", config.FIREFOX_BIN, flush=True)
     print("geckodriver        :", relay_site.GECKO, flush=True)
     print(flush=True)

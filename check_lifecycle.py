@@ -10,7 +10,7 @@ import time
 
 from relay import config, memory
 from relay.site import driver as relay_site
-from relay.store import ledger
+from relay.store import db
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SAMPLES = os.path.join(HERE, "..", "workstation", "samples")
@@ -24,7 +24,7 @@ def avail() -> float:
 
 
 def main() -> int:
-    ledger.init()
+    db.init()
     print(memory.describe(), flush=True)
     baseline = avail()
     print("baseline available: %.0fMB" % baseline, flush=True)

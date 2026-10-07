@@ -256,7 +256,7 @@ def test_start_uses_the_reply_keyboard_for_the_preset_choice(keyboard_bot,
                 RELAY_STATE_DIR=str(tmp_path))
     from relay.telegram import access as acc
     import relay.telegram as reloaded
-    from relay.store import ledger as led
+    from relay.store import db as led
     led.init()
     acc.grant(2, "claim")
     upd = Upd(chat_id=2)

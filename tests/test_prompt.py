@@ -159,9 +159,9 @@ def test_no_reply_text_contains_the_stored_password(bot, ledger):
     assert checked > 20, "the sweep should reach a useful number of strings"
 
 
-def test_the_ciphertext_does_not_contain_the_password(bot, ledger):
+def test_the_ciphertext_does_not_contain_the_password(bot, ledger, db):
     ledger.save_credentials(1, "testuser", CANARY, FAKE_TOKEN)
-    with ledger.conn() as c:
+    with db.conn() as c:
         rows = str([dict(r) for r in c.execute("SELECT * FROM credentials")])
     assert CANARY not in rows
 
@@ -178,4 +178,4 @@ def test_status_never_includes_a_password(bot, ledger):
 
 def test_a_failed_secret_attempt_is_recorded(bot, access):
     access.present_secret(1, "guess")
-    assert access.ledger.secret_throttled(1)
+    assert access.policy.secret_throttled(1)

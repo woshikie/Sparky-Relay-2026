@@ -16,6 +16,7 @@ from telegram.error import TelegramError
 from telegram.ext import ContextTypes
 
 import relay.store.ledger as ledger
+import relay.store.policy as policy
 import relay.telegram.access as access
 import relay.telegram.failures as failures
 import relay.telegram.pending as pending_mod
@@ -187,8 +188,8 @@ async def on_status(update: Update, ctx: ContextTypes.DEFAULT_TYPE | None) -> No
     else:
         who = "none — send /login"
 
-    granted = ledger.all_access()
-    denied = ledger.all_denied()
+    granted = policy.all_access()
+    denied = policy.all_denied()
     txt = (
         "**Relay status**\n\n"
         "**Site:** %s\n"

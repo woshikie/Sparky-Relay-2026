@@ -10,18 +10,20 @@ from typing import cast
 
 from telegram.ext import ContextTypes
 
+import relay.store.db as db
 import relay.store.ledger as ledger
+import relay.store.policy as policy
 import relay.telegram.words as words
 from relay.clock import sg_now
 
 
 async def backup_job(ctx: ContextTypes.DEFAULT_TYPE) -> None:
     """Send the whole sqlite file to the oldest-known user."""
-    chat_ids = [cast(int, u["chat_id"]) for u in ledger.known_users()]
+    chat_ids = [cast(int, u["chat_id"]) for u in policy.known_users()]
     if not chat_ids:
         return
-    ledger.init()
-    with open(ledger.DB, "rb") as f:
+    db.init()
+    with open(db.DB, "rb") as f:
         data = f.read()
     stamp = sg_now().strftime("%Y-%m-%d")
     fname = "relay-ledger-%s.sqlite3" % stamp

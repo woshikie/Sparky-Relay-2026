@@ -252,13 +252,13 @@ def test_the_plain_describe_has_balanced_markers_of_its_own():
 
 
 @pytest.mark.parametrize("mode", ["whitelist_claim", "blacklist", "shared_secret"])
-def test_every_mode_produces_a_parseable_describe(monkeypatch, tmp_path, mode):
+def test_every_mode_produces_a_parseable_describe(monkeypatch, tmp_path, mode, db):
     from conftest import reload_with
     reload_with(monkeypatch, ACCESS_MODE=mode, RELAY_STATE_DIR=str(tmp_path))
     import importlib
     acc = importlib.import_module("relay.telegram.access")
-    from relay.store import ledger
-    ledger.init()
+    from relay.store import db
+    db.init()
     for md in (True, False):
         text = acc.describe(markdown=md)
         assert text.count("*") % 2 == 0

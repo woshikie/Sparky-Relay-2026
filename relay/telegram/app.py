@@ -15,7 +15,8 @@ from telegram.ext import (
     filters,
 )
 
-import relay.store.ledger as ledger
+import relay.store.db as db
+import relay.store.policy as policy
 import relay.telegram.access as access
 import relay.telegram.session as session_mod
 from relay import config, console, memory
@@ -48,7 +49,7 @@ def main() -> None:
     # on a different path.
     console.install()
     config.require()
-    ledger.init()
+    db.init()
     app = (
         ApplicationBuilder()
         .token(config.TELEGRAM_BOT_TOKEN)
@@ -85,7 +86,7 @@ def main() -> None:
         backup_job, wallclock(hour=hh, minute=mm), name="ledger-backup"
     )
 
-    loaded, total = ledger.init_secrets_from_env(config.SHARED_SECRETS)
+    loaded, total = policy.init_secrets_from_env(config.SHARED_SECRETS)
     if loaded:
         print(
             "[relay] loaded %d Shared Secret(s) from the environment" % total,

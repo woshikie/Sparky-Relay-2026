@@ -16,7 +16,7 @@ who can write to a live leaderboard account.
 
 import time
 
-import relay.store.ledger as ledger
+import relay.store.policy as policy
 import relay.telegram.words as words
 from relay import config
 
@@ -51,7 +51,7 @@ def _denied_by_config(chat_id: int) -> bool:
     """Chats refused by DENY_CHAT_IDS, or already on the deny list."""
     if config.DENY_CHAT_IDS and int(chat_id) in config.DENY_CHAT_IDS:
         return True
-    return ledger.is_denied(chat_id)
+    return policy.is_denied(chat_id)
 
 
 def check(chat_id: int, username: str | None = None) -> Decision:
@@ -61,23 +61,23 @@ def check(chat_id: int, username: str | None = None) -> Decision:
     if _denied_by_config(chat_id):
         return Decision(False, "denied", chat_id=chat_id)
 
-    existing = ledger.has_access(chat_id)
+    existing = policy.has_access(chat_id)
     if existing:
-        ledger.remember_user(chat_id, username)
+        policy.remember_user(chat_id, username)
         return Decision(True, "granted", how=existing, chat_id=chat_id)
 
     if config.ACCESS_MODE == "blacklist":
         # Open by design. No grant row: access is implicit and re-checking the
         # deny list each time is what makes revocation take effect.
-        ledger.remember_user(chat_id, username)
+        policy.remember_user(chat_id, username)
         return Decision(True, "blacklist", chat_id=chat_id)
 
     if config.ACCESS_MODE == "whitelist_claim":
         return Decision(False, "needs_claim", chat_id=chat_id)
 
     if config.ACCESS_MODE == "shared_secret":
-        if ledger.secret_throttled(chat_id):
-            wait = ledger.SECRET_WINDOW - (time.time() - _last_try(chat_id))
+        if policy.secret_throttled(chat_id):
+            wait = policy.SECRET_WINDOW - (time.time() - _last_try(chat_id))
             return Decision(
                 False, "secret_throttled", chat_id=chat_id, retry_after=int(wait) + 1
             )
@@ -88,7 +88,7 @@ def check(chat_id: int, username: str | None = None) -> Decision:
 
 
 def _last_try(chat_id: int) -> float:
-    return ledger.last_secret_attempt(chat_id)
+    return policy.last_secret_attempt(chat_id)
 
 
 def claim(chat_id: int, username: str | None = None) -> bool:
@@ -99,9 +99,9 @@ def claim(chat_id: int, username: str | None = None) -> bool:
     single event loop the old SELECT-then-INSERT could not interleave; this
     is simpler as well as safer.)
     """
-    claimed = ledger.claim_if_empty(chat_id, "claim", ledger.now())
+    claimed = policy.claim_if_empty(chat_id)
     if claimed:
-        ledger.remember_user(chat_id, username)
+        policy.remember_user(chat_id, username)
     return claimed
 
 
@@ -123,40 +123,40 @@ def present_secret(
     anyone who knows a chat id keep the owner out of their own bot, which is
     worse than a slow guessing attack on a passphrase.
     """
-    if ledger.secret_throttled(chat_id):
-        wait = ledger.SECRET_WINDOW - (
-            time.time() - ledger.last_secret_attempt(chat_id)
+    if policy.secret_throttled(chat_id):
+        wait = policy.SECRET_WINDOW - (
+            time.time() - policy.last_secret_attempt(chat_id)
         )
         return Decision(
             False, "secret_throttled", chat_id=chat_id, retry_after=int(wait) + 1
         )
-    label = ledger.check_secret(candidate)
+    label = policy.check_secret(candidate)
     if label:
-        ledger.note_secret_attempt(chat_id, ok=True)
-        ledger.grant(chat_id, "secret:%s" % label)
-        ledger.remember_user(chat_id, username)
+        policy.note_secret_attempt(chat_id, ok=True)
+        policy.grant(chat_id, "secret:%s" % label)
+        policy.remember_user(chat_id, username)
         return Decision(True, "granted", how="secret:%s" % label)
-    ledger.note_secret_attempt(chat_id, ok=False)
+    policy.note_secret_attempt(chat_id, ok=False)
     return Decision(False, "secret_wrong", chat_id=chat_id)
 
 
 def grant(chat_id: int, how: str = "manual") -> bool:
-    ledger.grant(chat_id, how)
+    policy.grant(chat_id, how)
     return True
 
 
 def revoke(chat_id: int) -> bool:
-    ledger.revoke(chat_id)
+    policy.revoke(chat_id)
     return True
 
 
 def deny(chat_id: int, reason: str = "") -> bool:
-    ledger.deny(chat_id, reason)
+    policy.deny(chat_id, reason)
     return True
 
 
 def undeny(chat_id: int) -> bool:
-    ledger.undeny(int(chat_id))
+    policy.undeny(int(chat_id))
     return True
 
 
@@ -179,5 +179,5 @@ def describe(markdown: bool = True) -> str:
     if config.ACCESS_MODE == "whitelist_claim":
         line += "  (first /start claims it)"
     if config.ACCESS_MODE == "shared_secret":
-        line += "  (%d secret(s) configured)" % len(ledger.list_secret_labels())
+        line += "  (%d secret(s) configured)" % len(policy.list_secret_labels())
     return line

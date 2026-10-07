@@ -41,9 +41,9 @@ def test_credentials_are_stored_per_chat(ledger):
     assert ledger.load_credentials(2, FAKE_TOKEN) == ("someone", "theirpass")
 
 
-def test_the_stored_row_never_contains_the_password(ledger):
+def test_the_stored_row_never_contains_the_password(ledger, db):
     ledger.save_credentials(1, "testuser", "testpass123", FAKE_TOKEN)
-    with ledger.conn() as c:
+    with db.conn() as c:
         raw = str([dict(r) for r in c.execute("SELECT * FROM credentials")])
     assert "testpass123" not in raw
 
@@ -85,142 +85,142 @@ def test_forget_all_clears_the_vault(ledger):
 
 # -------------------------------------------------------------------- access
 
-def test_grants_and_denials_are_separate_ledgers(ledger):
-    ledger.grant(1, "claim")
-    ledger.deny(2, "spam")
-    assert ledger.has_access(1) == "claim"
-    assert ledger.has_access(2) is None
-    assert ledger.is_denied(2)
-    assert not ledger.is_denied(1)
+def test_grants_and_denials_are_separate_ledgers(ledger, policy):
+    policy.grant(1, "claim")
+    policy.deny(2, "spam")
+    assert policy.has_access(1) == "claim"
+    assert policy.has_access(2) is None
+    assert policy.is_denied(2)
+    assert not policy.is_denied(1)
 
 
-def test_granting_twice_does_not_duplicate(ledger):
-    ledger.grant(1, "claim")
-    ledger.grant(1, "secret:alice")
-    assert len(ledger.all_access()) == 1
-    assert ledger.has_access(1) == "secret:alice"
+def test_granting_twice_does_not_duplicate(ledger, policy):
+    policy.grant(1, "claim")
+    policy.grant(1, "secret:alice")
+    assert len(policy.all_access()) == 1
+    assert policy.has_access(1) == "secret:alice"
 
 
-def test_telegram_users_are_remembered_once(ledger):
-    ledger.remember_user(7, "casey")
-    ledger.remember_user(7, "casey-renamed")
-    assert len(ledger.known_users()) == 1
+def test_telegram_users_are_remembered_once(ledger, policy):
+    policy.remember_user(7, "casey")
+    policy.remember_user(7, "casey-renamed")
+    assert len(policy.known_users()) == 1
 
 
 # -------------------------------------------------------- attempt throttling
 
-def test_the_first_attempt_is_not_throttled(ledger):
-    assert not ledger.secret_throttled(99)
+def test_the_first_attempt_is_not_throttled(ledger, policy):
+    assert not policy.secret_throttled(99)
 
 
-def test_a_wrong_attempt_starts_the_clock(ledger):
-    ledger.note_secret_attempt(99, ok=False)
-    assert ledger.secret_throttled(99)
+def test_a_wrong_attempt_starts_the_clock(ledger, policy):
+    policy.note_secret_attempt(99, ok=False)
+    assert policy.secret_throttled(99)
 
 
-def test_a_correct_attempt_clears_the_clock(ledger):
-    ledger.note_secret_attempt(99, ok=False)
-    ledger.note_secret_attempt(99, ok=True)
-    assert not ledger.secret_throttled(99)
+def test_a_correct_attempt_clears_the_clock(ledger, policy):
+    policy.note_secret_attempt(99, ok=False)
+    policy.note_secret_attempt(99, ok=True)
+    assert not policy.secret_throttled(99)
 
 
-def test_the_clock_is_per_chat(ledger):
-    ledger.note_secret_attempt(1, ok=False)
-    assert not ledger.secret_throttled(2)
+def test_the_clock_is_per_chat(ledger, policy):
+    policy.note_secret_attempt(1, ok=False)
+    assert not policy.secret_throttled(2)
 
 
-def test_the_window_can_be_configured(ledger):
-    ledger.note_secret_attempt(5, ok=False)
-    assert not ledger.secret_throttled(5, window=0.0)
+def test_the_window_can_be_configured(ledger, policy):
+    policy.note_secret_attempt(5, ok=False)
+    assert not policy.secret_throttled(5, window=0.0)
 
 
 # ------------------------------------------- the secret-spec parsing branches
 
-def test_a_blank_line_in_the_spec_is_skipped(ledger):
-    labels = ledger.sync_secrets_from_env("a:one\n\nb:two")
+def test_a_blank_line_in_the_spec_is_skipped(ledger, policy):
+    labels = policy.sync_secrets_from_env("a:one\n\nb:two")
     assert sorted(labels) == ["a", "b"]
 
 
-def test_a_comment_line_in_the_spec_is_skipped(ledger):
-    labels = ledger.sync_secrets_from_env("# a comment\na:one")
+def test_a_comment_line_in_the_spec_is_skipped(ledger, policy):
+    labels = policy.sync_secrets_from_env("# a comment\na:one")
     assert labels == ["a"]
 
 
-def test_a_line_with_no_colon_derives_its_label(ledger):
+def test_a_line_with_no_colon_derives_its_label(ledger, policy):
     """The label is what revocation is keyed on, so it must not print the secret."""
-    labels = ledger.sync_secrets_from_env("just-a-secret")
+    labels = policy.sync_secrets_from_env("just-a-secret")
     assert labels == ["secret-just-a-s"]
     assert "just-a-secret" not in labels[0]
 
 
-def test_a_line_with_an_empty_secret_is_skipped(ledger):
+def test_a_line_with_an_empty_secret_is_skipped(ledger, policy):
     """'label:' with nothing after it is not a secret."""
-    labels = ledger.sync_secrets_from_env("a:one\nb:")
+    labels = policy.sync_secrets_from_env("a:one\nb:")
     assert labels == ["a"]
 
 
-def test_a_spec_of_only_blank_lines_loads_nothing(ledger):
-    assert ledger.sync_secrets_from_env("\n\n") == []
+def test_a_spec_of_only_blank_lines_loads_nothing(ledger, policy):
+    assert policy.sync_secrets_from_env("\n\n") == []
 
 
-def test_a_spec_that_is_none_loads_nothing(ledger):
+def test_a_spec_that_is_none_loads_nothing(ledger, policy):
     """An operator adding secrets with /addsecret must not be clobbered."""
-    ledger.add_secret("keep", "value")
-    assert ledger.sync_secrets_from_env(None) == []
-    assert ledger.list_secret_labels() == ["keep"]
+    policy.add_secret("keep", "value")
+    assert policy.sync_secrets_from_env(None) == []
+    assert policy.list_secret_labels() == ["keep"]
 
 
-def test_sync_with_an_empty_spec_preserves_secrets(ledger):
+def test_sync_with_an_empty_spec_preserves_secrets(ledger, policy):
     """An empty spec parses to no entries, so nothing is replaced."""
-    ledger.add_secret("keep", "value")
-    assert ledger.sync_secrets_from_env("") == []
-    assert ledger.check_secret("value") == "keep"
-    assert ledger.sync_secrets_from_env("# only a comment") == []
-    assert ledger.check_secret("value") == "keep"
-    assert ledger.list_secret_labels() == ["keep"]
+    policy.add_secret("keep", "value")
+    assert policy.sync_secrets_from_env("") == []
+    assert policy.check_secret("value") == "keep"
+    assert policy.sync_secrets_from_env("# only a comment") == []
+    assert policy.check_secret("value") == "keep"
+    assert policy.list_secret_labels() == ["keep"]
 
 
-def test_list_secret_labels_with_no_spec_returns_nothing(ledger):
-    assert ledger.list_secret_labels() == []
+def test_list_secret_labels_with_no_spec_returns_nothing(ledger, policy):
+    assert policy.list_secret_labels() == []
 
 
 # ------------------------------------------------------- init() itself
 
-def test_init_with_a_bare_filename_creates_no_directory(ledger, monkeypatch, tmp_path):
+def test_init_with_a_bare_filename_creates_no_directory(ledger, monkeypatch, tmp_path, db):
     """DB with no directory component: dirname is '', and '' is not a path.
 
     A relative filename is the case where dirname is empty, so the makedirs
     branch is skipped. Run inside tmp_path so the file lands there.
     """
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(ledger, "DB", "ledger.sqlite3")
-    assert ledger.init() == "ledger.sqlite3"
+    monkeypatch.setattr(db, "DB", "ledger.sqlite3")
+    assert db.init() == "ledger.sqlite3"
     assert (tmp_path / "ledger.sqlite3").exists()
 
 
-def test_init_secrets_with_a_blank_spec_loads_nothing(ledger):
+def test_init_secrets_with_a_blank_spec_loads_nothing(ledger, policy):
     """A spec of blank lines parses to no entries, so nothing is replaced."""
-    ledger.add_secret("keep", "value")
-    loaded, total = ledger.init_secrets_from_env("\n# comment\n")
+    policy.add_secret("keep", "value")
+    loaded, total = policy.init_secrets_from_env("\n# comment\n")
     assert (loaded, total) == (False, 0)
-    assert ledger.list_secret_labels() == ["keep"]
+    assert policy.list_secret_labels() == ["keep"]
 
 
-def test_init_secrets_with_a_bare_secret_derives_the_label(ledger):
-    loaded, total = ledger.init_secrets_from_env("just-a-secret")
+def test_init_secrets_with_a_bare_secret_derives_the_label(ledger, policy):
+    loaded, total = policy.init_secrets_from_env("just-a-secret")
     assert (loaded, total) == (True, 1)
-    assert ledger.list_secret_labels() == ["secret-just-a-s"]
+    assert policy.list_secret_labels() == ["secret-just-a-s"]
 
 
-def test_init_secrets_skips_a_line_with_an_empty_secret(ledger):
+def test_init_secrets_skips_a_line_with_an_empty_secret(ledger, policy):
     """:'label:' with nothing after it is not a secret."""
-    loaded, total = ledger.init_secrets_from_env("a:one\nb:")
+    loaded, total = policy.init_secrets_from_env("a:one\nb:")
     assert (loaded, total) == (True, 1)
-    assert ledger.list_secret_labels() == ["a"]
+    assert policy.list_secret_labels() == ["a"]
 
 
-def test_init_creates_the_directory_when_there_is_one(ledger, monkeypatch, tmp_path):
+def test_init_creates_the_directory_when_there_is_one(ledger, monkeypatch, tmp_path, db):
     nested = tmp_path / "a" / "b" / "ledger.sqlite3"
-    monkeypatch.setattr(ledger, "DB", str(nested))
-    ledger.init()
+    monkeypatch.setattr(db, "DB", str(nested))
+    db.init()
     assert nested.parent.is_dir()

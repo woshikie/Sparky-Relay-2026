@@ -159,8 +159,7 @@ def test_the_failure_says_where_it_looked(monkeypatch, tmp_path):
     assert "README" in str(exc.value)
 
 
-def test_the_failure_explains_that_credentials_are_optional(monkeypatch,
-                                                            tmp_path):
+def test_the_failure_explains_that_credentials_are_optional(monkeypatch, tmp_path):
     monkeypatch.delenv("TELEGRAM_BOT_TOKEN", raising=False)
     cfg = reload_with(monkeypatch, RELAY_STATE_DIR=str(tmp_path))
     with pytest.raises(SystemExit) as exc:
@@ -177,12 +176,12 @@ def test_state_paths_hang_off_the_state_dir(monkeypatch, tmp_path):
     assert cfg.LOGS == str(tmp_path / "logs")
 
 
-def test_the_state_dir_is_created_on_demand(monkeypatch, tmp_path):
+def test_the_state_dir_is_created_on_demand(monkeypatch, tmp_path, db):
     deep = tmp_path / "deep" / "path"
     reload_with(monkeypatch, RELAY_STATE_DIR=str(deep))
     import importlib
-    ledger = importlib.import_module("relay.store.ledger")
-    ledger.init()
+    db = importlib.import_module("relay.store.db")
+    db.init()
     assert (deep / "ledger.sqlite3").exists()
 
 

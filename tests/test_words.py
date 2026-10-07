@@ -39,7 +39,7 @@ def test_no_string_contains_a_password(words, ledger):
     assert checked > 20
 
 
-def test_nothing_echoes_a_preset_password(words, bot, monkeypatch):
+def test_nothing_echoes_a_preset_password(words, bot, monkeypatch, db):
     """Even the preset is only ever named by username."""
     monkeypatch.setenv("SITE_USERNAME", "testuser")
     monkeypatch.setenv("SITE_PASSWORD", "PRESETPASS-SECRET")
@@ -60,8 +60,8 @@ def _refuse(monkeypatch, tmp_path, **env):
     from conftest import reload_with
     cfg = reload_with(monkeypatch, RELAY_STATE_DIR=str(tmp_path), **env)
     from relay.telegram import access
-    from relay.store import ledger
-    ledger.init()
+    from relay.store import db
+    db.init()
     return access, access.check(4242)
 
 
@@ -87,7 +87,7 @@ def test_a_secret_need_shows_the_prompt(monkeypatch, tmp_path, bot):
 def test_a_throttled_chat_is_told_to_wait(monkeypatch, tmp_path, bot):
     acc, d = _refuse(monkeypatch, tmp_path, ACCESS_MODE="shared_secret",
                      SHARED_SECRETS="a:one")
-    acc.ledger.init_secrets_from_env("a:one")
+    acc.policy.init_secrets_from_env("a:one")
     acc.present_secret(4242, "wrong")
     d = acc.check(4242)
     assert d.why == "secret_throttled"

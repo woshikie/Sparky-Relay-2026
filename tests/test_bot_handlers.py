@@ -196,14 +196,14 @@ def test_start_refuses_a_second_claim(bot, access):
     assert not access.check(12)
 
 
-def test_start_in_shared_secret_mode_prompts(bot, monkeypatch, tmp_path):
+def test_start_in_shared_secret_mode_prompts(bot, monkeypatch, tmp_path, db):
     from conftest import reload_with
     reload_with(monkeypatch, ACCESS_MODE="shared_secret",
                 RELAY_STATE_DIR=str(tmp_path))
     from relay.telegram import access
     import relay.telegram as reloaded
-    from relay.store import ledger
-    ledger.init()
+    from relay.store import db
+    db.init()
     upd = FakeUpdate(chat_id=13)
     run(reloaded.on_start(upd, None))
     assert "Shared Secret" in upd.message.replies[0][0]
@@ -278,17 +278,16 @@ def test_an_unprompted_message_is_answered_not_swallowed(bot, access):
 
 # --------------------------------------------------- shared secret exchange
 
-def test_a_correct_secret_is_accepted_and_the_message_deleted(bot, monkeypatch,
-                                                             tmp_path):
+def test_a_correct_secret_is_accepted_and_the_message_deleted(bot, monkeypatch, tmp_path, policy, db):
     from conftest import reload_with
     reload_with(monkeypatch, ACCESS_MODE="shared_secret",
                 SHARED_SECRETS="testuser:s3cret-passphrase",
                 RELAY_STATE_DIR=str(tmp_path))
     from relay.telegram import access
     import relay.telegram as reloaded
-    from relay.store import ledger
-    ledger.init()
-    ledger.init_secrets_from_env("testuser:s3cret-passphrase")
+    from relay.store import db, policy
+    db.init()
+    policy.init_secrets_from_env("testuser:s3cret-passphrase")
     upd = FakeUpdate(chat_id=20, text="s3cret-passphrase")
     run(reloaded.on_text(upd, None))
     assert access.check(20)
@@ -296,33 +295,32 @@ def test_a_correct_secret_is_accepted_and_the_message_deleted(bot, monkeypatch,
     assert "accepted" in upd.message.replies[0][0]
 
 
-def test_a_wrong_secret_is_rejected_and_the_message_deleted(bot, monkeypatch,
-                                                           tmp_path):
+def test_a_wrong_secret_is_rejected_and_the_message_deleted(bot, monkeypatch, tmp_path, policy, db):
     from conftest import reload_with
     reload_with(monkeypatch, ACCESS_MODE="shared_secret",
                 SHARED_SECRETS="testuser:s3cret-passphrase",
                 RELAY_STATE_DIR=str(tmp_path))
     from relay.telegram import access
     import relay.telegram as reloaded
-    from relay.store import ledger
-    ledger.init()
-    ledger.init_secrets_from_env("testuser:s3cret-passphrase")
+    from relay.store import db, policy
+    db.init()
+    policy.init_secrets_from_env("testuser:s3cret-passphrase")
     upd = FakeUpdate(chat_id=21, text="guess")
     run(reloaded.on_text(upd, None))
     assert not access.check(21)
     assert upd.message.deleted
 
 
-def test_a_throttled_chat_is_told_to_wait(bot, monkeypatch, tmp_path):
+def test_a_throttled_chat_is_told_to_wait(bot, monkeypatch, tmp_path, policy, db):
     from conftest import reload_with
     reload_with(monkeypatch, ACCESS_MODE="shared_secret",
                 SHARED_SECRETS="testuser:s3cret-passphrase",
                 RELAY_STATE_DIR=str(tmp_path))
     from relay.telegram import access
     import relay.telegram as reloaded
-    from relay.store import ledger
-    ledger.init()
-    ledger.init_secrets_from_env("testuser:s3cret-passphrase")
+    from relay.store import db, policy
+    db.init()
+    policy.init_secrets_from_env("testuser:s3cret-passphrase")
     run(reloaded.on_text(FakeUpdate(chat_id=22, text="guess"), None))
     upd = FakeUpdate(chat_id=22, text="s3cret-passphrase")
     run(reloaded.on_text(upd, None))
@@ -340,14 +338,14 @@ def test_a_non_secret_never_reaches_the_prompt(bot, access):
 
 # ---------------------------------------------------------- preset choice
 
-def test_the_preset_choice_is_offered_when_configured(bot, monkeypatch, tmp_path):
+def test_the_preset_choice_is_offered_when_configured(bot, monkeypatch, tmp_path, db):
     from conftest import reload_with
     reload_with(monkeypatch, SITE_USERNAME="testuser", SITE_PASSWORD="pw",
                 RELAY_STATE_DIR=str(tmp_path))
     from relay.telegram import access
     import relay.telegram as reloaded
-    from relay.store import ledger
-    ledger.init()
+    from relay.store import db
+    db.init()
     access.grant(1, "claim")
     upd = FakeUpdate(chat_id=1)
     run(reloaded.on_start(upd, None))
@@ -355,14 +353,14 @@ def test_the_preset_choice_is_offered_when_configured(bot, monkeypatch, tmp_path
     assert reloaded.prompt_stage(1)["stage"] == "choose_preset"
 
 
-def test_choosing_the_preset_uses_it(bot, monkeypatch, tmp_path):
+def test_choosing_the_preset_uses_it(bot, monkeypatch, tmp_path, db):
     from conftest import reload_with
     reload_with(monkeypatch, SITE_USERNAME="testuser", SITE_PASSWORD="pw",
                 RELAY_STATE_DIR=str(tmp_path))
     from relay.telegram import access
     import relay.telegram as reloaded
-    from relay.store import ledger
-    ledger.init()
+    from relay.store import db
+    db.init()
     access.grant(1, "claim")
     reloaded.set_stage(1, "choose_preset")
     q = FakeQuery("cred:preset", chat_id=1)
@@ -372,14 +370,14 @@ def test_choosing_the_preset_uses_it(bot, monkeypatch, tmp_path):
     assert reloaded.site_credentials(1) == ("testuser", "pw")
 
 
-def test_choosing_new_moves_to_the_username(bot, monkeypatch, tmp_path):
+def test_choosing_new_moves_to_the_username(bot, monkeypatch, tmp_path, db):
     from conftest import reload_with
     reload_with(monkeypatch, SITE_USERNAME="testuser", SITE_PASSWORD="pw",
                 RELAY_STATE_DIR=str(tmp_path))
     from relay.telegram import access
     import relay.telegram as reloaded
-    from relay.store import ledger
-    ledger.init()
+    from relay.store import db
+    db.init()
     access.grant(1, "claim")
     reloaded.set_stage(1, "choose_preset")
     upd = FakeUpdate(chat_id=1)
@@ -555,15 +553,15 @@ def test_status_counts_the_recorded_submissions(bot, granted, ledger):
     assert "Submissions recorded:** 2" in upd.message.replies[0][0]
 
 
-def test_status_lists_the_chats_with_access(bot, granted, ledger):
-    ledger.grant(9, "manual")
+def test_status_lists_the_chats_with_access(bot, granted, ledger, policy):
+    policy.grant(9, "manual")
     upd = FakeUpdate(chat_id=1)
     run(bot.on_status(upd, None))
     assert "9" in upd.message.replies[0][0]
 
 
-def test_status_lists_the_chats_denied(bot, granted, ledger):
-    ledger.deny(11, "spam")
+def test_status_lists_the_chats_denied(bot, granted, ledger, policy):
+    policy.deny(11, "spam")
     upd = FakeUpdate(chat_id=1)
     run(bot.on_status(upd, None))
     assert "11" in upd.message.replies[0][0]
@@ -640,9 +638,7 @@ def test_a_photo_from_an_unclaimed_chat_is_refused(bot, access):
     assert "whitelist" in upd.message.said
 
 
-def test_a_photo_with_no_credentials_and_no_presets_offers_them(bot, access,
-                                                                monkeypatch,
-                                                                tmp_path):
+def test_a_photo_with_no_credentials_and_no_presets_offers_them(bot, access, monkeypatch, tmp_path):
     """No stored credentials and nothing preset: the prompt is due."""
     monkeypatch.setattr(bot.config, "INBOX", str(tmp_path))
     access.grant(8, "manual")
@@ -667,8 +663,7 @@ def test_sync_before_credentials_offers_them(bot, access):
     assert "username" in upd.message.said.lower()
 
 
-def test_sync_completes_when_the_site_has_nothing(bot, access, ledger,
-                                                  monkeypatch, session):
+def test_sync_completes_when_the_site_has_nothing(bot, access, ledger, monkeypatch, session):
     """An empty sync runs the whole path and stores nothing.
 
     The final text goes to the scratch message, which reply_text() returns as
@@ -696,8 +691,7 @@ def test_sync_completes_when_the_site_has_nothing(bot, access, ledger,
 
 # -------------------------------------------- the remaining on_text branches
 
-def test_an_empty_message_when_a_secret_is_needed_is_ignored(bot, monkeypatch,
-                                                             tmp_path):
+def test_an_empty_message_when_a_secret_is_needed_is_ignored(bot, monkeypatch, tmp_path):
     """A blank message must not be treated as a secret attempt."""
     from conftest import reload_with
     reload_with(monkeypatch, ACCESS_MODE="shared_secret",
@@ -708,8 +702,7 @@ def test_an_empty_message_when_a_secret_is_needed_is_ignored(bot, monkeypatch,
     assert upd.message.replies == []
 
 
-def test_a_throttled_chat_is_told_why_the_secret_was_deleted(bot, monkeypatch,
-                                                             tmp_path):
+def test_a_throttled_chat_is_told_why_the_secret_was_deleted(bot, monkeypatch, tmp_path, policy, db):
     """The message carrying a secret is scrubbed even when it did not work.
 
     Falling through to the 'nothing to do' reply would leave a password
@@ -720,9 +713,9 @@ def test_a_throttled_chat_is_told_why_the_secret_was_deleted(bot, monkeypatch,
                 SHARED_SECRETS="testuser:s3cret-passphrase",
                 RELAY_STATE_DIR=str(tmp_path))
     import relay.telegram as reloaded
-    from relay.store import ledger
-    ledger.init()
-    ledger.init_secrets_from_env("testuser:s3cret-passphrase")
+    from relay.store import db, policy
+    db.init()
+    policy.init_secrets_from_env("testuser:s3cret-passphrase")
     run(reloaded.on_text(FakeUpdate(chat_id=31, text="guess"), None))
     upd = FakeUpdate(chat_id=31, text="s3cret-passphrase")
     run(reloaded.on_text(upd, None))
@@ -744,8 +737,7 @@ def test_a_password_that_fails_to_store_says_so(bot, access, monkeypatch):
     assert "could not" in upd.message.said.lower() or "failed" in upd.message.said.lower()
 
 
-def test_a_password_that_fails_to_store_still_clears_the_stage(bot, access,
-                                                               monkeypatch):
+def test_a_password_that_fails_to_store_still_clears_the_stage(bot, access, monkeypatch):
     """The stage is cleared in a finally, so a failure cannot wedge the prompt."""
     access.grant(33, "manual")
     bot.set_stage(33, "password", username="testuser")
@@ -821,7 +813,7 @@ def test_a_preset_that_is_no_longer_configured_is_refused(bot, monkeypatch):
 
 def test_the_backup_is_delivered_to_telegram_itself(bot, ledger, tmp_path):
     """The nightly backup goes to Telegram, so it survives the host."""
-    bot.ledger.remember_user(1, "testuser")
+    bot.policy.remember_user(1, "testuser")
     bot.ledger.record("2026-10-03", 2831, "2,831", "October 3rd, 2026", 52)
 
     sent = []
@@ -894,16 +886,14 @@ def _photo_with_failing_session(bot, access, ledger, exc, tmp_path, monkeypatch,
     return upd
 
 
-def test_a_photo_with_no_credentials_says_so(bot, access, ledger, tmp_path,
-                                             monkeypatch, session):
+def test_a_photo_with_no_credentials_says_so(bot, access, ledger, tmp_path, monkeypatch, session):
     upd = _photo_with_failing_session(bot, access, ledger, bot.NoCredentials(),
                                       tmp_path, monkeypatch, session)
     run(bot.on_photo(upd, None))
     assert "username" in upd.message.said.lower()
 
 
-def test_a_photo_with_a_rotated_token_says_the_password_is_gone(
-        bot, access, ledger, tmp_path, monkeypatch, session):
+def test_a_photo_with_a_rotated_token_says_the_password_is_gone(bot, access, ledger, tmp_path, monkeypatch, session):
     """A rotated bot token means the vault key no longer fits. The old password
     is unrecoverable by design, and the reply has to say so."""
     from relay.store import vault
@@ -914,8 +904,7 @@ def test_a_photo_with_a_rotated_token_says_the_password_is_gone(
     assert "gone" in upd.message.said.lower() or "again" in upd.message.said.lower()
 
 
-def test_a_photo_with_too_little_memory_says_so(bot, access, ledger, tmp_path,
-                                                monkeypatch, session):
+def test_a_photo_with_too_little_memory_says_so(bot, access, ledger, tmp_path, monkeypatch, session):
     upd = _photo_with_failing_session(
         bot, access, ledger,
         bot.memory.InsufficientMemory({"available_mb": 10, "min_free_mb": 780}),
@@ -924,8 +913,7 @@ def test_a_photo_with_too_little_memory_says_so(bot, access, ledger, tmp_path,
     assert "memory" in upd.message.said.lower()
 
 
-def test_a_photo_where_the_site_read_nothing_says_so(bot, access, ledger,
-                                                     tmp_path, monkeypatch, session):
+def test_a_photo_where_the_site_read_nothing_says_so(bot, access, ledger, tmp_path, monkeypatch, session):
     upd = _photo_with_failing_session(
         bot, access, ledger, bot.relay_site.NoStepsFound(),
         tmp_path, monkeypatch, session)
@@ -933,8 +921,7 @@ def test_a_photo_where_the_site_read_nothing_says_so(bot, access, ledger,
     assert "could not read" in upd.message.said.lower()
 
 
-def test_a_photo_where_the_site_changed_says_so(bot, access, ledger, tmp_path,
-                                                monkeypatch, session):
+def test_a_photo_where_the_site_changed_says_so(bot, access, ledger, tmp_path, monkeypatch, session):
     upd = _photo_with_failing_session(
         bot, access, ledger,
         bot.relay_site.SiteChanged("the upload form is gone"),
@@ -943,8 +930,7 @@ def test_a_photo_where_the_site_changed_says_so(bot, access, ledger, tmp_path,
     assert "changed" in upd.message.said.lower()
 
 
-def test_a_photo_that_fails_for_any_other_reason_says_so(bot, access, ledger,
-                                                         tmp_path, monkeypatch, session):
+def test_a_photo_that_fails_for_any_other_reason_says_so(bot, access, ledger, tmp_path, monkeypatch, session):
     """The catch-all: a submission must never fail because of a progress line."""
     upd = _photo_with_failing_session(
         bot, access, ledger, RuntimeError("something unexpected"),
@@ -953,8 +939,7 @@ def test_a_photo_that_fails_for_any_other_reason_says_so(bot, access, ledger,
     assert "failed" in upd.message.said.lower()
 
 
-def test_a_photo_failure_reports_on_the_original_message(bot, access, ledger,
-                                                         tmp_path, monkeypatch, session):
+def test_a_photo_failure_reports_on_the_original_message(bot, access, ledger, tmp_path, monkeypatch, session):
     """The failure reply goes to the message the user sent, not the checklist.
 
     The scratch is a separate object that reply_text() returns, so the
@@ -1155,8 +1140,7 @@ def test_a_confirm_from_an_unauthorised_chat_is_refused(bot, access):
     assert q.answers and q.answers[0][1]
 
 
-def test_the_recording_line_names_the_number_and_date(bot, access, monkeypatch,
-                                                      session):
+def test_the_recording_line_names_the_number_and_date(bot, access, monkeypatch, session):
     """The intermediate edit: the user sees it is working on their number."""
     access.grant(74, "manual")
     bot.pending.put((74, 100), {

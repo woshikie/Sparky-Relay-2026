@@ -12,6 +12,7 @@ place to patch. Everything re-exported below is read, never rebound.
 """
 
 import relay.store.ledger as ledger  # noqa: F401
+import relay.store.policy as policy  # noqa: F401
 import relay.store.vault as vault  # noqa: F401
 import relay.telegram.access as access  # noqa: F401  (re-exported for callers)
 import relay.telegram.pending as pending  # noqa: F401

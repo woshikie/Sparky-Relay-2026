@@ -74,7 +74,9 @@ podman compose exec relay /app/.venv/bin/python -u check_container.py
 | `access.py` | the Access Modes, behind one `check()` |
 | `relay/site/driver.py` | headless Firefox: upload, read, date, commit |
 | `relay/store/vault.py` | AES-GCM sealing for a supplied password |
-| `relay/store/ledger.py` | SQLite: Submissions, credentials, grants, denials |
+| `relay/store/ledger.py` | SQLite hot rows: Submissions, site days, credentials |
+| `relay/store/policy.py` | SQLite policy: grants, denials, secrets, throttle, identity |
+| `relay/store/db.py` | SQLite plumbing both share: path, schema, connections |
 | `relay/memory.py` | the RAM budget and the pre-flight that guards it |
 | `relay/telegram/datepicker.py` | Telegram month-grid keyboard |
 | `relay/telegram/words.py` | all user-facing copy |
