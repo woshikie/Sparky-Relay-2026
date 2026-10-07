@@ -1,4 +1,4 @@
-# Step Relay — Domain Model
+# Sparky Relay 2026 — Domain Model
 
 A Telegram bot that forwards personal step-tracker screenshots to the internal
 "Olympics 2026" competition site, and confirms each submission with the user

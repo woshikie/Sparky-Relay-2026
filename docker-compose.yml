@@ -1,4 +1,4 @@
-# Relay — container run, podman or docker.
+# Sparky Relay 2026 — container run, podman or docker.
 #
 #   podman build --format docker -t sparky-relay-2026:latest .
 #   set -a; . ./secrets.env; set +a       load secrets into the environment

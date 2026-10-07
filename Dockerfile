@@ -1,4 +1,4 @@
-# Relay — Telegram step bot for Olympics 2026
+# Sparky Relay 2026 — Telegram step bot for Olympics 2026
 #
 # Alpine base. That is a deliberate choice with a caveat worth knowing:
 # Alpine is musl, and Firefox's official builds are glibc, so we use Alpine's
