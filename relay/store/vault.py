@@ -111,8 +111,9 @@ def can_open(token: str, blob: str | None) -> bool:
 def fingerprint(token: str, username: str) -> str:
     """Non-reversible id for a credential pair, for display and comparison.
 
-    Lets /status show "credentials for <Original Author's username> are present" without decrypting,
-    and lets a new token be compared against a stored entry without exposing it.
+    Lets /status show whose credentials are present without decrypting,
+    and lets a new token be compared against a stored entry without
+    exposing it.
     """
     h = hmac.new(token.encode("utf-8"), b"relay-fingerprint", hashlib.sha256).digest()
     return hmac.new(h, username.encode("utf-8"), hashlib.sha256).hexdigest()[:16]

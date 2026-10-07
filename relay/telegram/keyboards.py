@@ -111,8 +111,8 @@ LABEL_NEW_CREDS = "✏️ Different account"
 def label_use_preset() -> str:
     """Label for the use-preset-credentials button.
 
-    'Use <Original Author's username>' — the username is part of the button, so it has to come
-    from config rather than being hard-coded here.
+    'Use <name>' — the username is part of the button, so it has to
+    come from config rather than being hard-coded here.
     """
     return "✅ Use %s" % config.SITE_USERNAME
 
