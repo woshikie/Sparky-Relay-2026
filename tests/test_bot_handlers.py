@@ -616,8 +616,28 @@ def test_status_refreshes_the_keyboard(bot, granted):
 
 # ------------------------------------------------------------- on_photo
 
-def test_a_photo_before_credentials_asks_for_them(bot, access, ledger):
+def _session_without_browser(session, monkeypatch):
+    """Real sign_in, no browser: the session yields only after resolving creds.
+
+    Two photo tests need the NoCredentials failure, which lives in the real
+    sign_in -- but entering a real session launches real Firefox. This double
+    keeps the credential resolution and skips the launch, so the suite runs
+    anywhere, including CI runners with no browser at all.
+    """
+
+    @contextlib.asynccontextmanager
+    async def fake(chat_id=None, progress=None):
+        await session.sign_in(chat_id, progress)
+        yield None
+        raise AssertionError("entered a session that should have failed sign-in")
+
+    monkeypatch.setattr(session, "browser_session", fake)
+
+
+def test_a_photo_before_credentials_asks_for_them(bot, access, ledger,
+                                                        monkeypatch, session):
     """The existing test asserts the reply; this one asserts the prompt."""
+    _session_without_browser(session, monkeypatch)
     access.grant(3, "manual")
     upd = FakeUpdate(chat_id=3)
     upd.message.photo = [FakePhotoSize(_jpeg())]
@@ -638,8 +658,10 @@ def test_a_photo_from_an_unclaimed_chat_is_refused(bot, access):
     assert "whitelist" in upd.message.said
 
 
-def test_a_photo_with_no_credentials_and_no_presets_offers_them(bot, access, monkeypatch, tmp_path):
+def test_a_photo_with_no_credentials_and_no_presets_offers_them(
+        bot, access, monkeypatch, tmp_path, session):
     """No stored credentials and nothing preset: the prompt is due."""
+    _session_without_browser(session, monkeypatch)
     monkeypatch.setattr(bot.config, "INBOX", str(tmp_path))
     access.grant(8, "manual")
     upd = FakeUpdate(chat_id=8)
