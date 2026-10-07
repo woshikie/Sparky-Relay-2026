@@ -288,6 +288,16 @@ def grant(chat_id: int, how: str) -> None:
         )
 
 
+def claim_if_empty(chat_id: int, how: str, granted_at: str) -> bool:
+    with conn() as c:
+        row = c.execute(
+            "INSERT INTO access (chat_id, how, granted_at) "
+            "SELECT ?, ?, ? WHERE NOT EXISTS (SELECT 1 FROM access)",
+            (chat_id, how, granted_at),
+        )
+        return row.rowcount == 1
+
+
 def has_access(chat_id: int) -> str | None:
     with conn() as c:
         r = c.execute("SELECT how FROM access WHERE chat_id=?", (chat_id,)).fetchone()
@@ -317,6 +327,12 @@ def is_denied(chat_id: int) -> bool:
     with conn() as c:
         r = c.execute("SELECT 1 FROM denied WHERE chat_id=?", (chat_id,)).fetchone()
     return r is not None
+
+
+def undeny(chat_id: int) -> bool:
+    with conn() as c:
+        c.execute("DELETE FROM denied WHERE chat_id=?", (chat_id,))
+    return True
 
 
 def all_denied() -> list[dict[str, object]]:
@@ -373,7 +389,8 @@ def init_secrets_from_env(spec: str | None) -> tuple[bool, int]:
 
     Returns (loaded_now, total). Does nothing when spec is None, so an operator
     who adds secrets with /addsecret is not clobbered by a restart with an
-    unchanged environment.
+    unchanged environment. An empty or comment-only spec is likewise a no-op:
+    nothing is cleared.
     """
     if spec is None:
         return False, len(list_secret_labels())
@@ -409,11 +426,14 @@ def sync_secrets_from_env(spec: str | None) -> list[str]:
 
     Format: one entry per line, either "label:secret" or just "secret" (the
     label then defaults to the first 8 characters, which is enough to identify
-    a person by which line to revoke).
+    a person by which line to revoke). An empty or comment-only spec is a
+    no-op: the stored set is left untouched.
     """
     if spec is None:
         return []
     entries = _parse_secret_spec(spec)
+    if not entries:
+        return []
     with conn() as c:
         c.execute("DELETE FROM shared_secrets")
     for label, secret in entries:

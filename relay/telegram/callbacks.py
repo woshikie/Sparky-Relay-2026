@@ -85,9 +85,7 @@ async def _cb_date(update: Update, ctx: ContextTypes.DEFAULT_TYPE | None) -> Non
     elif kind == "yday":
         st["date"] = sg_today() - datetime.timedelta(days=1)
     elif kind == "back":
-        await q.edit_message_reply_markup(
-            reply_markup=kb_date_default(st["steps"], st["reported"])
-        )
+        await q.edit_message_reply_markup(reply_markup=kb_date_default())
         await q.answer()
         return
     elif kind == "pick":
@@ -151,7 +149,7 @@ async def _cb_date(update: Update, ctx: ContextTypes.DEFAULT_TYPE | None) -> Non
         await q.edit_message_text(
             words.overwrite_warning(steps, prev_steps, label),
             parse_mode=ParseMode.MARKDOWN,
-            reply_markup=kb_overwrite(steps, prev_steps, iso),
+            reply_markup=kb_overwrite(prev_steps),
         )
         await q.answer("this would lower your recorded steps", show_alert=True)
         return
@@ -165,7 +163,7 @@ async def _cb_date(update: Update, ctx: ContextTypes.DEFAULT_TYPE | None) -> Non
     await q.edit_message_text(
         words.confirming(steps, reported, label, iso),
         parse_mode=ParseMode.MARKDOWN,
-        reply_markup=kb_confirm(steps, reported, iso),
+        reply_markup=kb_confirm(reported),
     )
     await q.answer()
 

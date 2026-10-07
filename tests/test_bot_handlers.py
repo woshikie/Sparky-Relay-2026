@@ -683,10 +683,6 @@ def test_sync_completes_when_the_site_has_nothing(bot, access, ledger,
         def read_days(self):
             return []
 
-    async def fake_sign_in(chat_id, progress=None):
-        return None
-    monkeypatch.setattr(session, "sign_in", fake_sign_in)
-
     @contextlib.asynccontextmanager
     async def fake_session(chat_id=None, progress=None):
         yield EmptyRelay()
@@ -1180,9 +1176,6 @@ def test_the_recording_line_names_the_number_and_date(bot, access, monkeypatch,
     async def fake_session(chat_id=None, progress=None):
         yield R()
     monkeypatch.setattr(session, "browser_session", fake_session)
-    async def fake_sign_in(chat_id, progress=None):
-        return None
-    monkeypatch.setattr(session, "sign_in", fake_sign_in)
 
     q = FakeQuery("ok:go", chat_id=74)
     upd = type("U", (), {})()

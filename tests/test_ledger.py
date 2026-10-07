@@ -170,6 +170,16 @@ def test_a_spec_that_is_none_loads_nothing(ledger):
     assert ledger.list_secret_labels() == ["keep"]
 
 
+def test_sync_with_an_empty_spec_preserves_secrets(ledger):
+    """An empty spec parses to no entries, so nothing is replaced."""
+    ledger.add_secret("keep", "value")
+    assert ledger.sync_secrets_from_env("") == []
+    assert ledger.check_secret("value") == "keep"
+    assert ledger.sync_secrets_from_env("# only a comment") == []
+    assert ledger.check_secret("value") == "keep"
+    assert ledger.list_secret_labels() == ["keep"]
+
+
 def test_list_secret_labels_with_no_spec_returns_nothing(ledger):
     assert ledger.list_secret_labels() == []
 

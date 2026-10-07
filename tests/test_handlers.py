@@ -41,7 +41,7 @@ def test_sg_is_eight_hours_ahead_of_utc(bot):
 # ----------------------------------------------------------------- keyboards
 
 def test_the_date_keyboard_offers_today_and_yesterday(bot):
-    kb = bot.kb_date_default(6532, "6,532")
+    kb = bot.kb_date_default()
     labels = [b.text for row in kb.inline_keyboard for b in row]
     assert any("Today" in t for t in labels)
     assert any("Yesterday" in t for t in labels)
@@ -50,7 +50,7 @@ def test_the_date_keyboard_offers_today_and_yesterday(bot):
 
 def test_the_date_keyboard_shows_the_actual_dates(bot):
     """A label that says 'Today' is not enough; it has to say which day."""
-    kb = bot.kb_date_default(6532, "6,532")
+    kb = bot.kb_date_default()
     t = bot.sg_today()
     y = t - datetime.timedelta(days=1)
     labels = " ".join(b.text for row in kb.inline_keyboard for b in row)
@@ -59,7 +59,7 @@ def test_the_date_keyboard_shows_the_actual_dates(bot):
 
 
 def test_the_confirm_keyboard_carries_the_number(bot):
-    kb = bot.kb_confirm(6532, "6,532", "2026-10-04")
+    kb = bot.kb_confirm("6,532")
     labels = " ".join(b.text for row in kb.inline_keyboard for b in row)
     assert "6,532" in labels
     assert "Confirm" in labels
@@ -68,7 +68,7 @@ def test_the_confirm_keyboard_carries_the_number(bot):
 
 def test_the_overwrite_keyboard_shows_what_would_be_lost(bot):
     """The destructive choice must show the number it destroys."""
-    kb = bot.kb_overwrite(700, 6532, "2026-10-04")
+    kb = bot.kb_overwrite(6532)
     labels = " ".join(b.text for row in kb.inline_keyboard for b in row)
     assert "6,532" in labels          # what is currently recorded
     assert "Overwrite" in labels

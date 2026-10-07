@@ -99,13 +99,7 @@ def claim(chat_id: int, username: str | None = None) -> bool:
     single event loop the old SELECT-then-INSERT could not interleave; this
     is simpler as well as safer.)
     """
-    with ledger.conn() as c:
-        row = c.execute(
-            "INSERT INTO access (chat_id, how, granted_at) "
-            "SELECT ?, ?, ? WHERE NOT EXISTS (SELECT 1 FROM access)",
-            (chat_id, "claim", ledger.now()),
-        )
-        claimed = row.rowcount == 1
+    claimed = ledger.claim_if_empty(chat_id, "claim", ledger.now())
     if claimed:
         ledger.remember_user(chat_id, username)
     return claimed
@@ -162,8 +156,7 @@ def deny(chat_id: int, reason: str = "") -> bool:
 
 
 def undeny(chat_id: int) -> bool:
-    with ledger.conn() as c:
-        c.execute("DELETE FROM denied WHERE chat_id=?", (int(chat_id),))
+    ledger.undeny(int(chat_id))
     return True
 
 

@@ -127,7 +127,7 @@ async def on_photo(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     await msg.reply_text(
         words.choose_date(steps, reported, ""),
         parse_mode=ParseMode.MARKDOWN,
-        reply_markup=kb_date_default(steps, reported),
+        reply_markup=kb_date_default(),
     )
 
     pending_mod.put(

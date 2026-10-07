@@ -320,9 +320,6 @@ def test_a_changed_second_read_aborts_the_commit(pending, monkeypatch, session):
     async def fake_session(chat_id=None, progress=None):
         yield R()
     monkeypatch.setattr(session, "browser_session", fake_session)
-    async def fake_sign_in(chat_id, progress=None):
-        return None
-    monkeypatch.setattr(session, "sign_in", fake_sign_in)
 
     q, upd = _confirm(pending)
     run(pending.cb_ok(upd, None))
@@ -351,9 +348,6 @@ def test_an_unchanged_second_read_proceeds_to_commit(pending, monkeypatch, sessi
     async def fake_session(chat_id=None, progress=None):
         yield R()
     monkeypatch.setattr(session, "browser_session", fake_session)
-    async def fake_sign_in(chat_id, progress=None):
-        return None
-    monkeypatch.setattr(session, "sign_in", fake_sign_in)
 
     q, upd = _confirm(pending)
     run(pending.cb_ok(upd, None))
@@ -381,9 +375,6 @@ def test_the_commit_reports_what_the_site_said(pending, monkeypatch, session):
     async def fake_session(chat_id=None, progress=None):
         yield R()
     monkeypatch.setattr(session, "browser_session", fake_session)
-    async def fake_sign_in(chat_id, progress=None):
-        return None
-    monkeypatch.setattr(session, "sign_in", fake_sign_in)
 
     q, upd = _confirm(pending)
     run(pending.cb_ok(upd, None))

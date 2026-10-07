@@ -26,7 +26,7 @@ from relay.telegram.datepicker import keyboard as month_grid
 # ----------------------------------------------------------------------
 
 
-def kb_date_default(steps: int, reported: str) -> InlineKeyboardMarkup:
+def kb_date_default() -> InlineKeyboardMarkup:
     t = sg_today()
     y = t - datetime.timedelta(days=1)
     return InlineKeyboardMarkup(
@@ -51,7 +51,7 @@ def kb_date_default(steps: int, reported: str) -> InlineKeyboardMarkup:
     )
 
 
-def kb_confirm(steps: int, reported: str, iso: str) -> InlineKeyboardMarkup:
+def kb_confirm(reported: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [
             [
@@ -69,7 +69,7 @@ def kb_confirm(steps: int, reported: str, iso: str) -> InlineKeyboardMarkup:
     )
 
 
-def kb_overwrite(new_steps: int, old_steps: int, iso: str) -> InlineKeyboardMarkup:
+def kb_overwrite(old_steps: int) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [
             [
