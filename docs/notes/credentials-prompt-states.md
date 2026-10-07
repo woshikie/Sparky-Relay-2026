@@ -15,17 +15,27 @@ stateDiagram-v2
     username --> password : valid 3-40 char text
     username --> username : invalid text (stays)
     password --> ready : text stored (clears first, even on failure)
-    ready --> [*] : TTL expires
-    choose_preset --> [*] : Cancel / TTL / /login restarts
-    username --> [*] : Cancel / TTL / /login restarts
-    password --> [*] : Cancel / TTL / store failure / /login restarts
+    ready --> username : /login, Different account
+    ready --> choose_preset : /login (preset configured)
+    ready --> [*] : Cancel, logout, TTL expires
+    choose_preset --> [*] : Cancel, logout, TTL
+    username --> [*] : Cancel, logout, TTL
+    password --> [*] : Cancel, logout, TTL, store failure
 ```
+
+Restart edges fire from any state, not just `[*]`: `/start`, `/login`,
+a secret accepted, and the failure-prompt after an upload all land in
+`choose_preset`/`username` unconditionally, discarding whatever stage was
+in progress. (`/login` clears first, the rest overwrite; the outcome is
+identical.) In particular a secret accepted mid-prompt, or a screenshot
+sent mid-prompt whose upload then needs credentials, restarts the prompt
+from the top — the half-answered username is gone.
 
 ## States
 
 | State | Keys | Meaning |
 |---|---|---|
-| *(none)* | — | No prompt in progress. Unknown text gets `no_prompt()`. |
+| *(none)* | — | No prompt in progress. Unknown text from an authorised chat gets `no_prompt()` — denied chats get a refusal and secret-owed chats get the secret exchange instead, and reply-keyboard buttons dispatch before any of it. |
 | `choose_preset` | stage, at | Preset credentials exist; the chat picks preset or typed. |
 | `username` | stage, at | Waiting for the Site username. |
 | `password` | stage, at, username, preset | Waiting for the password; carries the username forward because `set_stage` replaces the whole row rather than merging. |
@@ -33,7 +43,7 @@ stateDiagram-v2
 
 ## Transition rules
 
-- **Entry** always goes through `start_credential_stage()` (preset ? `choose_preset` : `username`) or `ask_username()` directly. `/login` clears first, so it restarts from anywhere.
+- **Entry** goes through `start_credential_stage()` (preset ? `choose_preset` : `username`) or `ask_username()` directly, with one exception: the Different-account button calls `set_stage(chat.id, "username")` itself and inlines the prompt copy. `/login` clears first, `/start` overwrites without clearing; both restart from any state, including `ready`.
 - **Empty text** in `username`/`password` is ignored, not an answer — the stage does not advance.
 - **Store failure still clears**: the password branch clears the stage in a `finally`, so a failed save cannot wedge the prompt. The user re-runs `/login`; there is no in-place retry.
 - **Cancel** clears from any stage and replies `cancelled()` with the standing keyboard.
