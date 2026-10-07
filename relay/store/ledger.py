@@ -171,3 +171,28 @@ def forget_all_credentials() -> bool:
     with db.conn() as c:
         c.execute("DELETE FROM credentials")
     return True
+
+
+def note_preset_choice(chat_id: int) -> None:
+    """Remember that this chat chose the Preset Credentials."""
+    with db.conn() as c:
+        c.execute(
+            "INSERT INTO preset_choice (chat_id, chosen_at) VALUES (?, ?)"
+            " ON CONFLICT(chat_id) DO UPDATE SET"
+            " chosen_at=excluded.chosen_at",
+            (chat_id, db.now()),
+        )
+
+
+def has_preset_choice(chat_id: int) -> bool:
+    with db.conn() as c:
+        r = c.execute(
+            "SELECT 1 FROM preset_choice WHERE chat_id=?", (chat_id,)
+        ).fetchone()
+    return r is not None
+
+
+def forget_preset_choice(chat_id: int) -> None:
+    """Drop the preset choice: logout means ask again next time."""
+    with db.conn() as c:
+        c.execute("DELETE FROM preset_choice WHERE chat_id=?", (chat_id,))

@@ -93,7 +93,8 @@ A username and password supplied out of band, via `secrets.env` or the
 environment. An optimisation for convenience, never a requirement: the Relay
 works with none of them. When Preset Credentials exist the Credentials Prompt
 offers them rather than demanding new ones, and shows the Preset *username* so
-the account can be confirmed before spending a browser launch on it.
+the account can be confirmed before spending a browser launch on it. Once
+chosen, the choice is remembered across restarts; logout forgets it.
 _Avoid_: env secrets, config credentials, defaults
 
 **Access Mode**:

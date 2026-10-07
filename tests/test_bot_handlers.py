@@ -1169,3 +1169,24 @@ def test_the_recording_line_names_the_number_and_date(bot, access, monkeypatch, 
     run(bot.cb_ok(upd, None))
     assert "6,532" in " ".join(q.message.edits)
     assert "October 4th, 2026" in " ".join(q.message.edits)
+
+
+def test_logout_forgets_the_preset_choice(bot, access, ledger, monkeypatch, tmp_path):
+    """Logout means ask again next time, even with the preset configured."""
+    from conftest import reload_with
+    reload_with(monkeypatch, SITE_USERNAME="testuser", SITE_PASSWORD="pw",
+                RELAY_STATE_DIR=str(tmp_path))
+    from relay.telegram import access as acc
+    import relay.telegram as reloaded
+    from relay.store import db
+    db.init()
+    acc.grant(1, "claim")
+    reloaded.set_stage(1, "choose_preset")
+    q = FakeQuery("cred:preset", chat_id=1)
+    upd = FakeUpdate(chat_id=1)
+    upd.callback_query = q
+    run(reloaded.on_credential_choice(upd, None))
+    assert ledger.has_preset_choice(1) is True
+    run(reloaded.on_logout(FakeUpdate(chat_id=1), None))
+    assert ledger.has_preset_choice(1) is False
+    assert reloaded.has_credentials(1) is False

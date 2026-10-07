@@ -276,3 +276,19 @@ def test_start_asks_for_a_username_when_there_are_no_presets(keyboard_bot):
     labels = labels_of(upd.message.markup())
     assert keyboard_bot.LABEL_CANCEL in labels
     assert "username" in upd.message.said.lower()
+
+def test_the_use_preset_button_records_the_choice(bot, monkeypatch, tmp_path, ledger):
+    """The button path must persist the choice like the inline path does."""
+    from conftest import reload_with
+    reload_with(monkeypatch, SITE_USERNAME="testuser", SITE_PASSWORD="pw",
+                RELAY_STATE_DIR=str(tmp_path))
+    from relay.telegram import access
+    import relay.telegram as reloaded
+    from relay.store import db
+    db.init()
+    access.grant(1, "claim")
+    label = reloaded.label_use_preset()
+    assert label in reloaded.button_actions()
+    upd = press(reloaded, label)
+    assert "preset" in upd.message.said.lower()
+    assert ledger.has_preset_choice(1) is True

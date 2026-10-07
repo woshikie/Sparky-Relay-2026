@@ -179,3 +179,30 @@ def test_status_never_includes_a_password(bot, ledger):
 def test_a_failed_secret_attempt_is_recorded(bot, access):
     access.present_secret(1, "guess")
     assert access.policy.secret_throttled(1)
+
+
+def test_a_preset_choice_survives_a_restart(bot, monkeypatch, ledger):
+    """PROMPTING dies with the process; the choice must not.
+
+    Clearing the stages simulates the restart: no stage row, same sqlite.
+    """
+    monkeypatch.setenv("SITE_USERNAME", "testuser")
+    monkeypatch.setenv("SITE_PASSWORD", "testpass123")
+    from conftest import MODULES
+    import sys
+    for name in MODULES:
+        sys.modules.pop(name, None)
+    import relay.telegram as reloaded
+    from relay.store import ledger as led
+    led.note_preset_choice(1)
+    reloaded.PROMPTING.clear()
+    assert reloaded.has_credentials(1) is True
+    assert reloaded.site_credentials(1) == ("testuser", "testpass123")
+
+
+def test_a_preset_choice_is_inert_without_the_preset(bot, monkeypatch, ledger):
+    """Removing the preset from the environment re-prompts, not traps."""
+    monkeypatch.delenv("SITE_USERNAME", raising=False)
+    monkeypatch.delenv("SITE_PASSWORD", raising=False)
+    ledger.note_preset_choice(1)
+    assert bot.has_credentials(1) is False

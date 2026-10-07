@@ -254,6 +254,7 @@ async def _run_button(
     if action == "use_preset":
         clear_stage(chat.id)
         set_stage(chat.id, "ready", username=config.SITE_USERNAME, preset=True)
+        ledger.note_preset_choice(chat.id)
         await msg.reply_text(
             words.using_preset(config.SITE_USERNAME),
             parse_mode=ParseMode.MARKDOWN,

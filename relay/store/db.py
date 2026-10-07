@@ -81,6 +81,15 @@ CREATE TABLE IF NOT EXISTS telegram_users (
   username   TEXT,
   first_seen TEXT
 );
+
+-- Chats that chose the Preset Credentials. The choice -- not the password,
+-- which stays in the environment -- so a restart does not re-prompt a chat
+-- whose answer is already configured. Inert when the preset is later
+-- removed: callers check config first.
+CREATE TABLE IF NOT EXISTS preset_choice (
+  chat_id    INTEGER PRIMARY KEY,
+  chosen_at  TEXT NOT NULL
+);
 """
 
 

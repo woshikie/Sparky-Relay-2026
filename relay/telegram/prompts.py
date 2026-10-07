@@ -40,7 +40,9 @@ def start_credential_stage(chat_id: int) -> None:
 def has_credentials(chat_id: int) -> bool:
     """True if this chat can sign in right now."""
     st = prompt_stage(chat_id) or {}
-    if st.get("preset"):
+    if st.get("preset") or (
+        not st and config.has_preset_credentials() and ledger.has_preset_choice(chat_id)
+    ):
         return config.has_preset_credentials()
     return ledger.credentials_stored(chat_id) is not None
 
@@ -69,6 +71,7 @@ async def on_logout(update: Update, ctx: ContextTypes.DEFAULT_TYPE | None) -> No
         return
     clear_stage(chat.id)
     ledger.forget_credentials(chat.id)
+    ledger.forget_preset_choice(chat.id)
     await msg.reply_text(
         words.logged_out(), parse_mode=ParseMode.MARKDOWN, reply_markup=kb_for(chat.id)
     )
@@ -193,6 +196,7 @@ async def on_credential_choice(
         # vault is not involved at all.
         clear_stage(chat.id)
         set_stage(chat.id, "ready", username=config.SITE_USERNAME, preset=True)
+        ledger.note_preset_choice(chat.id)
         await q.edit_message_text(
             words.using_preset(config.SITE_USERNAME), parse_mode=ParseMode.MARKDOWN
         )
@@ -238,7 +242,9 @@ def site_credentials(chat_id: int) -> tuple[str, str]:
     unpacking in sign_in, which is not a message anyone can act on.
     """
     st = prompt_stage(chat_id) or {}
-    if st.get("preset"):
+    if st.get("preset") or (
+        not st and config.has_preset_credentials() and ledger.has_preset_choice(chat_id)
+    ):
         if config.has_preset_credentials():
             return config.SITE_USERNAME, config.SITE_PASSWORD
         raise vault.DecryptionFailed("preset credentials are no longer configured")
