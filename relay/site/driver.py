@@ -19,7 +19,14 @@ from selenium.webdriver.remote.webelement import WebElement
 
 import relay.progress as progress_mod
 from relay import config, memory
-from relay.site.parsing import parse_day, parse_steps
+from relay.site.parsing import (
+    DATE_LABEL_RE,
+    DETECTED_RE,
+    HEADER_RE,
+    MONTHS,
+    parse_day,
+    parse_steps,
+)
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 # The project root, not the module directory: the geckodriver binary is a
@@ -51,30 +58,6 @@ CALENDAR_PROBES = 20  # the date picker opening
 MONTH_PROBES = 36  # paging the calendar to an arbitrary month
 OCR_PROBES = 40  # the site's OCR is in-page and not instant
 COMMIT_PROBES = 30  # the confirm panel closing after Submit
-
-DETECTED_RE = re.compile(r"Detected steps\s*([\d,. ]+)", re.I)
-
-# Anchored on real month names: a loose [A-Z][a-z]+ \d{4} also matches the page
-# title "Olympics 2026", which is not the calendar header.
-MONTHS = [
-    "January",
-    "February",
-    "March",
-    "April",
-    "May",
-    "June",
-    "July",
-    "August",
-    "September",
-    "October",
-    "November",
-    "December",
-]
-MONTH_ALT = "|".join(MONTHS)
-HEADER_RE = re.compile(r"\b(%s)\s+(\d{4})\b" % MONTH_ALT)
-DATE_LABEL_RE = re.compile(
-    r"\b(%s)\s+(\d{1,2})(?:st|nd|rd|th)?,?\s+(\d{4})\b" % MONTH_ALT, re.I
-)
 
 
 def _in_container() -> bool:

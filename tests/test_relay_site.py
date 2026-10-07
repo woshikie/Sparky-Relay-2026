@@ -19,6 +19,7 @@ import datetime
 import pytest
 
 from relay.site import driver as relay_site
+from relay.site import parsing
 
 
 # ------------------------------------------------------------------- fakes
@@ -140,29 +141,36 @@ def confirm_body(steps="6,532", date_label="October 5th, 2026"):
     (confirm_body("12345"), 12345),
 ])
 def test_the_reported_number_is_parsed(body, expected):
-    m = relay_site.DETECTED_RE.search(body)
+    m = parsing.DETECTED_RE.search(body)
     assert int("".join(c for c in m.group(1) if c.isdigit())) == expected
 
 
 def test_the_regex_needs_the_label():
     """A bare number elsewhere on the page must not be mistaken for the total."""
-    assert relay_site.DETECTED_RE.search("Detected steps\n6,532") is not None
-    assert relay_site.DETECTED_RE.search("Goal: 10,000 of 10,000") is None
-    assert relay_site.DETECTED_RE.search("1,800") is None
+    assert parsing.DETECTED_RE.search("Detected steps\n6,532") is not None
+    assert parsing.DETECTED_RE.search("Goal: 10,000 of 10,000") is None
+    assert parsing.DETECTED_RE.search("1,800") is None
 
 
 def test_the_calendar_header_needs_a_real_month_name():
     """'Olympics 2026' is on the page and is not a calendar header."""
-    assert relay_site.HEADER_RE.fullmatch("October 2026")
-    assert relay_site.HEADER_RE.fullmatch("Olympics 2026") is None
-    assert relay_site.HEADER_RE.fullmatch("Covid 2026") is None
+    assert parsing.HEADER_RE.fullmatch("October 2026")
+    assert parsing.HEADER_RE.fullmatch("Olympics 2026") is None
+    assert parsing.HEADER_RE.fullmatch("Covid 2026") is None
+    assert parsing.HEADER_RE.fullmatch("Oct 2026") is None
+
+
+def test_month_alt_stays_full_names_only():
+    """MONTH_ALT feeds HEADER_RE: one abbreviation in it reopens the
+    'Oct 2026' match the anchor exists to prevent."""
+    assert set(parsing.MONTH_ALT.split("|")) == set(parsing.MONTHS)
 
 
 def test_the_date_label_pattern():
-    assert relay_site.DATE_LABEL_RE.search("October 5th, 2026")
-    assert relay_site.DATE_LABEL_RE.search("October 22nd, 2026")
-    assert relay_site.DATE_LABEL_RE.search("October 3, 2026")
-    assert relay_site.DATE_LABEL_RE.search("Feb 2026") is None
+    assert parsing.DATE_LABEL_RE.search("October 5th, 2026")
+    assert parsing.DATE_LABEL_RE.search("October 22nd, 2026")
+    assert parsing.DATE_LABEL_RE.search("October 3, 2026")
+    assert parsing.DATE_LABEL_RE.search("Feb 2026") is None
 
 
 # ----------------------------------------------------------------- session
@@ -329,15 +337,15 @@ def test_a_confirm_panel_yields_the_number():
     driver = FakeDriver(body=confirm_body("6,532"))
     driver.elements["a"] = []
     r = relay_with(driver)
-    steps, reported = relay_site.DETECTED_RE.search(driver.body), None
-    m = relay_site.DETECTED_RE.search(driver.body)
+    steps, reported = parsing.DETECTED_RE.search(driver.body), None
+    m = parsing.DETECTED_RE.search(driver.body)
     assert int("".join(c for c in m.group(1) if c.isdigit())) == 6532
 
 
 def test_a_page_with_no_number_is_not_silently_zero():
     driver = FakeDriver(body="Upload steps\nNothing detected\nRetake")
     r = relay_with(driver)
-    m = relay_site.DETECTED_RE.search(driver.body)
+    m = parsing.DETECTED_RE.search(driver.body)
     assert m is None
 
 

@@ -26,14 +26,33 @@ from typing import TypedDict
 # with no leading zero on the day.
 DAY_RE = re.compile(r"^(\d{1,2})\s+([A-Za-z]{3,9})\s+(\d{4})$")
 
+# Full month names, defined once. Both the dashboard parser (MONTH_NUM
+# below) and the calendar matchers (MONTH_ALT and friends at the bottom)
+# derive from this list, so a name can never drift in one and not the
+# other. Abbreviations live only in MONTH_NUM; MONTH_ALT stays full names
+# so HEADER_RE keeps rejecting "Oct 2026" (and "Olympics 2026").
+MONTHS = [
+    "January",
+    "February",
+    "March",
+    "April",
+    "May",
+    "June",
+    "July",
+    "August",
+    "September",
+    "October",
+    "November",
+    "December",
+]
 
-# Month name -> number, abbreviated and full both. Named MONTH_NUM because
-# driver.py already has MONTHS: a tuple of full names, used by the date-picker
-# parsing. Same name in one module would shadow it and break set_date().
+
+# Month name -> number, abbreviated and full both.
 #
 # Accepting the full names as well as the abbreviations is not just tolerance:
 # the dashboard has been seen writing "5 Oct 2026", and a site that switches to
 # "5 October 2026" should still sync rather than silently record nothing.
+# The full names derive from MONTHS above rather than being listed twice.
 class Profile(TypedDict):
     """The user's own totals from /home: None for whatever is missing."""
 
@@ -62,30 +81,20 @@ MONTH_NUM = {
         start=1,
     )
 }
-MONTH_NUM.update(
-    {
-        m.lower(): i
-        for i, m in enumerate(
-            (
-                "January",
-                "February",
-                "March",
-                "April",
-                "May",
-                "June",
-                "July",
-                "August",
-                "September",
-                "October",
-                "November",
-                "December",
-            ),
-            start=1,
-        )
-    }
-)
+MONTH_NUM.update({m.lower(): i for i, m in enumerate(MONTHS, start=1)})
 # The step badge reads "+4,272 steps".
 STEPS_RE = re.compile(r"^\+?([\d,]+)\s*steps?$", re.I)
+
+# The confirm panel's Detected-steps line, read back after upload.
+DETECTED_RE = re.compile(r"Detected steps\s*([\d,. ]+)", re.I)
+
+# Anchored on real month names: a loose [A-Z][a-z]+ \d{4} also matches the page
+# title "Olympics 2026", which is not the calendar header.
+MONTH_ALT = "|".join(MONTHS)
+HEADER_RE = re.compile(r"\b(%s)\s+(\d{4})\b" % MONTH_ALT)
+DATE_LABEL_RE = re.compile(
+    r"\b(%s)\s+(\d{1,2})(?:st|nd|rd|th)?,?\s+(\d{4})\b" % MONTH_ALT, re.I
+)
 
 
 def parse_day(text: str | None) -> datetime.date | None:
