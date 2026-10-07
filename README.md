@@ -1,5 +1,7 @@
 # Sparky Relay 2026 — Telegram bot that relays step screenshots to the Olympics 2026 site
 
+[![relay](https://github.com/woshikie/sparky-relay-2026/actions/workflows/ci.yml/badge.svg)](https://github.com/woshikie/sparky-relay-2026/actions)
+
 A bot you send a step-tracker screenshot to. It uploads through the site's own
 upload flow, reports the number **the site reads**, asks you to confirm the date,
 and records it only when you press Confirm.
