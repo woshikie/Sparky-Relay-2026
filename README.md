@@ -26,7 +26,9 @@ challenged first, because that usually means a blurry photo.
 
 ## Running it
 
-Prerequisites: Python 3.12+, and podman or docker with the compose plugin.
+Prerequisites: podman or docker with the compose plugin. No build, no Python —
+all you need is this repo's `docker-compose.yml` plus a `secrets.env` next to
+it (copy `secrets.env.example` from the repo and fill it in):
 
 ```bash
 cp secrets.env.example secrets.env && vi secrets.env
@@ -36,19 +38,22 @@ cp secrets.env.example secrets.env && vi secrets.env
 difference between the safest mode and the open one is who can write to a live
 leaderboard account. See [ADR 0006](docs/adr/0006-access-modes-and-prompted-credentials.md).
 
-Build and start (POSIX shell — Linux and macOS):
+Pull and start (POSIX shell — Linux and macOS):
 
 ```bash
-podman build --format docker -t sparky-relay-2026:latest .
 set -a; . ./secrets.env; set +a
 podman compose up -d relay
 podman compose logs -f relay
 ```
 
-(`docker` works wherever `podman` appears above. `--format docker` matters:
-podman silently drops the image HEALTHCHECK in its default OCI format. The
-compose file repeats the check independently, which is what actually runs
-under podman.)
+The image comes from GHCR, multi-arch, so the engine pulls the right build
+for the host. (`docker` works wherever `podman` appears above.)
+
+To build the image yourself instead (developers): clone the repo and
+`podman build --format docker -t sparky-relay-2026:latest .` from its root
+(`--format docker` matters: podman silently drops the image HEALTHCHECK in
+its default OCI format. The compose file repeats the check independently,
+which is what actually runs under podman.)
 
 Secrets reach the container as environment variables, so exporting them first
 is required, not optional: `env_file:` is silently ignored by some compose
