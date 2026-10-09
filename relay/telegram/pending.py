@@ -1,12 +1,18 @@
-"""Screenshots awaiting confirmation: the date choice plus Commit.
+"""Screenshots awaiting confirmation: one active per chat, the rest queued.
 
 One module owns what three call sites used to do to a bare global: photo.py
-writes the record at intake, callbacks.py reads and mutates it through the
-date flow and Commit, commands.py only asks how many are outstanding. The
-lookup order lives here too -- exact key first, latest-for-chat fallback --
-so the race (two screenshots, one chat, both keyboards retargeting the
-newer) is a documented property of latest_for_chat, not an accident spread
-across two handlers.
+stages arrivals, callbacks.py resolves them through the date flow and
+Commit, commands.py only asks how many are outstanding. The lookup order
+lives here too -- exact key first, latest-for-chat fallback.
+
+One chat holds at most one live confirmation. A Screenshot arriving while
+one is live is read immediately (the browser work is unchanged) but
+confirmed later, in upload order: it waits in a per-chat FIFO carrying no
+buttons of its own, so a tap can never land on the wrong Screenshot.
+Resolving the active one -- commit, cancel, failure, or expiry -- presents
+the next queued record. Sections that mutate both sides run under
+lock_for(chat_id); synchronous reads need no lock on a single event loop,
+but every decide-and-stage sequence crosses awaits.
 
 Records expire lazily after PENDING_TTL, the same 600 seconds as the
 Credentials Prompt stage: one mental model for unfinished business. Expiry
@@ -19,6 +25,7 @@ persist anyway -- the ledger's overwrite guard survives, and the next tap
 says expired.
 """
 
+import asyncio
 import datetime
 import time
 from typing import NotRequired, TypedDict
@@ -45,6 +52,8 @@ class Pending(TypedDict):
 PENDING_TTL = 600.0
 
 _pending: dict[tuple[int, int], Pending] = {}
+_queues: dict[int, list[Pending]] = {}
+_locks: dict[int, asyncio.Lock] = {}
 
 
 def put(key: tuple[int, int], record: Pending) -> Pending:
@@ -78,13 +87,67 @@ def pop(key: tuple[int, int], default: Pending | None = None) -> Pending | None:
     return _pending.pop(key, default)
 
 
+def lock_for(chat_id: int) -> asyncio.Lock:
+    """The mutate-both-sides lock for a chat.
+
+    Staging (photo intake) and resolving (commit, cancel, failure, expiry
+    promotion) each touch the active record and the queue with awaits
+    between, so both run inside this lock. Synchronous reads (get,
+    latest_for_chat, count) need none: no awaits, no interleaving.
+    """
+    lock = _locks.get(chat_id)
+    if lock is None:
+        lock = asyncio.Lock()
+        _locks[chat_id] = lock
+    return lock
+
+
+def has_live(chat_id: int) -> bool:
+    """Whether this chat holds an unexpired active confirmation."""
+    return latest_for_chat(chat_id) is not None
+
+
+def enqueue(chat_id: int, record: Pending) -> int:
+    """Hold a record behind the active one. Returns its 1-based position."""
+    record["at"] = time.time()
+    queue = _queues.setdefault(chat_id, [])
+    queue.append(record)
+    return len(queue)
+
+
+def requeue_front(chat_id: int, record: Pending) -> None:
+    """Put a record back at the head of its chat's queue.
+
+    For presentation that failed before staging: the record was already
+    popped, and dropping it would lose the Screenshot silently.
+    """
+    record["at"] = time.time()
+    _queues.setdefault(chat_id, []).insert(0, record)
+
+
+def take_next(chat_id: int) -> Pending | None:
+    """Oldest live queued record, if the chat has no live active one.
+
+    Returns None when an active confirmation exists (confirm it first) or
+    when the queue is empty or all expired. Expired queued records are
+    dropped on sight.
+    """
+    if latest_for_chat(chat_id) is not None:
+        return None
+    queue = _queues.get(chat_id, [])
+    while queue:
+        record = queue.pop(0)
+        if not _expired(record):
+            return record
+    return None
+
+
 def latest_for_chat(chat_id: int) -> tuple[tuple[int, int], Pending] | None:
     """Newest live record for a chat, sweeping its expired ones.
 
-    Highest intake message_id wins -- intake ids increase, so newest message
-    is newest screenshot. Two unconfirmed screenshots in one chat therefore
-    retarget both keyboards at the newer one; the older resurfaces once the
-    newer is popped. That is the documented race, kept in one place.
+    Highest intake message_id wins. Queued Screenshots carry no buttons,
+    so taps cannot land on the wrong record; newest-wins stays as the
+    defensive rule for whatever holds a live prompt.
     """
     cands = [(k, r) for k, r in _pending.items() if k[0] == chat_id]
     live = []
@@ -99,10 +162,11 @@ def latest_for_chat(chat_id: int) -> tuple[tuple[int, int], Pending] | None:
 
 
 def count() -> int:
-    """Outstanding confirmations across all chats, for /status."""
-    return len(_pending)
+    """Outstanding confirmations across all chats, queued included."""
+    return len(_pending) + sum(len(queue) for queue in _queues.values())
 
 
 def clear() -> None:
     """Drop everything. Tests, and nothing else."""
     _pending.clear()
+    _queues.clear()

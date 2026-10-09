@@ -1212,3 +1212,34 @@ def test_logout_forgets_the_preset_choice(bot, access, ledger, monkeypatch, tmp_
     run(reloaded.on_logout(FakeUpdate(chat_id=1), None))
     assert ledger.has_preset_choice(1) is False
     assert reloaded.has_credentials(1) is False
+
+
+def test_a_second_screenshot_queues_behind_the_first(bot, access, ledger, tmp_path, monkeypatch, session):
+    """Two Screenshots in quick succession: the second waits its turn.
+
+    Before the queue, both keyboards retargeted the newer Screenshot. Now the
+    second is read immediately but confirmed later, in upload order.
+    """
+    monkeypatch.setattr(bot.config, "INBOX", str(tmp_path))
+    access.grant(40, "manual")
+    bot.pending.put((40, 100), {
+        "path": "/tmp/first.jpg", "steps": 1000, "reported": "1,000",
+        "scratch": FakeMessage(), "date": None,
+    })
+
+    class R:
+        def upload(self, path, mode="steps"):
+            return 6532, "6,532"
+
+    @contextlib.asynccontextmanager
+    async def fake_session(chat_id=None, progress=None):
+        yield R()
+
+    monkeypatch.setattr(session, "browser_session", fake_session)
+    upd = FakeUpdate(chat_id=40)
+    upd.message.photo = [FakePhotoSize(_jpeg())]
+    run(bot.on_photo(upd, None))
+    # The active confirmation is untouched; the newcomer waits behind it.
+    assert bot.pending.get((40, 100))["steps"] == 1000
+    assert bot.pending._queues[40][0]["steps"] == 6532
+    assert bot.pending.count() == 2

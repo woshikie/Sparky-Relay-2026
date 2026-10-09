@@ -289,6 +289,15 @@ def ocr_read(steps: int, reported: str, plausible: bool = True) -> str:
     )
 
 
+def queued(reported: str, position: int) -> str:
+    return (
+        "%(ocr)s The site read **%(s)s** steps. Queued as #%(n)d.\n\n"
+        "Confirm or cancel the current screenshot first — "
+        "I will bring this one up next."
+        % {"ocr": EMOJI["ocr"], "s": reported, "n": position}
+    )
+
+
 def choose_date(steps: int, reported: str, default_label: str) -> str:
     return (
         "%(date)s Which day do these **%(s)s** steps belong to?\n\n"

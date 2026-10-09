@@ -421,3 +421,63 @@ def test_codec_rejects_malformed_payloads():
         except ValueError:
             continue
         raise AssertionError("accepted %r" % (bad,))
+
+
+def test_commit_advances_the_queue(pending, monkeypatch, session):
+    """Resolving the active Screenshot presents the next queued one."""
+    pending.pending.get((1, 100))["date"] = datetime.date(2026, 10, 4)
+    pending.pending.get((1, 100))["iso"] = "2026-10-04"
+    pending.pending.get((1, 100))["label"] = "October 4th, 2026"
+    pending.pending.enqueue(1, {
+        "path": "/tmp/second.jpg", "steps": 7000, "reported": "7,000",
+        "scratch": FakeMessage(), "date": None,
+    })
+
+    class R:
+        def upload(self, path, mode="steps"):
+            return 6532, "6,532"
+        def set_date(self, d):
+            pass
+        def commit(self, steps):
+            return "Recorded"
+
+    @contextlib.asynccontextmanager
+    async def fake_session(chat_id=None, progress=None):
+        yield R()
+    monkeypatch.setattr(session, "browser_session", fake_session)
+
+    q, upd = _confirm(pending)
+    run(pending.cb_ok(upd, None))
+    assert pending.pending.get((1, 100)) is None
+    assert pending.pending.latest_for_chat(1)[1]["steps"] == 7000
+    assert "Which day" in q.message.said
+
+
+def test_cancel_advances_the_queue(pending):
+    """Cancelling is resolving too: the next Screenshot comes up."""
+    pending.pending.enqueue(1, {
+        "path": "/tmp/second.jpg", "steps": 7000, "reported": "7,000",
+        "scratch": FakeMessage(), "date": None,
+    })
+    q = FakeQuery("ok:cancel", chat_id=1)
+    upd = type("U", (), {})()
+    upd.callback_query = q
+    upd.effective_chat = q.effective_chat
+    upd.effective_message = q.effective_message
+    run(pending.cb_ok(upd, None))
+    assert "Discarded" in " ".join(q.message.edits)
+    assert pending.pending.latest_for_chat(1)[1]["steps"] == 7000
+    assert "Which day" in q.message.said
+
+
+def test_an_expired_tap_promotes_what_is_waiting(pending):
+    """No live record but a queued one: date it, don't expire."""
+    pending.pending.clear()
+    pending.pending.enqueue(1, {
+        "path": "/tmp/second.jpg", "steps": 7000, "reported": "7,000",
+        "scratch": FakeMessage(), "date": None,
+    })
+    q = press(pending, "dt:today")
+    assert "Which day" in q.message.said
+    assert "Expired" not in " ".join(q.message.edits)
+    assert pending.pending.latest_for_chat(1)[1]["steps"] == 7000

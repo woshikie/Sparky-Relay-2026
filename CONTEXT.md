@@ -38,6 +38,13 @@ The one Telegram message per Screenshot that shows the Detected Steps and the
 Activity Date, and offers Confirm / Cancel. Nothing is recorded until Confirm.
 _Avoid_: prompt, preview, dialog
 
+**Queued**:
+A Screenshot uploaded while another awaits confirmation: read immediately,
+confirmed later, in upload order. The queue is per chat and in memory; it
+drains as each Confirmation resolves, and a tap can never touch a queued
+Screenshot because queued items carry no buttons of their own.
+_Avoid_: backlog, batch
+
 **Backfill**:
 Recording steps for an Activity Date in the past — for example uploading
 Saturday's Screenshot on Sunday. The mechanism is just the user choosing an

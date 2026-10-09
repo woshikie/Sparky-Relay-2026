@@ -61,7 +61,7 @@ def test_the_shape_sweep_reaches_every_string():
 # rank_line() formats its totals with a thousands separator, so a string raised
 # for reasons that had nothing to do with formatting.
 NUMERIC = ("steps", "total_steps", "total_points", "count", "n", "new_steps",
-           "old_steps", "wait", "retry_after", "written")
+           "old_steps", "wait", "retry_after", "written", "position")
 SUBMISSIONS = [{"activity_date": "2026-10-04", "steps": 6532,
                 "reported": "6,532", "recorded_at": "2026-10-05T21:00:00"}]
 

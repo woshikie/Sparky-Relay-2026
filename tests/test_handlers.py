@@ -163,3 +163,43 @@ def test_a_profile_line_without_totals_still_names_the_house(bot):
     profile = bot.parse_profile("YOUR HOUSE\nEsplanade\nHouse standings")
     assert profile == {"total_steps": None, "total_points": None,
                        "house": "Esplanade"}
+
+
+def test_take_next_returns_none_while_one_is_live(bot):
+    bot.pending.put((1, 100), {"steps": 100})
+    bot.pending.enqueue(1, {"steps": 200})
+    assert bot.pending.take_next(1) is None
+
+
+def test_take_next_drains_oldest_first(bot):
+    bot.pending.enqueue(1, {"steps": 100})
+    bot.pending.enqueue(1, {"steps": 200})
+    assert bot.pending.take_next(1)["steps"] == 100
+    assert bot.pending.take_next(1)["steps"] == 200
+    assert bot.pending.take_next(1) is None
+
+
+def test_take_next_skips_expired_queued(bot):
+    bot.pending.enqueue(1, {"steps": 100})
+    bot.pending.enqueue(1, {"steps": 200})
+    bot.pending._queues[1][0]["at"] -= 3600
+    assert bot.pending.take_next(1)["steps"] == 200
+    assert bot.pending.count() == 0
+
+
+def test_requeue_front_restores_the_head(bot):
+    bot.pending.enqueue(1, {"steps": 100})
+    record = bot.pending.take_next(1)
+    bot.pending.requeue_front(1, record)
+    assert bot.pending.take_next(1)["steps"] == 100
+
+
+def test_count_covers_queued(bot):
+    bot.pending.put((1, 100), {"steps": 100})
+    bot.pending.enqueue(1, {"steps": 200})
+    assert bot.pending.count() == 2
+
+
+def test_one_lock_per_chat(bot):
+    assert bot.pending.lock_for(1) is bot.pending.lock_for(1)
+    assert bot.pending.lock_for(1) is not bot.pending.lock_for(2)
