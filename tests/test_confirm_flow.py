@@ -421,3 +421,242 @@ def test_codec_rejects_malformed_payloads():
         except ValueError:
             continue
         raise AssertionError("accepted %r" % (bad,))
+
+
+def test_commit_advances_the_queue(pending, monkeypatch, session):
+    """Resolving the active Screenshot presents the next queued one."""
+    pending.pending.get((1, 100))["date"] = datetime.date(2026, 10, 4)
+    pending.pending.get((1, 100))["iso"] = "2026-10-04"
+    pending.pending.get((1, 100))["label"] = "October 4th, 2026"
+    pending.pending.enqueue(1, {
+        "path": "/tmp/second.jpg", "steps": 7000, "reported": "7,000",
+        "scratch": FakeMessage(), "date": None,
+    })
+
+    class R:
+        def upload(self, path, mode="steps"):
+            return 6532, "6,532"
+        def set_date(self, d):
+            pass
+        def commit(self, steps):
+            return "Recorded"
+
+    @contextlib.asynccontextmanager
+    async def fake_session(chat_id=None, progress=None):
+        yield R()
+    monkeypatch.setattr(session, "browser_session", fake_session)
+
+    q, upd = _confirm(pending)
+    run(pending.cb_ok(upd, None))
+    assert pending.pending.get((1, 100)) is None
+    assert pending.pending.latest_for_chat(1)[1]["steps"] == 7000
+    assert "Which day" in q.message.said
+
+
+def test_cancel_advances_the_queue(pending):
+    """Cancelling is resolving too: the next Screenshot comes up."""
+    pending.pending.enqueue(1, {
+        "path": "/tmp/second.jpg", "steps": 7000, "reported": "7,000",
+        "scratch": FakeMessage(), "date": None,
+    })
+    q = FakeQuery("ok:cancel", chat_id=1)
+    upd = type("U", (), {})()
+    upd.callback_query = q
+    upd.effective_chat = q.effective_chat
+    upd.effective_message = q.effective_message
+    run(pending.cb_ok(upd, None))
+    assert "Discarded" in " ".join(q.message.edits)
+    assert pending.pending.latest_for_chat(1)[1]["steps"] == 7000
+    assert "Which day" in q.message.said
+
+
+def test_an_expired_tap_promotes_what_is_waiting(pending):
+    """No live record but a queued one: date it, don't expire."""
+    pending.pending.clear()
+    pending.pending.enqueue(1, {
+        "path": "/tmp/second.jpg", "steps": 7000, "reported": "7,000",
+        "scratch": FakeMessage(), "date": None,
+    })
+    q = press(pending, "dt:today")
+    assert "Which day" in q.message.said
+    assert "Expired" not in " ".join(q.message.edits)
+    assert pending.pending.latest_for_chat(1)[1]["steps"] == 7000
+
+
+def test_an_ocr_changed_abort_advances_the_queue(pending, monkeypatch,
+                                                 session):
+    """A mismatched re-read discards the active Screenshot, not the queue."""
+    pending.pending.get((1, 100))["date"] = datetime.date(2026, 10, 4)
+    pending.pending.get((1, 100))["iso"] = "2026-10-04"
+    pending.pending.get((1, 100))["label"] = "October 4th, 2026"
+    pending.pending.enqueue(1, {
+        "path": "/tmp/second.jpg", "steps": 7000, "reported": "7,000",
+        "scratch": FakeMessage(), "date": None,
+    })
+
+    class R:
+        def upload(self, path, mode="steps"):
+            return 9999, "9,999"
+        def set_date(self, d):
+            pass
+        def commit(self, steps):
+            raise AssertionError("must not commit a changed read")
+
+    @contextlib.asynccontextmanager
+    async def fake_session(chat_id=None, progress=None):
+        yield R()
+    monkeypatch.setattr(session, "browser_session", fake_session)
+
+    q, upd = _confirm(pending)
+    run(pending.cb_ok(upd, None))
+    assert pending.pending.get((1, 100)) is None
+    assert pending.pending.latest_for_chat(1)[1]["steps"] == 7000
+    assert "Which day" in q.message.said
+
+
+def test_a_commit_failure_advances_the_queue(pending, monkeypatch, session):
+    """A Commit that raises still presents the next queued Screenshot."""
+    pending.pending.get((1, 100))["date"] = datetime.date(2026, 10, 4)
+    pending.pending.get((1, 100))["iso"] = "2026-10-04"
+    pending.pending.get((1, 100))["label"] = "October 4th, 2026"
+    pending.pending.enqueue(1, {
+        "path": "/tmp/second.jpg", "steps": 7000, "reported": "7,000",
+        "scratch": FakeMessage(), "date": None,
+    })
+
+    class R:
+        def upload(self, path, mode="steps"):
+            return 6532, "6,532"
+        def set_date(self, d):
+            pass
+        def commit(self, steps):
+            raise RuntimeError("site hiccup")
+
+    @contextlib.asynccontextmanager
+    async def fake_session(chat_id=None, progress=None):
+        yield R()
+    monkeypatch.setattr(session, "browser_session", fake_session)
+
+    q, upd = _confirm(pending)
+    run(pending.cb_ok(upd, None))
+    assert pending.pending.get((1, 100)) is None
+    assert pending.pending.latest_for_chat(1)[1]["steps"] == 7000
+    assert "Which day" in q.message.said
+
+
+def test_an_expired_confirm_with_a_queue_promotes_it(pending):
+    """No live record but a queued one: ok:go dates it, not expires."""
+    pending.pending.clear()
+    pending.pending.enqueue(1, {
+        "path": "/tmp/second.jpg", "steps": 7000, "reported": "7,000",
+        "scratch": FakeMessage(), "date": None,
+    })
+    q, upd = _confirm(pending)
+    run(pending.cb_ok(upd, None))
+    assert "Which day" in q.message.said
+    assert "expired" not in " ".join(q.message.edits).lower()
+    assert pending.pending.latest_for_chat(1)[1]["steps"] == 7000
+
+
+def test_a_date_tap_dates_the_active_record_only(pending):
+    """With a Screenshot queued, the tap still lands on the live one."""
+    pending.pending.enqueue(1, {
+        "path": "/tmp/second.jpg", "steps": 7000, "reported": "7,000",
+        "scratch": FakeMessage(), "date": None,
+    })
+    press(pending, "dt:today")
+    assert pending.pending.get((1, 100))["date"] == pending.sg_today()
+    assert len(pending.pending._queues[1]) == 1
+    assert pending.pending._queues[1][0]["steps"] == 7000
+    assert pending.pending._queues[1][0]["date"] is None
+    assert pending.pending.count() == 2
+
+
+def test_cancel_on_an_already_resolved_key_answers_expired(pending):
+    """A concurrent resolve wins: the late cancel says expired, no Discard."""
+    pending.pending.pop((1, 100), None)
+    q = FakeQuery("ok:cancel", chat_id=1)
+    upd = type("U", (), {})()
+    upd.callback_query = q
+    upd.effective_chat = q.effective_chat
+    upd.effective_message = q.effective_message
+    run(pending.cb_ok(upd, None))
+    assert q.answers, "the tap was never answered"
+    assert "expired" in " ".join(q.message.edits).lower()
+    assert "Discarded" not in " ".join(q.message.edits)
+
+
+def test_an_expired_promotion_answers_the_tap(pending):
+    """Promoting the queue still answers, so the button stops spinning."""
+    pending.pending.clear()
+    pending.pending.enqueue(1, {
+        "path": "/tmp/second.jpg", "steps": 7000, "reported": "7,000",
+        "scratch": FakeMessage(), "date": None,
+    })
+    q = press(pending, "dt:today")
+    assert q.answers, "the tap was never answered"
+    assert "Which day" in q.message.said
+
+
+def test_requeue_front_stamps_a_record_with_no_stamp(pending):
+    """Fresh intake stages without put/enqueue, so it arrives unstamped.
+
+    Without a stamp the record can never expire; requeue stamps it once
+    so it reads back now but still lapses like everything else.
+    """
+    pending.pending.clear()
+    rec = {
+        "path": "/tmp/first.jpg", "steps": 6532, "reported": "6,532",
+        "scratch": FakeMessage(), "date": None,
+    }
+    assert "at" not in rec
+    pending.pending.requeue_front(1, rec)
+    assert "at" in rec
+    assert pending.pending.take_next(1) is rec
+
+
+def test_requeue_front_keeps_the_original_stamp(pending):
+    """A retried record keeps its stamp: a poison head must still expire."""
+    pending.pending.clear()
+    rec = {
+        "path": "/tmp/first.jpg", "steps": 6532, "reported": "6,532",
+        "scratch": FakeMessage(), "date": None, "at": 1234.0,
+    }
+    pending.pending.requeue_front(1, rec)
+    assert rec["at"] == 1234.0
+
+
+def test_a_second_confirm_tap_commits_nothing(pending, monkeypatch,
+                                              session):
+    """Two taps, one commit: the first wins, the second is just answered."""
+    from relay.store import ledger as led
+    pending.pending.get((1, 100))["date"] = datetime.date(2026, 10, 4)
+    pending.pending.get((1, 100))["iso"] = "2026-10-04"
+    pending.pending.get((1, 100))["label"] = "October 4th, 2026"
+
+    committed = []
+
+    class R:
+        def upload(self, path, mode="steps"):
+            return 6532, "6,532"
+        def set_date(self, d):
+            pass
+        def commit(self, steps):
+            committed.append(steps)
+            return "Recorded 6,532 steps for 4 Oct 2026"
+
+    @contextlib.asynccontextmanager
+    async def fake_session(chat_id=None, progress=None):
+        yield R()
+    monkeypatch.setattr(session, "browser_session", fake_session)
+
+    q1, upd1 = _confirm(pending)
+    run(pending.cb_ok(upd1, None))
+    assert committed == [6532]
+
+    q2, upd2 = _confirm(pending)
+    run(pending.cb_ok(upd2, None))
+    assert committed == [6532], "the second tap committed again"
+    assert q2.answers, "the second tap was never answered"
+    row = led.last_submission("2026-10-04")
+    assert row and row["steps"] == 6532

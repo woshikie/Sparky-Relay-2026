@@ -22,8 +22,7 @@ import relay.telegram.words as words
 from relay import config
 from relay import progress as progress_mod
 from relay.site import driver as relay_site
-from relay.telegram.keyboards import kb_date_default
-from relay.telegram.prompts import ask_credentials, refuse
+from relay.telegram.prompts import ask_credentials, present_confirmation, refuse
 
 # Longest edge of the Screenshot we will keep. The site downscales to 1200px
 # anyway, and smaller photos upload faster on a 1GB VM.
@@ -117,26 +116,29 @@ async def on_photo(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
 
     plausible = relay_site.MIN_STEPS <= steps <= relay_site.MAX_STEPS
     # The last edit is the one the user reads, so it is never throttled.
+    # Implausible reads are refused before the lock: they are never enqueued,
+    # on either path.
     await prog.close(
         words.ocr_read(steps, reported, plausible), parse_mode=ParseMode.MARKDOWN
     )
     if not plausible:
         await msg.reply_text(words.implausible(reported), parse_mode=ParseMode.MARKDOWN)
         return
-
-    await msg.reply_text(
-        words.choose_date(steps, reported, ""),
-        parse_mode=ParseMode.MARKDOWN,
-        reply_markup=kb_date_default(),
-    )
-
-    pending_mod.put(
-        (chat.id, msg.message_id),
-        {
-            "path": path,
-            "steps": steps,
-            "reported": reported,
-            "scratch": scratch,
-            "date": None,
-        },
-    )
+    record: pending_mod.Pending = {
+        "path": path,
+        "steps": steps,
+        "reported": reported,
+        "scratch": scratch,
+        "date": None,
+    }
+    # Decide and stage atomically: without the lock, two Screenshots
+    # finishing their browser reads together would both see no live record
+    # and both stage as active -- the exact confusion this queue removes.
+    async with pending_mod.lock_for(chat.id):
+        if pending_mod.has_live(chat.id):
+            position = pending_mod.enqueue(chat.id, record)
+            await prog.close(
+                words.queued(reported, position), parse_mode=ParseMode.MARKDOWN
+            )
+            return
+        await present_confirmation(chat.id, msg, record)

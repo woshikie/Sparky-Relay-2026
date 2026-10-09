@@ -391,3 +391,9 @@ def test_recorded_skips_a_blank_line_in_the_site_text(words):
     out = words.recorded("4,272", "October 5th, 2026", "2026-10-05",
                          "\nRecorded 4,272 steps for 5 Oct 2026")
     assert "Recorded 4,272 steps" in out
+
+
+def test_queued_names_the_number_and_the_position(words):
+    text = words.queued("6,532", 2)
+    assert "**6,532**" in text
+    assert "#2" in text
