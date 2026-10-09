@@ -40,7 +40,7 @@ _Avoid_: prompt, preview, dialog
 
 **Queued**:
 A Screenshot uploaded while another awaits confirmation: read immediately,
-confirmed later, in upload order. The queue is per chat and in memory; it
+confirmed later, in upload order. The queue is per chat; it
 drains as each Confirmation resolves, and a tap can never touch a queued
 Screenshot because queued items carry no buttons of their own.
 _Avoid_: backlog, batch

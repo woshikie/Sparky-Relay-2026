@@ -109,8 +109,9 @@ def has_live(chat_id: int) -> bool:
 
 def enqueue(chat_id: int, record: Pending) -> int:
     """Hold a record behind the active one. Returns its 1-based position."""
-    record["at"] = time.time()
     queue = _queues.setdefault(chat_id, [])
+    queue[:] = [r for r in queue if not _expired(r)]
+    record["at"] = time.time()
     queue.append(record)
     return len(queue)
 
@@ -119,9 +120,12 @@ def requeue_front(chat_id: int, record: Pending) -> None:
     """Put a record back at the head of its chat's queue.
 
     For presentation that failed before staging: the record was already
-    popped, and dropping it would lose the Screenshot silently.
+    popped, and dropping it would lose the Screenshot silently. A record
+    without a stamp (fresh intake never passed put/enqueue) gains one
+    now; a retried record keeps its original stamp, so a poison head
+    still expires instead of blocking its chat forever.
     """
-    record["at"] = time.time()
+    record.setdefault("at", time.time())
     _queues.setdefault(chat_id, []).insert(0, record)
 
 
@@ -163,6 +167,11 @@ def latest_for_chat(chat_id: int) -> tuple[tuple[int, int], Pending] | None:
 
 def count() -> int:
     """Outstanding confirmations across all chats, queued included."""
+    for key, record in list(_pending.items()):
+        if _expired(record):
+            _pending.pop(key, None)
+    for chat_id, queue in _queues.items():
+        _queues[chat_id] = [r for r in queue if not _expired(r)]
     return len(_pending) + sum(len(queue) for queue in _queues.values())
 
 
@@ -170,3 +179,4 @@ def clear() -> None:
     """Drop everything. Tests, and nothing else."""
     _pending.clear()
     _queues.clear()
+    _locks.clear()

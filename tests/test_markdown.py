@@ -29,8 +29,8 @@ def all_strings():
         fn = getattr(words, name)
         if not callable(fn):
             continue
-        for args in ((), ("x",), ("x", "y"), (1,), (1, 2, "x"),
-                     (100, 200, "October 4th, 2026")):
+        for args in ((), ("x",), ("x", "y"), (1,), ("x", 2),
+                     (1, 2, "x"), (100, 200, "October 4th, 2026")):
             try:
                 cases.append((name + repr(args), str(fn(*args))))
             except Exception:

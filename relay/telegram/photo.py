@@ -15,7 +15,6 @@ from telegram.constants import ParseMode
 from telegram.ext import ContextTypes
 
 import relay.telegram.access as access
-import relay.telegram.callbacks as callbacks_mod
 import relay.telegram.failures as failures
 import relay.telegram.pending as pending_mod
 import relay.telegram.session as session_mod
@@ -23,7 +22,7 @@ import relay.telegram.words as words
 from relay import config
 from relay import progress as progress_mod
 from relay.site import driver as relay_site
-from relay.telegram.prompts import ask_credentials, refuse
+from relay.telegram.prompts import ask_credentials, present_confirmation, refuse
 
 # Longest edge of the Screenshot we will keep. The site downscales to 1200px
 # anyway, and smaller photos upload faster on a 1GB VM.
@@ -116,6 +115,15 @@ async def on_photo(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         return
 
     plausible = relay_site.MIN_STEPS <= steps <= relay_site.MAX_STEPS
+    # The last edit is the one the user reads, so it is never throttled.
+    # Implausible reads are refused before the lock: they are never enqueued,
+    # on either path.
+    await prog.close(
+        words.ocr_read(steps, reported, plausible), parse_mode=ParseMode.MARKDOWN
+    )
+    if not plausible:
+        await msg.reply_text(words.implausible(reported), parse_mode=ParseMode.MARKDOWN)
+        return
     record: pending_mod.Pending = {
         "path": path,
         "steps": steps,
@@ -133,16 +141,4 @@ async def on_photo(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
                 words.queued(reported, position), parse_mode=ParseMode.MARKDOWN
             )
             return
-        # The last edit is the one the user reads, so it is never throttled.
-        await prog.close(
-            words.ocr_read(steps, reported, plausible), parse_mode=ParseMode.MARKDOWN
-        )
-        if not plausible:
-            await msg.reply_text(
-                words.implausible(reported), parse_mode=ParseMode.MARKDOWN
-            )
-            return
-        pending_mod.enqueue(chat.id, record)
-        staged = pending_mod.take_next(chat.id)
-        assert staged is not None  # just enqueued, under our lock
-        await callbacks_mod.present_confirmation(chat.id, msg, staged)
+        await present_confirmation(chat.id, msg, record)

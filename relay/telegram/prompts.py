@@ -17,10 +17,16 @@ from telegram.ext import ContextTypes
 import relay.store.ledger as ledger
 import relay.store.vault as vault
 import relay.telegram.access as access
+import relay.telegram.pending as pending_mod
 import relay.telegram.words as words
 from relay import config
 from relay.errors import NoCredentials
-from relay.telegram.keyboards import kb_credential_choice, kb_prompt, kb_reply
+from relay.telegram.keyboards import (
+    kb_credential_choice,
+    kb_date_default,
+    kb_prompt,
+    kb_reply,
+)
 
 
 def credential_prompt_body() -> str:
@@ -255,3 +261,25 @@ def site_credentials(chat_id: int) -> tuple[str, str]:
 
 
 # ----------------------------------------------------------------------
+
+
+async def present_confirmation(
+    chat_id: int, msg: Message, record: pending_mod.Pending
+) -> None:
+    """Stage a Screenshot as the active confirmation.
+
+    Sends the date prompt and records it, keyed by the prompt message.
+    Callers hold lock_for(chat_id): pop-advance-present must be atomic
+    against photo intake deciding on the same chat. On send failure the
+    record goes back to the head of the queue, then the error is raised.
+    """
+    try:
+        sent = await msg.reply_text(
+            words.choose_date(record["steps"], record["reported"], ""),
+            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=kb_date_default(),
+        )
+    except Exception:
+        pending_mod.requeue_front(chat_id, record)
+        raise
+    pending_mod.put((chat_id, sent.message_id), record)

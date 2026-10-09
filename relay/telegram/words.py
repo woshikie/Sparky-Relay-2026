@@ -291,10 +291,10 @@ def ocr_read(steps: int, reported: str, plausible: bool = True) -> str:
 
 def queued(reported: str, position: int) -> str:
     return (
-        "%(ocr)s The site read **%(s)s** steps. Queued as #%(n)d.\n\n"
+        "%(ocr)s The site read **%(s)s** steps. Queued as #%(position)d.\n\n"
         "Confirm or cancel the current screenshot first — "
         "I will bring this one up next."
-        % {"ocr": EMOJI["ocr"], "s": reported, "n": position}
+        % {"ocr": EMOJI["ocr"], "s": reported, "position": position}
     )
 
 

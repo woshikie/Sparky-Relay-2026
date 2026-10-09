@@ -31,7 +31,7 @@ from relay.telegram.keyboards import (
     kb_overwrite,
     kb_pick_date,
 )
-from relay.telegram.prompts import ask_credentials
+from relay.telegram.prompts import ask_credentials, present_confirmation
 
 
 async def cb_date(update: Update, ctx: ContextTypes.DEFAULT_TYPE | None) -> None:
@@ -66,9 +66,11 @@ async def _cb_date(update: Update, ctx: ContextTypes.DEFAULT_TYPE | None) -> Non
         return
     _, kind, rest = codec.decode(q.data)
 
+    key: tuple[int, int] | None = None
     st: pending_mod.Pending | None = None
     if msg.reply_to_message is not None:
-        st = pending_mod.get((chat.id, msg.reply_to_message.message_id))
+        key = (chat.id, msg.reply_to_message.message_id)
+        st = pending_mod.get(key)
     if st is None:
         # attach to the most recent pending for this chat
         found = pending_mod.latest_for_chat(chat.id)
@@ -83,13 +85,15 @@ async def _cb_date(update: Update, ctx: ContextTypes.DEFAULT_TYPE | None) -> Non
                     await q.edit_message_text("Expired. Send the screenshot again.")
                     return
                 await present_confirmation(chat.id, msg, record)
+                await q.answer()
             return
-        _, st = found
+        key, st = found
 
+    new_date: datetime.date | None = None
     if kind == "today":
-        st["date"] = sg_today()
+        new_date = sg_today()
     elif kind == "yday":
-        st["date"] = sg_today() - datetime.timedelta(days=1)
+        new_date = sg_today() - datetime.timedelta(days=1)
     elif kind == "back":
         await q.edit_message_reply_markup(reply_markup=kb_date_default())
         await q.answer()
@@ -116,7 +120,7 @@ async def _cb_date(update: Update, ctx: ContextTypes.DEFAULT_TYPE | None) -> Non
         await q.answer()
         return
     elif kind == "day":
-        st["date"] = datetime.date.fromisoformat(rest[0])
+        new_date = datetime.date.fromisoformat(rest[0])
     elif kind == "none":
         # Padding in the calendar grid. Answer, so the client stops spinning.
         await q.answer()
@@ -125,81 +129,71 @@ async def _cb_date(update: Update, ctx: ContextTypes.DEFAULT_TYPE | None) -> Non
         await q.answer()
         return
 
-    date = st["date"]
-    # Every branch above either returned or assigned a date; the assert pins
-    # that, since the intake starts the record at None.
-    assert date is not None, "date button without a date"
-    iso = date.isoformat()
-    label = "%s %s, %d" % (date.strftime("%B"), ordinal(date.day), date.year)
-    st["iso"] = iso
-    st["label"] = label
+    assert key is not None
+    async with pending_mod.lock_for(chat.id):
+        st = pending_mod.get(key)
+        if st is None:
+            await q.answer(
+                "This request expired — send the screenshot again.",
+                show_alert=True,
+            )
+            await q.edit_message_text("Expired. Send the screenshot again.")
+            return
+        # Every branch above either returned or assigned a date; the assert
+        # pins that, since the intake starts the record at None.
+        assert new_date is not None, "date button without a date"
+        st["date"] = new_date
+        date = new_date
+        iso = date.isoformat()
+        label = "%s %s, %d" % (date.strftime("%B"), ordinal(date.day), date.year)
+        st["iso"] = iso
+        st["label"] = label
 
-    # The number being confirmed comes from the pending record, not from the
-    # callback data: the callback only carries a date. Reading it from the
-    # record is also what makes the Confirmation impossible to drift from the
-    # number the user approved.
-    steps = st.get("steps")
-    reported = st.get("reported")
+        # The number being confirmed comes from the pending record, not from
+        # the callback data: the callback only carries a date. Reading it
+        # from the record is also what makes the Confirmation impossible to
+        # drift from the number the user approved.
+        steps = st.get("steps")
+        reported = st.get("reported")
 
-    # Overwrite guard: only the downward direction is challenged.
-    # The site is the authority, not our record of what we wrote: a day the
-    # user entered by hand is invisible until a sync, and the guard has to know
-    # about it or it will overwrite a day the bot never touched.
-    prev = ledger.current_value(iso)
-    st["prev"] = prev
-    # current_value rows are dict[str, object]; the guard compares ints, and
-    # the site only ever stores ints, so this says so once instead of at
-    # every use below.
-    prev_steps = cast(int, prev["steps"]) if prev is not None else None
-    if prev_steps is not None and steps < prev_steps:
+        # Overwrite guard: only the downward direction is challenged.
+        # The site is the authority, not our record of what we wrote: a day
+        # the user entered by hand is invisible until a sync, and the guard
+        # has to know about it or it will overwrite a day the bot never
+        # touched.
+        prev = ledger.current_value(iso)
+        st["prev"] = prev
+        # current_value rows are dict[str, object]; the guard compares ints,
+        # and the site only ever stores ints, so this says so once instead
+        # of at every use below.
+        prev_steps = cast(int, prev["steps"]) if prev is not None else None
+        if prev_steps is not None and steps < prev_steps:
+            await q.edit_message_text(
+                words.overwrite_warning(steps, prev_steps, label),
+                parse_mode=ParseMode.MARKDOWN,
+                reply_markup=kb_overwrite(prev_steps),
+            )
+            await q.answer("this would lower your recorded steps", show_alert=True)
+            return
+        if prev_steps is not None and steps > prev_steps:
+            await q.edit_message_text(
+                words.overwrite_upgrade(steps, prev_steps, label),
+                parse_mode=ParseMode.MARKDOWN,
+            )
+            await q.answer()
+
         await q.edit_message_text(
-            words.overwrite_warning(steps, prev_steps, label),
+            words.confirming(steps, reported, label, iso),
             parse_mode=ParseMode.MARKDOWN,
-            reply_markup=kb_overwrite(prev_steps),
-        )
-        await q.answer("this would lower your recorded steps", show_alert=True)
-        return
-    if prev_steps is not None and steps > prev_steps:
-        await q.edit_message_text(
-            words.overwrite_upgrade(steps, prev_steps, label),
-            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=kb_confirm(reported),
         )
         await q.answer()
-
-    await q.edit_message_text(
-        words.confirming(steps, reported, label, iso),
-        parse_mode=ParseMode.MARKDOWN,
-        reply_markup=kb_confirm(reported),
-    )
-    await q.answer()
 
 
 def ordinal(n: int) -> str:
     if 11 <= (n % 100) <= 13:
         return "%dth" % n
     return "%d%s" % (n, {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th"))
-
-
-async def present_confirmation(
-    chat_id: int, msg: Message, record: pending_mod.Pending
-) -> None:
-    """Stage a Screenshot as the active confirmation.
-
-    Sends the date prompt and records it, keyed by the prompt message.
-    Shared by fresh intake and queue advancement so both stage identically.
-    On send failure the record goes back to the head of the queue: it was
-    already popped, and dropping it would lose the Screenshot silently.
-    """
-    try:
-        sent = await msg.reply_text(
-            words.choose_date(record["steps"], record["reported"], ""),
-            parse_mode=ParseMode.MARKDOWN,
-            reply_markup=kb_date_default(),
-        )
-    except Exception:
-        pending_mod.requeue_front(chat_id, record)
-        raise
-    pending_mod.put((chat_id, sent.message_id), record)
 
 
 async def _advance_chat(chat_id: int, msg: Message) -> None:
@@ -241,13 +235,34 @@ async def cb_ok(update: Update, ctx: ContextTypes.DEFAULT_TYPE | None) -> None:
                 )
                 await q.edit_message_text("Expired. Send the screenshot again.")
                 return
-            await present_confirmation(chat.id, msg, record)
+            try:
+                await present_confirmation(chat.id, msg, record)
+            except Exception:
+                # Broad on purpose: a tap must always be answered, and the
+                # record is already requeued, so nothing is lost by catching.
+                with suppress(Exception):
+                    await q.answer(
+                        "something went wrong \u2014 send the screenshot again",
+                        show_alert=True,
+                    )
+                return
+            await q.answer()
         return
+    key: tuple[int, int]
+    st: pending_mod.Pending | None
     key, st = found
+    assert st is not None
 
     if action == "cancel":
         async with pending_mod.lock_for(chat.id):
-            pending_mod.pop(key)
+            st = pending_mod.pop(key, None)
+            if st is None:
+                await q.answer(
+                    "This request expired — send the screenshot again.",
+                    show_alert=True,
+                )
+                await q.edit_message_text("Expired. Send the screenshot again.")
+                return
             await q.edit_message_text(words.cancelled())
             await q.answer()
             await _advance_chat(chat.id, msg)
@@ -258,7 +273,6 @@ async def cb_ok(update: Update, ctx: ContextTypes.DEFAULT_TYPE | None) -> None:
         await q.answer("Pick a date first.", show_alert=True)
         return
 
-    iso = st["iso"]
     label = st["label"]
     with suppress(TelegramError):
         await q.edit_message_text(
@@ -275,21 +289,43 @@ async def cb_ok(update: Update, ctx: ContextTypes.DEFAULT_TYPE | None) -> None:
             # Re-reading must agree with what the user confirmed, or the
             # Screenshot is not the one they agreed to submit.
             steps2, reported2 = await asyncio.to_thread(r.upload, st["path"])
-            if steps2 != st["steps"]:
-                async with pending_mod.lock_for(chat.id):
-                    pending_mod.pop(key)
+            async with pending_mod.lock_for(chat.id):
+                live = pending_mod.get(key)
+                if live is None:
+                    await q.answer(
+                        "This request expired — send the screenshot again.",
+                        show_alert=True,
+                    )
+                    await q.edit_message_text("Expired. Send the screenshot again.")
+                    return
+                if steps2 != live["steps"]:
+                    st = pending_mod.pop(key, None)
+                    if st is None:
+                        await q.answer(
+                            "This request expired — send the screenshot again.",
+                            show_alert=True,
+                        )
+                        await q.edit_message_text("Expired. Send the screenshot again.")
+                        return
                     await msg.reply_text(
                         words.ocr_changed(st["reported"], reported2, label),
                         parse_mode=ParseMode.MARKDOWN,
                     )
                     await q.answer("the site's read changed", show_alert=True)
                     await _advance_chat(chat.id, msg)
-                return
+                    return
             await asyncio.to_thread(r.set_date, date)
             site_text = await asyncio.to_thread(r.commit, st["steps"])
     except Exception as e:
         async with pending_mod.lock_for(chat.id):
-            pending_mod.pop(key)
+            st = pending_mod.pop(key, None)
+            if st is None:
+                await q.answer(
+                    "This request expired — send the screenshot again.",
+                    show_alert=True,
+                )
+                await q.edit_message_text("Expired. Send the screenshot again.")
+                return
             alert, alarm, log_line = await failures.explain(
                 msg,
                 e,
@@ -303,21 +339,31 @@ async def cb_ok(update: Update, ctx: ContextTypes.DEFAULT_TYPE | None) -> None:
         return
 
     async with pending_mod.lock_for(chat.id):
+        st = pending_mod.pop(key, None)
+        if st is None:
+            await q.answer(
+                "This request expired — send the screenshot again.",
+                show_alert=True,
+            )
+            await q.edit_message_text("Expired. Send the screenshot again.")
+            return
         ledger.record(
-            iso,
+            st["iso"],
             st["steps"],
             reported=st["reported"],
-            site_label=label,
+            site_label=st["label"],
             msg_id=msg.message_id,
         )
-        pending_mod.pop(key)
 
         with suppress(TelegramError):
             await msg.reply_text(
-                words.recorded(st["reported"], label, iso, site_text),
+                words.recorded(st["reported"], st["label"], st["iso"], site_text),
                 parse_mode=ParseMode.MARKDOWN,
             )
-        await _advance_chat(chat.id, msg)
+        # The record is already requeued on a failed present, so a failed
+        # advance still records: the next tap promotes.
+        with suppress(Exception):
+            await _advance_chat(chat.id, msg)
 
     # House standing: a second browser launch, best effort, clearly separate
     # from the result. Skipped if memory is short — it is decoration.

@@ -203,3 +203,22 @@ def test_count_covers_queued(bot):
 def test_one_lock_per_chat(bot):
     assert bot.pending.lock_for(1) is bot.pending.lock_for(1)
     assert bot.pending.lock_for(1) is not bot.pending.lock_for(2)
+
+
+def test_pending_ttl_boundary(bot):
+    """A record just inside the TTL reads live; just outside reads gone."""
+    import time
+    ttl = bot.pending.PENDING_TTL
+    fresh = bot.pending.put((1, 10), {"steps": 100})
+    fresh["at"] = time.time() - (ttl - 1)
+    assert bot.pending.get((1, 10)) is not None
+    stale = bot.pending.put((1, 11), {"steps": 100})
+    stale["at"] = time.time() - (ttl + 1)
+    assert bot.pending.get((1, 11)) is None
+    bot.pending.clear()
+    bot.pending.enqueue(1, {"steps": 100})
+    bot.pending._queues[1][0]["at"] = time.time() - (ttl - 1)
+    assert bot.pending.take_next(1)["steps"] == 100
+    bot.pending.enqueue(1, {"steps": 200})
+    bot.pending._queues[1][0]["at"] = time.time() - (ttl + 1)
+    assert bot.pending.take_next(1) is None
