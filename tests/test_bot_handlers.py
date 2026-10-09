@@ -25,6 +25,7 @@ class FakeMessage:
         self.text = text
         self.replies = []
         self.edits = []
+        self.edit_markups = []
         self.deleted = False
         self.markup = None
         self.photo = None
@@ -62,6 +63,7 @@ class FakeMessage:
 
     async def edit_text(self, text, **kw):
         self.edits.append(text)
+        self.edit_markups.append(kw.get("reply_markup"))
         return self
 
     async def edit_message_text(self, text, **kw):
@@ -1212,3 +1214,72 @@ def test_logout_forgets_the_preset_choice(bot, access, ledger, monkeypatch, tmp_
     run(reloaded.on_logout(FakeUpdate(chat_id=1), None))
     assert ledger.has_preset_choice(1) is False
     assert reloaded.has_credentials(1) is False
+
+
+def test_a_second_screenshot_queues_behind_the_first(bot, access, ledger, tmp_path, monkeypatch, session):
+    """Two Screenshots in quick succession: the second waits its turn.
+
+    Before the queue, both keyboards retargeted the newer Screenshot. Now the
+    second is read immediately but confirmed later, in upload order.
+    """
+    monkeypatch.setattr(bot.config, "INBOX", str(tmp_path))
+    access.grant(40, "manual")
+    bot.pending.put((40, 100), {
+        "path": "/tmp/first.jpg", "steps": 1000, "reported": "1,000",
+        "scratch": FakeMessage(), "date": None,
+    })
+
+    class R:
+        def upload(self, path, mode="steps"):
+            return 6532, "6,532"
+
+    @contextlib.asynccontextmanager
+    async def fake_session(chat_id=None, progress=None):
+        yield R()
+
+    monkeypatch.setattr(session, "browser_session", fake_session)
+    upd = FakeUpdate(chat_id=40)
+    upd.message.photo = [FakePhotoSize(_jpeg())]
+    run(bot.on_photo(upd, None))
+    # The active confirmation is untouched; the newcomer waits behind it.
+    assert bot.pending.get((40, 100))["steps"] == 1000
+    assert bot.pending._queues[40][0]["steps"] == 6532
+    assert bot.pending.count() == 2
+    # The queued Screenshot carries no buttons of its own, and no date
+    # prompt was staged for it: the last scratch edit is plain text.
+    queued_scratch = bot.pending._queues[40][0]["scratch"]
+    assert queued_scratch.edit_markups[-1] is None
+    assert "Which day" not in " ".join(queued_scratch.edits)
+    assert "Which day" not in upd.message.said
+
+
+def test_an_implausible_second_screenshot_is_refused(bot, access, ledger, tmp_path, monkeypatch, session):
+    """An implausible read while one is live is refused, not queued.
+
+    Same setup as the queues-behind test, but the site reads 5 steps:
+    the reply says implausible, nothing is enqueued, and the active
+    confirmation is untouched.
+    """
+    monkeypatch.setattr(bot.config, "INBOX", str(tmp_path))
+    access.grant(40, "manual")
+    bot.pending.put((40, 100), {
+        "path": "/tmp/first.jpg", "steps": 1000, "reported": "1,000",
+        "scratch": FakeMessage(), "date": None,
+    })
+
+    class R:
+        def upload(self, path, mode="steps"):
+            return 5, "5"
+
+    @contextlib.asynccontextmanager
+    async def fake_session(chat_id=None, progress=None):
+        yield R()
+
+    monkeypatch.setattr(session, "browser_session", fake_session)
+    upd = FakeUpdate(chat_id=40)
+    upd.message.photo = [FakePhotoSize(_jpeg())]
+    run(bot.on_photo(upd, None))
+    assert "plausible" in upd.message.said.lower()
+    assert bot.pending._queues.get(40) in (None, [])
+    assert bot.pending.count() == 1
+    assert bot.pending.get((40, 100))["steps"] == 1000

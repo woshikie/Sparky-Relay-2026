@@ -29,8 +29,8 @@ def all_strings():
         fn = getattr(words, name)
         if not callable(fn):
             continue
-        for args in ((), ("x",), ("x", "y"), (1,), (1, 2, "x"),
-                     (100, 200, "October 4th, 2026")):
+        for args in ((), ("x",), ("x", "y"), (1,), ("x", 2),
+                     (1, 2, "x"), (100, 200, "October 4th, 2026")):
             try:
                 cases.append((name + repr(args), str(fn(*args))))
             except Exception:
@@ -61,7 +61,7 @@ def test_the_shape_sweep_reaches_every_string():
 # rank_line() formats its totals with a thousands separator, so a string raised
 # for reasons that had nothing to do with formatting.
 NUMERIC = ("steps", "total_steps", "total_points", "count", "n", "new_steps",
-           "old_steps", "wait", "retry_after", "written")
+           "old_steps", "wait", "retry_after", "written", "position")
 SUBMISSIONS = [{"activity_date": "2026-10-04", "steps": 6532,
                 "reported": "6,532", "recorded_at": "2026-10-05T21:00:00"}]
 

@@ -1,10 +1,16 @@
 # Sparky Relay 2026 — container run, podman or docker.
 #
-#   podman build --format docker -t sparky-relay-2026:latest .
+# No build needed: this file pulls the released image from GHCR. You only
+# need this file plus a secrets.env next to it (copy secrets.env.example
+# from the repo and fill it in):
+#
 #   set -a; . ./secrets.env; set +a       load secrets into the environment
-#   podman compose up -d relay            detached
+#   podman compose up -d relay            pulls + starts, detached
 #   podman compose logs -f relay
 #   podman compose down
+#
+# To build the image yourself instead (developers), add a build section
+# pointing at the repo checkout -- see the Dockerfile there.
 #
 # The `set -a; . ./secrets.env` line is required, not optional: secrets reach the
 # container as environment variables because podman-compose 1.6.0 silently
@@ -19,10 +25,10 @@
 
 services:
   relay:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    image: sparky-relay-2026:latest
+    # Released images live on GHCR, multi-arch (amd64 + arm64): the engine
+    # pulls the right one, nothing to build. `:release` tracks the release
+    # branch; pin a sha tag from the package page for a frozen deploy.
+    image: ghcr.io/woshikie/sparky-relay-2026:release
     container_name: relay
     restart: unless-stopped
 
@@ -67,10 +73,10 @@ services:
 
     volumes:
       - relay-data:/app/data
-      # Samples, read-only, for the in-container verification script. Not
-      # needed at runtime; override to use your own:
-      #   podman run -v /path/to/screens:/samples:ro ...
-      - ./samples:/samples:ro
+      # Samples live only in a repo checkout, so they are not mounted here.
+      # To run the in-container verification, add your own screenshots:
+      #   - /path/to/screens:/samples:ro
+      # then: podman compose exec relay /app/.venv/bin/python -u check_container.py
 
     # Firefox needs more than the 64MB of /dev/shm a container gets by
     # default, or it dies on startup with a bus error.
