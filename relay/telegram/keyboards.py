@@ -47,6 +47,11 @@ def kb_date_default() -> InlineKeyboardMarkup:
                     callback_data=codec.date("pick", t.year, t.month),
                 ),
             ],
+            [
+                InlineKeyboardButton(
+                    "\U0001f5d1 Cancel", callback_data=codec.confirm("cancel")
+                ),
+            ],
         ]
     )
 
