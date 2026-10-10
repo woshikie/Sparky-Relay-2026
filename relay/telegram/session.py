@@ -7,7 +7,8 @@ hold it briefly (HOLD_BROWSER_SECS) for the coming Confirm, so the user does
 not pay a ~20s relaunch after tapping. The Relay itself is a singleton
 because the browser is a single scarce resource, not because of any session:
 every launch uses a fresh profile and logs in as its chat, so no session
-ever survives a Screenshot.
+ever crosses a chat boundary or survives a close; a held browser is
+same-chat-only and re-logs-in on reuse.
 """
 
 import asyncio
@@ -210,8 +211,10 @@ def hold_deadline(chat_id: int) -> float | None:
     """The deadline of this chat's hold, or None when it holds nothing.
 
     A synchronous snapshot for callers that must close only what they armed
-    (see close_held's expected_until): no awaits, so no interleaving between
-    the read and the call that uses it.
+    (see close_held's expected_until). The snapshot itself is exact, but a
+    rearm can land while close_held waits on the site lock -- safety comes
+    from comparing the token inside close_held under the lock, not from
+    call adjacency.
     """
     if _held_chat != chat_id:
         return None
@@ -245,8 +248,9 @@ async def site_login(
     """Sign in using the credentials held for this chat.
 
     The old ledger "session_valid" shortcut is gone: it was never written to, so
-    it always reported stale. Every browser launch uses a fresh profile and
-    logs in unconditionally, so no cached session ever decides anything.
+    it always reported stale. Fresh launches log in unconditionally, so no
+    cached session ever decides anything; a reused hold skips login only
+    while its own session lives (see browser_session).
     """
     raise RuntimeError("site_login(ctx) is superseded by browser_session()")
 
