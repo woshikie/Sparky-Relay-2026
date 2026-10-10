@@ -16,6 +16,7 @@ from telegram.constants import ParseMode
 from telegram.error import TelegramError
 from telegram.ext import ContextTypes
 
+import relay.clock as clock
 import relay.store.ledger as ledger
 import relay.telegram.access as access
 import relay.telegram.codec as codec
@@ -23,8 +24,8 @@ import relay.telegram.failures as failures
 import relay.telegram.pending as pending_mod
 import relay.telegram.session as session_mod
 import relay.telegram.words as words
-from relay.clock import sg_today
 from relay.site.parsing import parse_profile
+from relay.telegram.datepicker import EVENT_START_MONTH, EVENT_START_YEAR
 from relay.telegram.keyboards import (
     kb_confirm,
     kb_date_default,
@@ -90,15 +91,24 @@ async def _cb_date(update: Update, ctx: ContextTypes.DEFAULT_TYPE | None) -> Non
         key, st = found
 
     new_date: datetime.date | None = None
+    today_now: datetime.date | None = None
+    if kind in ("today", "yday", "day"):
+        today_now = clock.sg_today()
     if kind == "today":
-        new_date = sg_today()
+        assert today_now is not None
+        new_date = today_now
     elif kind == "yday":
-        new_date = sg_today() - datetime.timedelta(days=1)
+        assert today_now is not None
+        new_date = today_now - datetime.timedelta(days=1)
     elif kind == "back":
         await q.edit_message_reply_markup(reply_markup=kb_date_default())
         await q.answer()
         return
     elif kind == "pick":
+        # Non-local safety: pick/prev/next funnel through kb_pick_date,
+        # which funnels through keyboard()'s clamp, so no payload here can
+        # page the grid outside [October 2026, max(today's month,
+        # October 2026)].
         y, m = int(rest[0]), int(rest[1])
         await q.edit_message_text(
             "\U0001f4c5 Pick the activity date.", reply_markup=kb_pick_date(y, m)
@@ -106,20 +116,27 @@ async def _cb_date(update: Update, ctx: ContextTypes.DEFAULT_TYPE | None) -> Non
         await q.answer()
         return
     elif kind == "prev":
-        # The target month arrives already resolved: datepicker.shift() owns the
-        # wrap, so there is no January/December arithmetic here to get wrong.
+        # Same clamp as pick (see above): the target month arrives already
+        # resolved — datepicker.shift() owns the wrap, so there is no
+        # January/December arithmetic here to get wrong — and kb_pick_date
+        # clamps it into the window.
         await q.edit_message_reply_markup(
             reply_markup=kb_pick_date(int(rest[0]), int(rest[1]))
         )
         await q.answer()
         return
     elif kind == "next":
+        # Same clamp as pick (see above): kb_pick_date clamps the target
+        # into the window, so a crafted out-of-window payload still lands
+        # inside it.
         await q.edit_message_reply_markup(
             reply_markup=kb_pick_date(int(rest[0]), int(rest[1]))
         )
         await q.answer()
         return
     elif kind == "day":
+        # Server-side guard (see below): the payload names the date, so it
+        # is assigned here and judged with the rest after the branch.
         new_date = datetime.date.fromisoformat(rest[0])
     elif kind == "none":
         # Padding in the calendar grid. Answer, so the client stops spinning.
@@ -128,6 +145,21 @@ async def _cb_date(update: Update, ctx: ContextTypes.DEFAULT_TYPE | None) -> Non
     else:
         await q.answer()
         return
+
+    if new_date is not None:
+        # One shared guard for every kind that sets a date, judged against
+        # the clock bound once above (no second read, so a tap straddling
+        # SGT midnight cannot compute with one day and judge with the
+        # next). today needs no *ceiling* guard — it is the ceiling — but
+        # the floor applies to every kind: on 2026-10-01 yday is 2026-09-30,
+        # and before the event today itself is pre-event.
+        assert today_now is not None
+        if new_date < datetime.date(EVENT_START_YEAR, EVENT_START_MONTH, 1):
+            await q.answer(words.pre_event_day())
+            return
+        if new_date > today_now:
+            await q.answer(words.future_day())
+            return
 
     assert key is not None
     async with pending_mod.lock_for(chat.id):
