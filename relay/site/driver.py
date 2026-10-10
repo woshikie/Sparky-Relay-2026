@@ -7,6 +7,8 @@ upload + read the Detected Steps, set the Activity Date, commit.
 import datetime
 import os
 import re
+import shutil
+import tempfile
 import time
 from contextlib import suppress
 
@@ -37,7 +39,6 @@ ROOT = os.path.dirname(os.path.dirname(HERE))
 # State that must survive a restart lives under config.LEDGER_DB's directory, so
 # in a container it is the mounted volume rather than the (read-only) image.
 STATE_DIR = config.STATE_DIR
-PROFILE = os.environ.get("BROWSER_PROFILE", os.path.join(STATE_DIR, ".browserprofile"))
 GECKO = os.environ.get("GECKODRIVER_PATH", os.path.join(ROOT, "bin", "geckodriver"))
 GECKO_LOG = os.path.join(config.LOGS, "geckodriver.log")
 
@@ -50,7 +51,6 @@ MIN_STEPS, MAX_STEPS = 100, 200_000
 # values are seconds-minutes because a cold VM is slow to hydrate, and a test
 # suite that waits 30s to prove a timeout fires is a test suite nobody runs.
 POLL_SECONDS = 0.5
-AUTHED_PROBES = 12  # /auth may bounce to /home with a live session
 FORM_PROBES = 40  # the sign-in form must render
 LOGIN_PROBES = 60  # sign-in must reach an authenticated DOM
 BUTTON_PROBES = 20  # a button we are waiting to appear
@@ -122,6 +122,7 @@ class Relay:
         self.progress = progress
         self.driver: webdriver.Firefox | None = None
         self.log: list[str] = []
+        self._profile: str | None = None
 
     # ---------- plumbing ----------
 
@@ -154,12 +155,12 @@ class Relay:
         if _in_container():
             o.set_preference("security.sandbox.content.level", 0)
             self._say("container detected: content sandbox relaxed")
-        # A persistent profile keeps the Site Session across restarts, so the
-        # Relay does not re-authenticate on every process start. This is also
-        # what makes on-demand launching tolerable: we pay login once, not once
-        # per Screenshot.
+        # A fresh profile every launch: no cookies, no session state from
+        # any previous chat survives. Login is quick, and a saved session was
+        # never worth its bug class (one chat silently riding another's).
+        assert self._profile is not None, "profile created in start()"
         o.add_argument("-profile")
-        o.add_argument(PROFILE)
+        o.add_argument(self._profile)
         for k, v in memory.tune_firefox_env().items():
             o.set_preference(k, v)
         return o
@@ -188,7 +189,9 @@ class Relay:
             self._say("NOT launching the browser: %s" % e)
             raise
         self._step("browser")
-        os.makedirs(PROFILE, exist_ok=True)
+        # Fresh dir per launch under state (disk-backed, not /tmp which may
+        # be tmpfs RAM on a 1GB host). Removed in stop().
+        self._profile = tempfile.mkdtemp(prefix="relay-profile-", dir=STATE_DIR)
         os.makedirs(os.path.dirname(GECKO_LOG), exist_ok=True)
         os.makedirs(config.INBOX, exist_ok=True)
         svc = Service(executable_path=GECKO, log_output=GECKO_LOG)
@@ -202,6 +205,9 @@ class Relay:
             with suppress(Exception):
                 self.driver.quit()
             self.driver = None
+            if self._profile is not None:
+                shutil.rmtree(self._profile, ignore_errors=True)
+                self._profile = None
             self._say("browser closed")
 
     def _text(self, el: WebElement) -> str | None:
@@ -282,13 +288,9 @@ class Relay:
         self._step("signin")
         self._say("opening sign-in")
         self.driver.get(self.base + "/auth")
-        # A persisted profile may already hold a live Session, in which case
-        # /auth bounces to /home and there is no form to fill. Check first.
-        for _ in range(AUTHED_PROBES):
-            if self._authed():
-                self._say("existing session still valid; no sign-in needed")
-                return
-            time.sleep(0.5)
+        # No early return on a live session: the profile is fresh, so any
+        # session here would be someone else's leftovers, and B riding A's
+        # login is exactly the bug fresh profiles exist to kill.
         # Wait for the form to actually render; the SPA hydrates after load and
         # a fixed sleep loses the race on a cold profile / cold VM.
         u: WebElement | None = None
@@ -324,14 +326,7 @@ class Relay:
         # Authenticated DOM = nav exposes /upload. URL alone is not enough:
         # it changes before the session is committed.
         for _ in range(BUTTON_PROBES):
-            try:
-                hrefs = [
-                    a.get_attribute("href") or ""
-                    for a in self.driver.find_elements(By.CSS_SELECTOR, "a")
-                ]
-            except Exception:
-                hrefs = []
-            if any("/upload" in h for h in hrefs):
+            if self._authed():
                 break
             time.sleep(0.5)
         else:

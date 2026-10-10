@@ -84,6 +84,8 @@ class FakeDriver:
     def find_element(self, by, selector):
         if selector == "body":
             return FakeElement(self.body)
+        if selector == "button" and self.buttons:
+            return self.buttons[0]
         raise AssertionError("unexpected selector %r" % selector)
 
     def find_elements(self, by, selector):
@@ -118,7 +120,7 @@ def fast_polls(monkeypatch):
     suite nobody runs, so the loop counts drop and the sleep goes to nothing.
     """
     monkeypatch.setattr(relay_site, "POLL_SECONDS", 0.0)
-    for name in ("AUTHED_PROBES FORM_PROBES LOGIN_PROBES BUTTON_PROBES "
+    for name in ("FORM_PROBES LOGIN_PROBES BUTTON_PROBES "
                  "CALENDAR_PROBES MONTH_PROBES OCR_PROBES COMMIT_PROBES").split():
         monkeypatch.setattr(relay_site, name, 3)
 
@@ -175,22 +177,10 @@ def test_the_date_label_pattern():
 
 # ----------------------------------------------------------------- session
 
-def test_an_already_authenticated_browser_skips_the_form():
-    driver = FakeDriver(current_url="https://site.example/home",
-                        elements={"a": [FakeElement("Upload steps", sink=None)]})
-    driver.elements["a"] = [FakeElement("Upload steps")]
-    driver.elements["a"][0].get_attribute = lambda n: "/upload" \
-        if n == "href" else None
-    r = relay_with(driver)
-    r.login("user", "pass")
-    assert r.log[-1] == "existing session still valid; no sign-in needed"
-    assert not any("/auth" == u[-5:] for u in driver.visited[1:])
-
-
 def test_signing_in_fills_the_form():
     driver = FakeDriver(body="USERNAME PASSWORD SIGN IN",
                         inputs=[FakeElement(), FakeElement()])
-    # /auth bounce-away check must fail first, then the form appears.
+    # No live session to skip on, then the form appears.
     driver.elements["a"] = []
     r = relay_with(driver)
     with pytest.raises(relay_site.SiteChanged):
@@ -615,3 +605,88 @@ def test_authed_is_false_when_the_page_is_gone():
     r.driver.find_elements = lambda *a, **kw: (_ for _ in ()).throw(
         RuntimeError("page gone"))
     assert r._authed() is False
+
+
+def test_login_signs_in_as_its_chat_despite_a_live_session(monkeypatch):
+    """B must never ride A's session.
+
+    A persisted profile used to make login() return early on ANY live
+    session without checking whose. Now every launch is a fresh profile
+    and login always fills the form, so this test puts a live session in
+    front and asserts the given credentials are typed anyway.
+    """
+    monkeypatch.setattr(relay_site, "LOGIN_PROBES", 1)
+    typed = []
+
+    class TypingElement(FakeElement):
+        def __init__(self, kind):
+            super().__init__()
+            self._kind = kind
+
+        def get_attribute(self, name):
+            if name == "type":
+                return self._kind
+            return super().get_attribute(name)
+
+        def send_keys(self, *keys):
+            typed.extend(keys)
+
+    class HrefElement(FakeElement):
+        def __init__(self, href):
+            super().__init__()
+            self._href = href
+
+        def get_attribute(self, name):
+            if name == "href":
+                return self._href
+            return super().get_attribute(name)
+
+    driver = FakeDriver(
+        inputs=[TypingElement("text"), TypingElement("password")],
+        buttons=[FakeElement()],
+        elements={"a": [HrefElement("https://site.example/upload")]},
+        current_url="https://site.example/home",
+    )
+    r = relay_with(driver)
+    r.login("bee", "hunter2")
+    assert typed == ["bee", "hunter2"]
+
+
+def test_browser_profile_is_fresh_per_launch_and_removed_on_stop(
+    tmp_path, monkeypatch
+):
+    """No cookies survive a Screenshot: temp dir per start, gone at stop."""
+    import os
+    import sys
+
+    class FakeFirefox:
+        def __init__(self, options=None, service=None):
+            pass
+
+        def set_page_load_timeout(self, s):
+            pass
+
+        def quit(self):
+            pass
+
+    monkeypatch.setattr(relay_site, "STATE_DIR", str(tmp_path))
+    monkeypatch.setattr(relay_site, "GECKO", sys.executable)
+    monkeypatch.setattr(relay_site.config, "FIREFOX_BIN", sys.executable)
+    monkeypatch.setattr(relay_site.webdriver, "Firefox", FakeFirefox)
+    monkeypatch.setattr(
+        relay_site.memory, "require_memory", lambda: {"available_mb": 9999}
+    )
+    r = relay_site.Relay("https://site.example", headless=True, verbose=False)
+    r.start()
+    first = r._profile
+    assert first is not None and os.path.isdir(first)
+    assert os.path.dirname(first) == str(tmp_path)
+    r.stop()
+    assert r._profile is None
+    assert not os.path.exists(first)
+    r.start()
+    try:
+        assert r._profile is not None and r._profile != first
+    finally:
+        r.stop()
+    assert os.listdir(tmp_path) == []
