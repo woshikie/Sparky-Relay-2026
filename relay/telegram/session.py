@@ -139,10 +139,24 @@ async def browser_session(
         completed = False
         try:
             if reused:
-                # No relaunch: re-establish identity on the live browser. The
-                # form login is cheap; the launch is what is being avoided.
                 assert chat_id is not None
-                await sign_in(chat_id, progress)
+                # The hold is keyed by chat_id and foreign holds are
+                # evicted on acquire, so a live session here is provably
+                # this chat's: skip the form login, which would GET
+                # /auth on a live session, bounce to /home with no form,
+                # and fail as SiteChanged. A dead session mid-hold reads
+                # as not authed and falls through to sign_in as before.
+                try:
+                    still_authed = r._authed()
+                except Exception:
+                    still_authed = False
+                if still_authed:
+                    print(
+                        "[relay] reusing held browser (still signed in)",
+                        flush=True,
+                    )
+                else:
+                    await sign_in(chat_id, progress)
             else:
                 await asyncio.to_thread(r.start)
                 if chat_id is not None:
@@ -192,14 +206,32 @@ def refresh_hold(chat_id: int) -> None:
     _held_until = time.monotonic() + config.HOLD_BROWSER_SECS
 
 
-async def close_held(chat_id: int) -> None:
+def hold_deadline(chat_id: int) -> float | None:
+    """The deadline of this chat's hold, or None when it holds nothing.
+
+    A synchronous snapshot for callers that must close only what they armed
+    (see close_held's expected_until): no awaits, so no interleaving between
+    the read and the call that uses it.
+    """
+    if _held_chat != chat_id:
+        return None
+    return _held_until
+
+
+async def close_held(chat_id: int, expected_until: float | None = None) -> None:
     """Close the browser held for this chat now, e.g. on explicit cancel.
 
-    No-op when the hold belongs to nobody or to another chat.
+    No-op when the hold belongs to nobody or to another chat. When
+    expected_until is given, no-op unless the deadline still matches: a
+    concurrent read that rearmed (or a date tap that refreshed) moved it,
+    so this close is stale and must not destroy the new hold. The deadline
+    doubles as the generation token -- no counter to keep in sync.
     """
     global _held_chat, _held_until
     async with _site_lock:
         if _held_chat != chat_id:
+            return
+        if expected_until is not None and _held_until != expected_until:
             return
         print("[relay] closing browser", flush=True)
         await asyncio.to_thread(get_relay().stop)

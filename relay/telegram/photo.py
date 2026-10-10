@@ -116,6 +116,19 @@ async def on_photo(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         return
 
     plausible = relay_site.MIN_STEPS <= steps <= relay_site.MAX_STEPS
+    if not plausible:
+        # A refusal never enqueues, so no Confirm ever comes to consume the
+        # hold the read phase just armed: close it now instead of pinning
+        # ~640MB for HOLD_BROWSER_SECS for nothing. Before any Telegram I/O
+        # on purpose, and guarded by the deadline just armed: ordering alone
+        # does not suffice, because a second read already waiting on the site
+        # lock wins it first (FIFO) and rearms, and an unconditional close
+        # would then destroy the new hold. A moved deadline means someone
+        # rearmed -- leave it alone. No pending lock is held here (the
+        # enqueue decision below has not run), so taking the site lock inside
+        # close_held cannot deadlock against the commit path.
+        armed_until = session_mod.hold_deadline(chat.id)
+        await session_mod.close_held(chat.id, expected_until=armed_until)
     # The last edit is the one the user reads, so it is never throttled.
     # Implausible reads are refused before the lock: they are never enqueued,
     # on either path.
@@ -124,12 +137,6 @@ async def on_photo(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     )
     if not plausible:
         await msg.reply_text(words.implausible(reported), parse_mode=ParseMode.MARKDOWN)
-        # A refusal never enqueues, so no Confirm ever comes to consume the
-        # hold the read phase just armed: close it now instead of pinning
-        # ~640MB for HOLD_BROWSER_SECS for nothing. No pending lock is held
-        # here (the enqueue decision below has not run), so taking the site
-        # lock inside close_held cannot deadlock against the commit path.
-        await session_mod.close_held(chat.id)
         return
     record: pending_mod.Pending = {
         "path": path,

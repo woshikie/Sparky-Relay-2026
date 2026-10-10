@@ -66,6 +66,19 @@ async def _cb_date(update: Update, ctx: ContextTypes.DEFAULT_TYPE | None) -> Non
         return
     _, kind, rest = codec.decode(q.data)
 
+    # Navigation taps (back/pick/prev/next/none, and anything unrecognised)
+    # return from the dispatch below without reaching the refresh under the
+    # pending lock, so refresh here: paging the calendar past the deadline
+    # must not lose the hold mid-decision. Date kinds (today/yday/day) are
+    # deliberately excluded -- their refresh lives under the lock above the
+    # overwrite guard, and a dedicated test pins that placement. Guarded by
+    # a fresh liveness read (pre-lock st may be stale); refresh_hold itself
+    # no-ops for foreign or missing holds.
+    if kind not in ("today", "yday", "day") and (
+        pending_mod.latest_for_chat(chat.id) is not None
+    ):
+        session_mod.refresh_hold(chat.id)
+
     key: tuple[int, int] | None = None
     st: pending_mod.Pending | None = None
     if msg.reply_to_message is not None:
@@ -260,6 +273,7 @@ async def cb_ok(update: Update, ctx: ContextTypes.DEFAULT_TYPE | None) -> None:
     assert st is not None
 
     if action == "cancel":
+        still_live = False
         async with pending_mod.lock_for(chat.id):
             st = pending_mod.pop(key, None)
             if st is None:
@@ -272,15 +286,23 @@ async def cb_ok(update: Update, ctx: ContextTypes.DEFAULT_TYPE | None) -> None:
             await q.edit_message_text(words.cancelled())
             await q.answer()
             await _advance_chat(chat.id, msg)
+            # Photo B reused/extended the same per-chat hold while queued
+            # behind A, so cancelling A into B must not destroy what B
+            # needs. Read under the lock so the close below cannot race
+            # the advance it just performed.
+            still_live = pending_mod.latest_for_chat(chat.id) is not None
         # An explicit cancel ends the wait: close the held browser now
-        # rather than letting the hold lapse. Outside the pending lock on
-        # purpose: close_held takes the site lock, while the commit path
-        # takes the pending lock while holding the site lock (site->pending),
-        # so closing in here (pending->site) would deadlock a concurrent
-        # Confirm+Cancel on one chat. The race is benign: if the commit
-        # already closed or cleared the hold, close_held no-ops (stop() is
-        # idempotent, and a foreign or missing hold returns early).
-        await session_mod.close_held(chat.id)
+        # rather than letting the hold lapse -- but only when nothing is
+        # still live (no queue advanced into the hold). Outside the pending
+        # lock on purpose: close_held takes the site lock, while the commit
+        # path takes the pending lock while holding the site lock
+        # (site->pending), so closing in here (pending->site) would deadlock
+        # a concurrent Confirm+Cancel on one chat. The race is benign: if
+        # the commit already closed or cleared the hold, close_held no-ops
+        # (stop() is idempotent, and a foreign or missing hold returns
+        # early).
+        if not still_live:
+            await session_mod.close_held(chat.id)
         return
 
     date = st.get("date")
