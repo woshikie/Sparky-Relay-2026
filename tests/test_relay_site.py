@@ -182,14 +182,16 @@ def test_signing_in_fills_the_form(monkeypatch):
     """The sign-in path types the given credentials, then clicks through."""
     monkeypatch.setattr(relay_site.time, "sleep", lambda _s: None)
     typed = []
+    clicked = []
     driver = FakeDriver(
         inputs=[TypingElement("text", typed), TypingElement("password", typed)],
-        buttons=[FakeElement()],
+        buttons=[FakeElement(sink=clicked.append)],
         elements={"a": [HrefElement("https://site.example/upload")]},
     )
     r = relay_with(driver)
     r.login("user", "pass")
     assert typed == ["user", "pass"]
+    assert clicked != []
     assert r.log[-1] == "signed in"
 
 
@@ -650,20 +652,21 @@ def test_login_signs_in_as_its_chat_despite_a_live_session(monkeypatch):
     session without checking whose. Now every launch is a fresh profile
     and login always fills the form, so this test puts a live session in
     front and asserts the given credentials are typed anyway. Sleeps are
-    patched out, so the real probe counts run -- a stronger pin than
-    shrinking them.
+    patched out.
     """
     monkeypatch.setattr(relay_site.time, "sleep", lambda _s: None)
     typed = []
+    clicked = []
     driver = FakeDriver(
         inputs=[TypingElement("text", typed), TypingElement("password", typed)],
-        buttons=[FakeElement()],
+        buttons=[FakeElement(sink=clicked.append)],
         elements={"a": [HrefElement("https://site.example/upload")]},
         current_url="https://site.example/home",
     )
     r = relay_with(driver)
     r.login("bee", "hunter2")
     assert typed == ["bee", "hunter2"]
+    assert clicked != []
 
 
 def make_firefox(init_raises=None, quit_raises=None, timeout_raises=None):
@@ -705,10 +708,19 @@ def fake_browser(monkeypatch, tmp_path, firefox_cls):
     is defined/looked up, matching the seams start() reads.
     os.devnull stands in for both binaries: it exists, so the
     exists() guards pass, and the fake Firefox never execs it.
+    INBOX/LOGS/GECKO_LOG point into tmp_path: start() makedirs both,
+    and without this the suite touches the real state dir.
     """
     monkeypatch.setattr(relay_site, "STATE_DIR", str(tmp_path))
     monkeypatch.setattr(relay_site, "GECKO", os.devnull)
+    monkeypatch.setattr(
+        relay_site, "GECKO_LOG",
+        os.path.join(str(tmp_path), "logs", "geckodriver.log"))
     monkeypatch.setattr(relay_site.config, "FIREFOX_BIN", os.devnull)
+    monkeypatch.setattr(
+        relay_site.config, "INBOX", os.path.join(str(tmp_path), "inbox"))
+    monkeypatch.setattr(
+        relay_site.config, "LOGS", os.path.join(str(tmp_path), "logs"))
     monkeypatch.setattr(relay_site.webdriver, "Firefox", firefox_cls)
     monkeypatch.setattr(
         relay_site.memory, "require_memory", lambda: {"available_mb": 9999}
@@ -733,7 +745,8 @@ def test_browser_profile_is_fresh_per_launch_and_removed_on_stop(
         assert r._profile is not None and r._profile != first
     finally:
         r.stop()
-    assert os.listdir(tmp_path) == []
+    assert [n for n in os.listdir(tmp_path)
+            if n.startswith("relay-profile-")] == []
 
 
 def test_stop_cleans_up_even_when_quit_throws(tmp_path, monkeypatch):
@@ -761,7 +774,8 @@ def test_failed_start_leaves_no_profile_dir(tmp_path, monkeypatch):
     with pytest.raises(RuntimeError, match="no display"):
         r.start()
     assert r._profile is None
-    assert os.listdir(tmp_path) == []
+    assert [n for n in os.listdir(tmp_path)
+            if n.startswith("relay-profile-")] == []
 
 
 def test_failed_timeout_quits_the_driver_and_removes_the_profile(
@@ -781,7 +795,8 @@ def test_failed_timeout_quits_the_driver_and_removes_the_profile(
         r.start()
     assert r.driver is None
     assert r._profile is None
-    assert os.listdir(tmp_path) == []
+    assert [n for n in os.listdir(tmp_path)
+            if n.startswith("relay-profile-")] == []
     assert len(firefox_cls.made) == 1
     assert firefox_cls.made[0].quit_called is True
 
@@ -806,7 +821,10 @@ def test_start_sweeps_orphan_profiles_but_keeps_live(tmp_path, monkeypatch):
         assert r._profile is not None and os.path.isdir(r._profile)
     finally:
         r.stop()
-    assert sorted(os.listdir(tmp_path)) == ["notes.txt", "other-dir"]
+    assert [n for n in os.listdir(tmp_path)
+            if n.startswith("relay-profile-")] == []
+    assert (tmp_path / "other-dir").is_dir()
+    assert (tmp_path / "notes.txt").is_file()
 
 
 def test_stop_with_no_driver_still_cleans_the_profile(tmp_path, monkeypatch):
