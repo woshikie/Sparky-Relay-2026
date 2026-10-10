@@ -317,7 +317,7 @@ def test_a_changed_second_read_aborts_the_commit(pending, monkeypatch, session):
             return "should not get here"
 
     @contextlib.asynccontextmanager
-    async def fake_session(chat_id=None, progress=None):
+    async def fake_session(chat_id=None, progress=None, hold=False):
         yield R()
     monkeypatch.setattr(session, "browser_session", fake_session)
 
@@ -345,7 +345,7 @@ def test_an_unchanged_second_read_proceeds_to_commit(pending, monkeypatch, sessi
             return "Recorded 6,532 steps for 4 Oct 2026"
 
     @contextlib.asynccontextmanager
-    async def fake_session(chat_id=None, progress=None):
+    async def fake_session(chat_id=None, progress=None, hold=False):
         yield R()
     monkeypatch.setattr(session, "browser_session", fake_session)
 
@@ -372,7 +372,7 @@ def test_the_commit_reports_what_the_site_said(pending, monkeypatch, session):
             return "Recorded 6,532 steps for 4 Oct 2026"
 
     @contextlib.asynccontextmanager
-    async def fake_session(chat_id=None, progress=None):
+    async def fake_session(chat_id=None, progress=None, hold=False):
         yield R()
     monkeypatch.setattr(session, "browser_session", fake_session)
 
@@ -442,7 +442,7 @@ def test_commit_advances_the_queue(pending, monkeypatch, session):
             return "Recorded"
 
     @contextlib.asynccontextmanager
-    async def fake_session(chat_id=None, progress=None):
+    async def fake_session(chat_id=None, progress=None, hold=False):
         yield R()
     monkeypatch.setattr(session, "browser_session", fake_session)
 
@@ -503,7 +503,7 @@ def test_an_ocr_changed_abort_advances_the_queue(pending, monkeypatch,
             raise AssertionError("must not commit a changed read")
 
     @contextlib.asynccontextmanager
-    async def fake_session(chat_id=None, progress=None):
+    async def fake_session(chat_id=None, progress=None, hold=False):
         yield R()
     monkeypatch.setattr(session, "browser_session", fake_session)
 
@@ -533,7 +533,7 @@ def test_a_commit_failure_advances_the_queue(pending, monkeypatch, session):
             raise RuntimeError("site hiccup")
 
     @contextlib.asynccontextmanager
-    async def fake_session(chat_id=None, progress=None):
+    async def fake_session(chat_id=None, progress=None, hold=False):
         yield R()
     monkeypatch.setattr(session, "browser_session", fake_session)
 
@@ -646,7 +646,7 @@ def test_a_second_confirm_tap_commits_nothing(pending, monkeypatch,
             return "Recorded 6,532 steps for 4 Oct 2026"
 
     @contextlib.asynccontextmanager
-    async def fake_session(chat_id=None, progress=None):
+    async def fake_session(chat_id=None, progress=None, hold=False):
         yield R()
     monkeypatch.setattr(session, "browser_session", fake_session)
 

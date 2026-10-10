@@ -1,16 +1,19 @@
 """Runtime: process singletons, the log helper, and the browser lifecycle.
 
-The browser is the expensive part (~640MB measured on a 1GB host), so it
-exists only while a Screenshot is in flight: browser_session() launches on
-entry and closes on exit, and refuses outright when memory is short. The
-Relay itself is a singleton because the browser is a single scarce
-resource, not because of any session: every launch uses a fresh profile
-and logs in as its chat, so no session ever survives a Screenshot.
+The browser is the expensive part (~640MB measured on a 1GB host), so it is
+transient by default: browser_session() launches on entry and closes on exit,
+and refuses outright when memory is short. The photo read phase may instead
+hold it briefly (HOLD_BROWSER_SECS) for the coming Confirm, so the user does
+not pay a ~20s relaunch after tapping. The Relay itself is a singleton
+because the browser is a single scarce resource, not because of any session:
+every launch uses a fresh profile and logs in as its chat, so no session
+ever survives a Screenshot.
 """
 
 import asyncio
 import contextlib
 import os
+import time
 from collections.abc import AsyncIterator
 from contextlib import suppress
 from typing import NoReturn
@@ -40,9 +43,16 @@ async def _noop_job(_context: object) -> None:
 
 # The site's OCR runs in the page, so the browser is the expensive part: ~640MB
 # measured. On a 1GB host it must not be held open. One Relay at a time, and
-# only for as long as a Screenshot is in flight.
+# by default only for as long as a Screenshot is in flight.
 _site_lock = asyncio.Lock()
 _relay: driver.Relay | None = None
+
+# A held browser, if any: which chat it belongs to and when the hold lapses
+# (monotonic clock). At most one browser ever -- the hold only delays the
+# close, never duplicates it. Expiry is lazy: observed on the next acquire,
+# never by a timer task (no background tasks except the nightly backup).
+_held_chat: int | None = None
+_held_until: float = 0.0
 
 
 def get_relay(
@@ -65,17 +75,25 @@ def get_relay(
 async def browser_session(
     chat_id: int | None = None,
     progress: progress_mod.Progress | None = None,
+    hold: bool = False,
 ) -> AsyncIterator[driver.Relay]:
-    """Yield a signed-in Relay, then close the browser.
+    """Yield a signed-in Relay, then close the browser (usually).
 
     Transient by design: the browser exists for the duration of one Screenshot
-    and is torn down afterwards, so idle RAM is the bot process alone.
+    and is torn down afterwards, so idle RAM is the bot process alone. The one
+    exception is the read phase of a confirm flow (hold=True, photo intake
+    only): on a clean exit the browser stays open up to HOLD_BROWSER_SECS for
+    that chat, so Confirm reuses it instead of paying a relaunch, then closes
+    it on its own (hold=False) exit.
 
     Sign-in happens inside, after start and before yield: every flow needs an
     authenticated browser, and a forgotten sign_in used to surface one step
     later as a confusing "the site changed" rather than a credential failure.
     Passing chat_id None skips sign-in, for read-only decoration use (the
-    leaderboard read) -- never for anything that writes.
+    leaderboard read) -- never for anything that writes. A None acquire with
+    a live hold borrows that browser without disturbing the hold: no sign-in,
+    no deadline change, no close, since standings are global and need no
+    identity.
 
     This must be an *async* context manager. With the plain
     `contextlib.contextmanager` on an `async def`, every caller doing
@@ -84,31 +102,106 @@ async def browser_session(
     context manager protocol" -- which is what happened on the first real
     Screenshot, after every test had passed.
     """
+    global _held_chat, _held_until
     async with _site_lock:
+        secs = config.HOLD_BROWSER_SECS
         r = get_relay(progress)
-        # InsufficientMemory propagates as itself: it already carries the
-        # numbers, and wrapping it in a second exception type meant callers had
-        # to catch both for one condition.
-        rep = await asyncio.to_thread(memory.require_memory)
-        print(
-            "[relay] launching browser (%.0fMB free)" % (rep["available_mb"] or 0),
-            flush=True,
-        )
+        live = _held_chat is not None and secs > 0 and time.monotonic() < _held_until
+        if chat_id is None and live:
+            try:
+                yield r
+            finally:
+                if progress is not None:
+                    progress.finish()
+            return
+        reused = chat_id is not None and live and _held_chat == chat_id
+        if reused:
+            print("[relay] reusing held browser", flush=True)
+        else:
+            if _held_chat is not None:
+                # A foreign or expired hold: evict before launching, since
+                # there is only ever one browser.
+                print("[relay] closing held browser", flush=True)
+                await asyncio.to_thread(r.stop)
+                _held_chat = None
+                _held_until = 0.0
+            # InsufficientMemory propagates as itself: it already carries the
+            # numbers, and wrapping it in a second exception type meant
+            # callers had to catch both for one condition. It raises before
+            # the try below, so a refusal never stops a browser that never
+            # started.
+            rep = await asyncio.to_thread(memory.require_memory)
+            print(
+                "[relay] launching browser (%.0fMB free)" % (rep["available_mb"] or 0),
+                flush=True,
+            )
+        completed = False
         try:
-            await asyncio.to_thread(r.start)
-            if chat_id is not None:
+            if reused:
+                # No relaunch: re-establish identity on the live browser. The
+                # form login is cheap; the launch is what is being avoided.
+                assert chat_id is not None
                 await sign_in(chat_id, progress)
+            else:
+                await asyncio.to_thread(r.start)
+                if chat_id is not None:
+                    await sign_in(chat_id, progress)
             yield r
+            completed = True
         finally:
-            print("[relay] closing browser", flush=True)
-            if progress is not None:
-                progress.finish("closing")
-            await asyncio.to_thread(r.stop)
-            if progress is not None:
-                progress.finish()
-            mem_after = memory.mem_mb()
-            if mem_after:
-                print("[relay] %.0fMB available after close" % mem_after, flush=True)
+            if completed and hold and chat_id is not None and secs > 0:
+                _held_chat = chat_id
+                _held_until = time.monotonic() + secs
+                print(
+                    "[relay] holding browser open for %ds" % secs,
+                    flush=True,
+                )
+                if progress is not None:
+                    progress.finish()
+            else:
+                print("[relay] closing browser", flush=True)
+                if progress is not None:
+                    progress.finish("closing")
+                await asyncio.to_thread(r.stop)
+                if progress is not None:
+                    progress.finish()
+                mem_after = memory.mem_mb()
+                if mem_after:
+                    print(
+                        "[relay] %.0fMB available after close" % mem_after,
+                        flush=True,
+                    )
+                _held_chat = None
+                _held_until = 0.0
+
+
+def refresh_hold(chat_id: int) -> None:
+    """Push a held browser's deadline out after date activity for that chat.
+
+    A date tap means the confirmation is still alive, so the hold must not
+    lapse mid-decision. No-op when there is no hold for this chat or holding
+    is off. Plain (not async): no awaits, so it is atomic on the event loop
+    and needs no lock.
+    """
+    global _held_until
+    if config.HOLD_BROWSER_SECS <= 0 or _held_chat != chat_id:
+        return
+    _held_until = time.monotonic() + config.HOLD_BROWSER_SECS
+
+
+async def close_held(chat_id: int) -> None:
+    """Close the browser held for this chat now, e.g. on explicit cancel.
+
+    No-op when the hold belongs to nobody or to another chat.
+    """
+    global _held_chat, _held_until
+    async with _site_lock:
+        if _held_chat != chat_id:
+            return
+        print("[relay] closing browser", flush=True)
+        await asyncio.to_thread(get_relay().stop)
+        _held_chat = None
+        _held_until = 0.0
 
 
 async def site_login(
@@ -117,8 +210,8 @@ async def site_login(
     """Sign in using the credentials held for this chat.
 
     The old ledger "session_valid" shortcut is gone: it was never written to, so
-    it always reported stale, and with prompted credentials the browser profile
-    is what actually decides whether a re-login is needed.
+    it always reported stale. Every browser launch uses a fresh profile and
+    logs in unconditionally, so no cached session ever decides anything.
     """
     raise RuntimeError("site_login(ctx) is superseded by browser_session()")
 
