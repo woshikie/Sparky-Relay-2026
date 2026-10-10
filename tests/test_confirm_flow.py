@@ -180,7 +180,35 @@ def test_a_future_day_tap_answers_and_sets_nothing(pending):
 def test_a_pre_event_day_tap_answers_and_sets_nothing(pending):
     q = press(pending, "dt:day:2026-09-15")
     assert len(q.answers) == 1
-    assert "pick a day in October" in q.answers[0][0]
+    assert "pick a day in October 2026 or later" in q.answers[0][0]
+    assert pending.pending.get((1, 100))["date"] is None
+    assert q.message.edits == [], "no confirmation may be shown for a pre-event day"
+
+
+def test_yday_on_oct_first_is_pre_event(pending, monkeypatch):
+    """The floor guard covers yday too: 2026-10-01 minus one is September."""
+    import relay.clock as clock_mod
+
+    monkeypatch.setattr(
+        clock_mod, "sg_today", lambda: datetime.date(2026, 10, 1)
+    )
+    q = press(pending, "dt:yday")
+    assert len(q.answers) == 1
+    assert "pick a day in October 2026 or later" in q.answers[0][0]
+    assert pending.pending.get((1, 100))["date"] is None
+    assert q.message.edits == [], "no confirmation may be shown for a pre-event day"
+
+
+def test_today_before_the_event_is_pre_event(pending, monkeypatch):
+    """The floor guard covers today too: pre-event, today is pre-event."""
+    import relay.clock as clock_mod
+
+    monkeypatch.setattr(
+        clock_mod, "sg_today", lambda: datetime.date(2026, 9, 30)
+    )
+    q = press(pending, "dt:today")
+    assert len(q.answers) == 1
+    assert "pick a day in October 2026 or later" in q.answers[0][0]
     assert pending.pending.get((1, 100))["date"] is None
     assert q.message.edits == [], "no confirmation may be shown for a pre-event day"
 

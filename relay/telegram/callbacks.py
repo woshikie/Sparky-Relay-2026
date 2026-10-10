@@ -91,10 +91,15 @@ async def _cb_date(update: Update, ctx: ContextTypes.DEFAULT_TYPE | None) -> Non
         key, st = found
 
     new_date: datetime.date | None = None
+    today_now: datetime.date | None = None
+    if kind in ("today", "yday", "day"):
+        today_now = clock.sg_today()
     if kind == "today":
-        new_date = clock.sg_today()
+        assert today_now is not None
+        new_date = today_now
     elif kind == "yday":
-        new_date = clock.sg_today() - datetime.timedelta(days=1)
+        assert today_now is not None
+        new_date = today_now - datetime.timedelta(days=1)
     elif kind == "back":
         await q.edit_message_reply_markup(reply_markup=kb_date_default())
         await q.answer()
@@ -130,17 +135,9 @@ async def _cb_date(update: Update, ctx: ContextTypes.DEFAULT_TYPE | None) -> Non
         await q.answer()
         return
     elif kind == "day":
-        # Server-side guard: every real day carries a day payload, so a
-        # tap is judged here, at tap time, not at render time. today/yday
-        # derive from sg_today() and need no guard; a hand-crafted day
-        # payload can name any date, so both edges are checked.
+        # Server-side guard (see below): the payload names the date, so it
+        # is assigned here and judged with the rest after the branch.
         new_date = datetime.date.fromisoformat(rest[0])
-        if new_date < datetime.date(EVENT_START_YEAR, EVENT_START_MONTH, 1):
-            await q.answer(words.pre_event_day())
-            return
-        if new_date > clock.sg_today():
-            await q.answer(words.future_day())
-            return
     elif kind == "none":
         # Padding in the calendar grid. Answer, so the client stops spinning.
         await q.answer()
@@ -148,6 +145,21 @@ async def _cb_date(update: Update, ctx: ContextTypes.DEFAULT_TYPE | None) -> Non
     else:
         await q.answer()
         return
+
+    if new_date is not None:
+        # One shared guard for every kind that sets a date, judged against
+        # the clock bound once above (no second read, so a tap straddling
+        # SGT midnight cannot compute with one day and judge with the
+        # next). today needs no *ceiling* guard — it is the ceiling — but
+        # the floor applies to every kind: on 2026-10-01 yday is 2026-09-30,
+        # and before the event today itself is pre-event.
+        assert today_now is not None
+        if new_date < datetime.date(EVENT_START_YEAR, EVENT_START_MONTH, 1):
+            await q.answer(words.pre_event_day())
+            return
+        if new_date > today_now:
+            await q.answer(words.future_day())
+            return
 
     assert key is not None
     async with pending_mod.lock_for(chat.id):

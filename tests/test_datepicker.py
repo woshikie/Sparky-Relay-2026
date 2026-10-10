@@ -316,6 +316,9 @@ def test_a_pre_event_today_pins_to_a_dead_october():
         (datetime.date(2026, 11, 5), 2026, 11),
         # December-to-January wrap: the prev arrow must name December.
         (datetime.date(2027, 1, 15), 2027, 1),
+        # Forward year-wrap: December stays in-window under a January
+        # ceiling, so the next arrow live-names January.
+        (datetime.date(2027, 1, 15), 2026, 12),
     ],
 )
 def test_the_grid_has_no_navigation_to_a_non_month(today, year, month):
