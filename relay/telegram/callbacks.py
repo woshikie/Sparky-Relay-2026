@@ -99,6 +99,9 @@ async def _cb_date(update: Update, ctx: ContextTypes.DEFAULT_TYPE | None) -> Non
         await q.answer()
         return
     elif kind == "pick":
+        # Non-local safety: pick/prev/next funnel through kb_pick_date,
+        # which funnels through keyboard()'s clamp, so no payload here can
+        # page the grid outside [event start, current month].
         y, m = int(rest[0]), int(rest[1])
         await q.edit_message_text(
             "\U0001f4c5 Pick the activity date.", reply_markup=kb_pick_date(y, m)
@@ -120,12 +123,12 @@ async def _cb_date(update: Update, ctx: ContextTypes.DEFAULT_TYPE | None) -> Non
         await q.answer()
         return
     elif kind == "day":
+        # Server-side guard: every real day carries a day payload, so a
+        # future tap is rejected here, at tap time, not at render time.
         new_date = datetime.date.fromisoformat(rest[0])
-    elif kind == "future":
-        # A day that has not happened yet. Answered, not silent, and the
-        # pending record is untouched: no date is set.
-        await q.answer(words.future_day())
-        return
+        if new_date > sg_today():
+            await q.answer(words.future_day())
+            return
     elif kind == "none":
         # Padding in the calendar grid. Answer, so the client stops spinning.
         await q.answer()

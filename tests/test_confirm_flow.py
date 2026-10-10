@@ -169,9 +169,10 @@ def test_a_dead_button_is_a_no_op(pending):
 
 
 def test_a_future_day_tap_answers_and_sets_nothing(pending):
-    q = press(pending, "dt:future:2026-10-07")
+    future = (pending.sg_today() + datetime.timedelta(days=1)).isoformat()
+    q = press(pending, "dt:day:" + future)
     assert len(q.answers) == 1
-    assert q.answers[0][0], "the tap must say something, not just stop spinning"
+    assert q.answers[0][0] == pending.words.future_day()
     assert pending.pending.get((1, 100))["date"] is None
     assert q.message.edits == [], "no confirmation may be shown for a future day"
 
