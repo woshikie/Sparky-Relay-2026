@@ -167,6 +167,12 @@ async def _cb_date(update: Update, ctx: ContextTypes.DEFAULT_TYPE | None) -> Non
         # and the site only ever stores ints, so this says so once instead
         # of at every use below.
         prev_steps = cast(int, prev["steps"]) if prev is not None else None
+        # Date activity means the confirmation is still alive: keep its held
+        # browser from lapsing mid-decision. Above the guard on purpose: a
+        # challenged downgrade still sets a date, so both the warning and the
+        # confirming paths extend the deadline. Navigation
+        # (back/pick/prev/next/none) returned above and never reaches here.
+        session_mod.refresh_hold(chat.id)
         if prev_steps is not None and steps < prev_steps:
             await q.edit_message_text(
                 words.overwrite_warning(steps, prev_steps, label),
@@ -188,10 +194,6 @@ async def _cb_date(update: Update, ctx: ContextTypes.DEFAULT_TYPE | None) -> Non
             reply_markup=kb_confirm(reported),
         )
         await q.answer()
-        # Date activity means the confirmation is still alive: keep its held
-        # browser from lapsing mid-decision. Only the date-setting branches
-        # reach here; navigation (back/pick/prev/next/none) returned above.
-        session_mod.refresh_hold(chat.id)
 
 
 def ordinal(n: int) -> str:

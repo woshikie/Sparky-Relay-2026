@@ -335,6 +335,162 @@ def test_a_failure_closes_despite_hold(session, ledger, fake_relay):
     assert fake_relay.stopped == 1
 
 
+# --------------------------------------- the refused read releases the hold
+
+
+class _HoldChat:
+    def __init__(self, chat_id):
+        self.id = chat_id
+        self.username = "testuser"
+
+
+class _HoldScratch:
+    async def edit_text(self, text, **kw):
+        return None
+
+
+class _HoldMessage:
+    def __init__(self, chat_id=1, message_id=100):
+        self.chat = _HoldChat(chat_id)
+        self.message_id = message_id
+        self.photo = None
+        self.document = None
+        self.replies = []
+
+    @property
+    def chat_id(self):
+        """The real Message has this; save_photo() uses it for the filename."""
+        return self.chat.id
+
+    async def reply_text(self, text, **kw):
+        self.replies.append(text)
+        return _HoldScratch()
+
+    @property
+    def said(self):
+        return " ".join(self.replies)
+
+
+class _HoldUpdate:
+    def __init__(self, chat_id=1):
+        self.message = _HoldMessage(chat_id)
+        self.effective_chat = self.message.chat
+        self.effective_message = self.message
+
+
+class _HoldFile:
+    def __init__(self, data):
+        self._data = data
+
+    async def download_as_bytearray(self):
+        return bytearray(self._data)
+
+
+class _HoldPhotoSize:
+    def __init__(self, data):
+        self._f = _HoldFile(data)
+
+    async def get_file(self):
+        return self._f
+
+
+def _hold_jpeg(width=400, height=300):
+    """A real JPEG, small enough to be a plausible screenshot."""
+    import io
+
+    from PIL import Image
+
+    buf = io.BytesIO()
+    Image.new("RGB", (width, height), (200, 30, 30)).save(buf, "JPEG")
+    return buf.getvalue()
+
+
+def test_an_implausible_read_releases_the_hold(
+    bot, access, session, ledger, fake_relay, tmp_path, monkeypatch
+):
+    """A refused read never enqueues, so no Confirm ever comes for the hold.
+
+    The read phase arms hold=True unconditionally, then the implausible
+    branch used to return without closing: ~640MB pinned for a full
+    HOLD_BROWSER_SECS for nothing. Now the refusal closes it: one start,
+    one stop, nothing held, nothing queued.
+    """
+    monkeypatch.setattr(bot.config, "INBOX", str(tmp_path))
+    access.grant(1, "claim")
+    creds(ledger, session, 1)
+    fake_relay.upload = lambda path: (5, "5")
+
+    upd = _HoldUpdate(chat_id=1)
+    upd.message.photo = [_HoldPhotoSize(_hold_jpeg())]
+    run(bot.on_photo(upd, None))
+    assert "plausible" in upd.message.said.lower()
+    assert bot.pending.count() == 0
+    assert fake_relay.started == 1
+    assert fake_relay.stopped == 1
+    assert session._held_chat is None
+
+
+def test_none_hold_is_transient_and_never_parks_a_deadline(
+    session, ledger, fake_relay
+):
+    """browser_session(None, hold=True) normalizes to transient, always.
+
+    None skips sign-in, so there is no identity to hold for: each acquire
+    launches and closes (started == stopped per acquire, no reuse, no
+    sign-in), and no None-with-deadline entry ever parks in _held_chat.
+    Against a live chat-1 hold the None acquire borrows without disturbing
+    it: no second browser resident, no deadline change, no eviction -- so a
+    later Confirm on chat 1 still reuses the one held browser.
+    """
+    creds(ledger, session, 1)
+
+    async def go():
+        async with session.browser_session(None, hold=True):
+            pass
+        assert fake_relay.started == 1
+        assert fake_relay.stopped == 1
+        assert session._held_chat is None
+        assert session._held_until == 0.0
+        async with session.browser_session(None, hold=True):
+            pass
+        assert fake_relay.started == 2
+        assert fake_relay.stopped == 2
+        assert session._held_chat is None
+        assert session._held_until == 0.0
+        assert fake_relay.login_calls == []
+
+    run(go())
+
+    async def held():
+        async with session.browser_session(1, hold=True):
+            pass
+
+    run(held())
+    assert fake_relay.started == 3
+    assert fake_relay.stopped == 2
+    assert session._held_chat == 1
+    deadline = session._held_until
+
+    async def borrow():
+        async with session.browser_session(None, hold=True):
+            pass
+
+    run(borrow())
+    assert fake_relay.started == 3
+    assert fake_relay.stopped == 2
+    assert fake_relay.login_calls == [("testuser", "pw")]
+    assert session._held_chat == 1
+    assert session._held_until == deadline
+
+    async def reuse():
+        async with session.browser_session(1):
+            pass
+
+    run(reuse())
+    assert fake_relay.started == 3
+    assert fake_relay.stopped == 3
+
+
 # ------------------------------------------------------------- the knob
 
 
