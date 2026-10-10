@@ -42,6 +42,11 @@ MONTH_NAMES = (
 )
 WEEKDAYS = ("Mo", "Tu", "We", "Th", "Fr", "Sa", "Su")
 
+# The event runs October 2026 only, so the grid never leaves it: earlier
+# months snap forward to October, later months snap back to today's.
+EVENT_START_YEAR = 2026
+EVENT_START_MONTH = 10
+
 # The prefix lives in the codec now, next to every other wire shape.
 # Aliased, not repeated, so datepicker.PREFIX keeps resolving.
 PREFIX = codec.PREFIX
@@ -91,25 +96,41 @@ def keyboard(
 ) -> InlineKeyboardMarkup:
     """InlineKeyboardMarkup for one month.
 
-    `year`/`month` are clamped forward to the current month, because paging
-    past today offers only dead buttons and reads as a broken calendar.
+    `year`/`month` are clamped into [October 2026, the current month]:
+    paging earlier than the event offers only dead buttons, and paging past
+    today offers only future ones. A nav arrow whose target falls outside
+    the window is rendered as a silent button, so paging cannot leave it.
     """
     today = today or datetime.date.today()
-    if (year, month) < (today.year, today.month):
+    if (year, month) > (today.year, today.month):
         year, month = today.year, today.month
+    if (year, month) < (EVENT_START_YEAR, EVENT_START_MONTH):
+        year, month = EVENT_START_YEAR, EVENT_START_MONTH
 
     py, pm = shift(year, month, -1)
     ny, nm = shift(year, month, 1)
+    # shift() owns the year wrap; the clamp owns the window. A target past
+    # either edge keeps its arrow shape but goes nowhere.
+    prev_data = (
+        codec.date("none")
+        if (py, pm) < (EVENT_START_YEAR, EVENT_START_MONTH)
+        else codec.date("prev", py, pm)
+    )
+    next_data = (
+        codec.date("none")
+        if (ny, nm) > (today.year, today.month)
+        else codec.date("next", ny, nm)
+    )
 
     kb = [
         [
-            InlineKeyboardButton("«", callback_data=codec.date("prev", py, pm)),
+            InlineKeyboardButton("«", callback_data=prev_data),
             # The month itself. Without it there is no way to tell which month the
             # grid is showing, which is the one thing a calendar has to say.
             InlineKeyboardButton(
                 month_title(year, month), callback_data=codec.date("none")
             ),
-            InlineKeyboardButton("»", callback_data=codec.date("next", ny, nm)),
+            InlineKeyboardButton("»", callback_data=next_data),
         ]
     ]
     kb.append(
@@ -127,10 +148,14 @@ def keyboard(
                     )
                 )
             else:
-                # Future days stay visible but inert, so the shape of the
-                # month is still legible. A hidden cell would leave a gap.
+                # Future days stay visible but answer back, so the shape of
+                # the month is still legible and the tap is not silent.
+                # A hidden cell would leave a gap; a dead one would spin.
                 line.append(
-                    InlineKeyboardButton(str(c.day), callback_data=codec.date("none"))
+                    InlineKeyboardButton(
+                        str(c.day),
+                        callback_data=codec.date("future", c.isoformat()),
+                    )
                 )
         kb.append(line)
     kb.append(

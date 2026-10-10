@@ -121,6 +121,11 @@ async def _cb_date(update: Update, ctx: ContextTypes.DEFAULT_TYPE | None) -> Non
         return
     elif kind == "day":
         new_date = datetime.date.fromisoformat(rest[0])
+    elif kind == "future":
+        # A day that has not happened yet. Answered, not silent, and the
+        # pending record is untouched: no date is set.
+        await q.answer(words.future_day())
+        return
     elif kind == "none":
         # Padding in the calendar grid. Answer, so the client stops spinning.
         await q.answer()
