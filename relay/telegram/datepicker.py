@@ -24,6 +24,7 @@ from typing import cast
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
+import relay.clock as clock
 import relay.telegram.codec as codec
 
 MONTH_NAMES = (
@@ -74,7 +75,7 @@ def month_grid(
 
     Cells are `datetime.date` or None for the padding either side.
     """
-    today = today or datetime.date.today()
+    today = today or clock.sg_today()
     first = datetime.date(year, month, 1)
     lead = first.weekday()
     days = calendar.monthrange(year, month)[1]
@@ -86,9 +87,24 @@ def month_grid(
     return [cells[i : i + 7] for i in range(0, len(cells), 7)], today
 
 
-def selectable(day: datetime.date, today: datetime.date) -> bool:
-    """Only past and present days: the site has no future entries to replace."""
-    return day <= today
+def _ceiling(today: datetime.date) -> tuple[int, int]:
+    """(year, month) of the newest month the grid may show.
+
+    Pinned to at least the event start: before October 2026 the window
+    is degenerate, and the grid shows a dead October rather than an
+    empty or backwards range.
+    """
+    eff = max(today, datetime.date(EVENT_START_YEAR, EVENT_START_MONTH, 1))
+    return eff.year, eff.month
+
+
+def clamp(year: int, month: int, today: datetime.date) -> tuple[int, int]:
+    """Snap (year, month) into the window; outside snaps to an edge."""
+    if (year, month) < (EVENT_START_YEAR, EVENT_START_MONTH):
+        return EVENT_START_YEAR, EVENT_START_MONTH
+    if (year, month) > _ceiling(today):
+        return _ceiling(today)
+    return year, month
 
 
 def keyboard(
@@ -100,25 +116,26 @@ def keyboard(
     paging earlier than the event offers only dead buttons, and paging past
     today offers only future ones. A nav arrow whose target falls outside
     the window is rendered as a silent button, so paging cannot leave it.
+
+    Every real day carries a day payload, future or not: whether the day
+    has happened yet is judged server-side at tap time, because a grid
+    rendered before SGT midnight would otherwise misjudge taps after it.
     """
-    today = today or datetime.date.today()
-    if (year, month) > (today.year, today.month):
-        year, month = today.year, today.month
-    if (year, month) < (EVENT_START_YEAR, EVENT_START_MONTH):
-        year, month = EVENT_START_YEAR, EVENT_START_MONTH
+    today = today or clock.sg_today()
+    year, month = clamp(year, month, today)
 
     py, pm = shift(year, month, -1)
     ny, nm = shift(year, month, 1)
-    # shift() owns the year wrap; the clamp owns the window. A target past
-    # either edge keeps its arrow shape but goes nowhere.
+    # shift() owns the year wrap; the clamp owns the window. A target the
+    # clamp would move keeps its arrow shape but goes nowhere.
     prev_data = (
         codec.date("none")
-        if (py, pm) < (EVENT_START_YEAR, EVENT_START_MONTH)
+        if clamp(py, pm, today) != (py, pm)
         else codec.date("prev", py, pm)
     )
     next_data = (
         codec.date("none")
-        if (ny, nm) > (today.year, today.month)
+        if clamp(ny, nm, today) != (ny, nm)
         else codec.date("next", ny, nm)
     )
 
@@ -141,20 +158,10 @@ def keyboard(
         for c in row:
             if c is None:
                 line.append(InlineKeyboardButton(" ", callback_data=codec.date("none")))
-            elif selectable(c, today):
+            else:
                 line.append(
                     InlineKeyboardButton(
                         str(c.day), callback_data=codec.date("day", c.isoformat())
-                    )
-                )
-            else:
-                # Future days stay visible but answer back, so the shape of
-                # the month is still legible and the tap is not silent.
-                # A hidden cell would leave a gap; a dead one would spin.
-                line.append(
-                    InlineKeyboardButton(
-                        str(c.day),
-                        callback_data=codec.date("future", c.isoformat()),
                     )
                 )
         kb.append(line)

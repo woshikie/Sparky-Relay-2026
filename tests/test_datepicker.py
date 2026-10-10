@@ -97,11 +97,17 @@ def test_the_grid_names_the_month():
     assert any("2026" in l for l in labels), labels
 
 
-def test_every_month_is_named():
-    # The grid is clamped to the event window, so the names are pinned on
-    # the title function itself rather than on twelve reachable grids.
-    for m in range(1, 13):
-        assert datepicker.MONTH_NAMES[m - 1] in datepicker.month_title(2026, m)
+@pytest.mark.parametrize("year, month", [(2026, 9), (2026, 8), (2025, 12)])
+def test_months_before_the_event_show_october(year, month):
+    """The event runs October 2026 only: September is not a month here."""
+    grid = datepicker.keyboard(year, month, datetime.date(2026, 10, 6))
+    assert grid.inline_keyboard[0][1].text == "October 2026"
+
+
+def test_a_far_future_month_snaps_to_the_current_month():
+    """Future months are unreachable: the grid lands on today's month."""
+    grid = datepicker.keyboard(2031, 5, datetime.date(2026, 10, 6))
+    assert grid.inline_keyboard[0][1].text == "October 2026"
 
 
 def test_the_title_is_a_button_not_a_link():
@@ -122,9 +128,14 @@ def test_today_is_selectable():
     assert "dt:day:2026-10-06" in captions(grid)
 
 
-def test_future_days_are_inert():
+def test_future_days_carry_a_day_payload():
+    """Judged server-side at tap time, not at render time.
+
+    A grid rendered before SGT midnight must not misjudge taps after it,
+    so every real day carries dt:day and _cb_date rejects future ones.
+    """
     grid = datepicker.keyboard(2026, 10, datetime.date(2026, 10, 6))
-    assert "dt:day:2026-10-07" not in captions(grid)
+    assert "dt:day:2026-10-07" in captions(grid)
 
 
 def test_future_days_are_still_visible():
@@ -133,14 +144,14 @@ def test_future_days_are_still_visible():
     assert "31" in [b.text for b in day_cells(grid)]
 
 
-def test_future_days_carry_an_explicit_payload():
-    """Not dt:day (that would set the date) and not dt:none (that is silent)."""
+def test_no_future_payload_shape():
+    """The dt:future: shape is gone: one day shape, judged at tap time."""
     grid = datepicker.keyboard(2026, 10, datetime.date(2026, 10, 6))
-    assert "dt:future:2026-10-07" in captions(grid)
+    assert not any(d.startswith("dt:future:") for d in captions(grid))
 
 
 def test_padding_is_still_silent():
-    """Only future days answer back; padding, weekdays and title stay none."""
+    """Padding, weekdays and title stay none; only real days tap through."""
     grid = datepicker.keyboard(2026, 10, datetime.date(2026, 10, 6))
     blanks = [b for b in day_cells(grid) if not b.text.strip()]
     assert blanks, "expected padding cells in this month"
@@ -256,11 +267,28 @@ def test_a_month_before_the_event_snaps_forward_to_october():
     assert any("October" in b.text for b in kb[0]), [b.text for b in kb[0]]
 
 
-def test_today_defaults_to_the_real_today():
-    """A caller that forgets to pass `today` gets sane behaviour, not a crash."""
-    kb = datepicker.keyboard(datetime.date.today().year,
-                             datetime.date.today().month).inline_keyboard
-    assert any(str(datetime.date.today().year) in b.text for b in kb[0])
+def test_today_defaults_to_the_app_clock(monkeypatch):
+    """Omitting `today` reads the SGT clock, never the system-local date."""
+    import relay.clock as clock_mod
+    import relay.telegram.datepicker as fresh
+
+    seen = []
+
+    def fake():
+        seen.append(True)
+        return datetime.date(2026, 10, 6)
+
+    monkeypatch.setattr(clock_mod, "sg_today", fake)
+    grid = fresh.keyboard(2026, 10)
+    assert seen, "keyboard() must read the app SGT clock"
+    assert grid.inline_keyboard[0][1].text == "October 2026"
+
+
+def test_a_pre_event_today_pins_to_a_dead_october():
+    """Before the event the window is degenerate: October, visibly so."""
+    grid = datepicker.keyboard(2026, 10, datetime.date(2026, 1, 15))
+    assert grid.inline_keyboard[0][1].text == "October 2026"
+    assert "dt:day:2026-10-01" in captions(grid)
 
 
 # --------------------------------------------------------- the sealed bit
