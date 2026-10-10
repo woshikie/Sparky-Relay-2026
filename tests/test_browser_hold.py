@@ -39,6 +39,7 @@ class FakeRelay:
         self.started = 0
         self.stopped = 0
         self.login_calls = []
+        self.authed = True
 
     def start(self):
         self.started += 1
@@ -48,6 +49,9 @@ class FakeRelay:
 
     def login(self, username, password):
         self.login_calls.append((username, password))
+
+    def _authed(self):
+        return self.authed
 
 
 @pytest.fixture
@@ -80,7 +84,11 @@ def test_hold_keeps_the_browser_open(session, ledger, fake_relay):
 
 
 def test_the_commit_reuses_then_closes(session, ledger, fake_relay):
-    """Confirm skips the relaunch (one start, two sign-ins) and closes."""
+    """Confirm skips the relaunch and the form login, then closes.
+
+    The held session is still live (authed), so reuse needs neither start
+    nor sign_in: one start, one login, one stop.
+    """
     creds(ledger, session, 1)
 
     async def go():
@@ -89,10 +97,54 @@ def test_the_commit_reuses_then_closes(session, ledger, fake_relay):
         async with session.browser_session(1):
             pass
         assert fake_relay.started == 1
-        assert fake_relay.login_calls == [("testuser", "pw")] * 2
+        assert fake_relay.login_calls == [("testuser", "pw")]
         assert fake_relay.stopped == 1
 
     run(go())
+
+
+def test_reuse_skips_sign_in_while_the_session_lives(
+    session, ledger, fake_relay
+):
+    """A live held session is provably this chat's, so no second login.
+
+    Honesty check: pre-fix the reuse path always signed in, so this fails
+    there (two logins, not one). Against a real browser it is worse than a
+    count: the form login GETs /auth on a live session, bounces to /home
+    with no form, and raises SiteChanged -- every reuse fails.
+    """
+    fake_relay.authed = True
+    creds(ledger, session, 1)
+
+    async def go():
+        async with session.browser_session(1, hold=True):
+            pass
+        async with session.browser_session(1):
+            pass
+
+    run(go())
+    assert fake_relay.started == 1
+    assert fake_relay.login_calls == [("testuser", "pw")]
+    assert fake_relay.stopped == 1
+
+
+def test_reuse_signs_in_again_after_the_session_died(
+    session, ledger, fake_relay
+):
+    """A dead session mid-hold falls through to sign_in as before."""
+    fake_relay.authed = False
+    creds(ledger, session, 1)
+
+    async def go():
+        async with session.browser_session(1, hold=True):
+            pass
+        async with session.browser_session(1):
+            pass
+
+    run(go())
+    assert fake_relay.started == 1
+    assert fake_relay.login_calls == [("testuser", "pw")] * 2
+    assert fake_relay.stopped == 1
 
 
 def test_after_commit_the_next_read_relaunches(session, ledger, fake_relay):
@@ -525,3 +577,188 @@ def test_hold_negative_floors_at_zero(monkeypatch, tmp_path):
         monkeypatch, HOLD_BROWSER_SECS="-5", RELAY_STATE_DIR=str(tmp_path)
     )
     assert cfg.HOLD_BROWSER_SECS == 0
+
+
+# --------------------------------- date taps keep the hold they decide under
+
+
+class _DateChat:
+    def __init__(self, chat_id):
+        self.id = chat_id
+        self.username = "testuser"
+
+
+class _DateMessage:
+    def __init__(self, chat_id=1, message_id=200):
+        self.chat = _DateChat(chat_id)
+        self.message_id = message_id
+        self.reply_to_message = None
+        self.edits = []
+        self.markup = None
+        self.replies = []
+
+    async def reply_text(self, text, **kw):
+        self.replies.append(text)
+        return self
+
+    async def edit_message_text(self, text, **kw):
+        self.edits.append(text)
+        if "reply_markup" in kw:
+            self.markup = kw["reply_markup"]
+        return self
+
+    async def edit_message_reply_markup(self, reply_markup=None, **kw):
+        self.markup = reply_markup
+        return self
+
+
+class _DateQuery:
+    def __init__(self, data, chat_id=1):
+        self.data = data
+        self.answers = []
+        self.message = _DateMessage(chat_id)
+
+    async def answer(self, text=None, show_alert=False):
+        self.answers.append((text, show_alert))
+
+    async def edit_message_text(self, text, **kw):
+        return await self.message.edit_message_text(text, **kw)
+
+    async def edit_message_reply_markup(self, reply_markup=None, **kw):
+        return await self.message.edit_message_reply_markup(reply_markup)
+
+
+def _press_date(bot, data, chat_id=1):
+    q = _DateQuery(data, chat_id=chat_id)
+    upd = type("U", (), {})()
+    upd.callback_query = q
+    upd.effective_chat = q.message.chat
+    upd.effective_message = q.message
+    run(bot.cb_date(upd, None))
+    return q
+
+
+def _press_cancel(bot, chat_id=1):
+    q = _CancelQuery("ok:cancel", chat_id=chat_id)
+    upd = type("U", (), {})()
+    upd.callback_query = q
+    upd.effective_chat = q.message.chat
+    upd.effective_message = q.message
+    run(bot.cb_ok(upd, None))
+    return q
+
+
+def test_navigation_taps_refresh_the_hold(bot, access, session, monkeypatch):
+    """Every navigation exit extends the deadline, not just the date ones.
+
+    back/pick/prev/next/none (and anything unrecognised) return before the
+    refresh under the pending lock, so they refresh up front instead. Each
+    payload is pressed against a hold armed one second ago; all six must
+    push the deadline to now + HOLD.
+    """
+    access.grant(1, "claim")
+    bot.pending.clear()
+    bot.pending.put((1, 100), {
+        "path": "/tmp/x.jpg", "steps": 6532, "reported": "6,532",
+        "scratch": _DateMessage(1), "date": None,
+    })
+    monkeypatch.setattr(session.config, "HOLD_BROWSER_SECS", 60)
+    now = [4000.0]
+    monkeypatch.setattr(time, "monotonic", lambda: now[0])
+    session._held_chat = 1
+    for data in (
+        "dt:back", "dt:pick:2026:10", "dt:prev:2026:10",
+        "dt:next:2026:10", "dt:none", "dt:whatever",
+    ):
+        session._held_until = now[0] + 60
+        now[0] += 1.0
+        _press_date(bot, data)
+        assert session._held_until == now[0] + 60, data
+
+
+def test_downgrade_warning_still_refreshes_the_hold(
+    bot, access, session, ledger, monkeypatch
+):
+    """The date-path refresh sits above the overwrite guard on purpose.
+
+    A challenged downgrade still sets a date, so the warning path must
+    extend the deadline too. Regression pin: moving the refresh below the
+    guard's early return leaves the deadline stale on exactly this path and
+    fails the first assert, while the warning asserts stay green.
+    """
+    access.grant(1, "claim")
+    bot.pending.clear()
+    bot.pending.put((1, 100), {
+        "path": "/tmp/x.jpg", "steps": 700, "reported": "700",
+        "scratch": _DateMessage(1), "date": None,
+    })
+    iso = bot.sg_today().isoformat()
+    ledger.record(iso, 6532)
+    monkeypatch.setattr(session.config, "HOLD_BROWSER_SECS", 60)
+    now = [5000.0]
+    monkeypatch.setattr(time, "monotonic", lambda: now[0])
+    session._held_chat = 1
+    session._held_until = now[0] + 60
+    now[0] += 1.0
+    q = _press_date(bot, "dt:today")
+    assert session._held_until == now[0] + 60
+    texts = " ".join(q.message.edits)
+    assert "6,532" in texts
+    assert "700" in texts
+    assert "Overwrite" in q.message.markup.inline_keyboard[0][0].text
+
+
+def test_cancel_into_a_queue_keeps_the_hold(
+    bot, access, session, ledger, fake_relay
+):
+    """Cancelling A presents queued B, which still needs the hold.
+
+    Photo B reused/extended the same per-chat hold while queued behind A,
+    so the cancel must not close what B's Confirm is about to reuse: the
+    advance leaves a live record, the hold stays armed, nothing stops.
+    """
+    access.grant(1, "claim")
+    creds(ledger, session, 1)
+    bot.pending.clear()
+    bot.pending.put((1, 100), {
+        "path": "/tmp/x.jpg", "steps": 6532, "reported": "6,532",
+        "scratch": _CancelMessage(1), "date": None,
+    })
+    bot.pending.enqueue(1, {
+        "path": "/tmp/y.jpg", "steps": 7000, "reported": "7,000",
+        "scratch": _CancelMessage(1), "date": None,
+    })
+
+    async def held():
+        async with session.browser_session(1, hold=True):
+            pass
+
+    run(held())
+    assert session._held_chat == 1
+    _press_cancel(bot)
+    assert bot.pending.latest_for_chat(1)[1]["steps"] == 7000
+    assert session._held_chat == 1
+    assert fake_relay.stopped == 0
+
+
+def test_cancel_with_no_queue_still_closes_the_hold(
+    bot, access, session, ledger, fake_relay
+):
+    """The pre-existing case: nothing advanced, so the hold is released."""
+    access.grant(1, "claim")
+    creds(ledger, session, 1)
+    bot.pending.clear()
+    bot.pending.put((1, 100), {
+        "path": "/tmp/x.jpg", "steps": 6532, "reported": "6,532",
+        "scratch": _CancelMessage(1), "date": None,
+    })
+
+    async def held():
+        async with session.browser_session(1, hold=True):
+            pass
+
+    run(held())
+    assert session._held_chat == 1
+    _press_cancel(bot)
+    assert session._held_chat is None
+    assert fake_relay.stopped == 1
