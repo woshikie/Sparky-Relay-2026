@@ -158,7 +158,8 @@ class Relay:
         # A fresh profile every launch: no cookies, no session state from
         # any previous chat survives. Login is quick, and a saved session was
         # never worth its bug class (one chat silently riding another's).
-        assert self._profile is not None, "profile created in start()"
+        if self._profile is None:
+            raise RuntimeError("profile created in start()")
         o.add_argument("-profile")
         o.add_argument(self._profile)
         for k, v in memory.tune_firefox_env().items():
@@ -193,6 +194,9 @@ class Relay:
         # be tmpfs RAM on a 1GB host). Removed in stop(); orphans from a
         # killed process are swept here, since nothing else can own a
         # relay-profile-* dir while this launch holds the site lock.
+        # STATE_DIR itself first: a fresh custom path would otherwise fail
+        # mkdtemp before anything gets a chance to create it.
+        os.makedirs(STATE_DIR, exist_ok=True)
         self._profile = tempfile.mkdtemp(prefix="relay-profile-", dir=STATE_DIR)
         try:
             self._sweep_orphan_profiles()
