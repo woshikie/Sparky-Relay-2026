@@ -98,10 +98,10 @@ def test_the_grid_names_the_month():
 
 
 def test_every_month_is_named():
-    # today = 15 Jan, so no month is in the past and none gets clamped away.
+    # The grid is clamped to the event window, so the names are pinned on
+    # the title function itself rather than on twelve reachable grids.
     for m in range(1, 13):
-        kb = datepicker.keyboard(2026, m, datetime.date(2026, 1, 15)).inline_keyboard
-        assert any(datepicker.MONTH_NAMES[m - 1] in b.text for b in kb[0]), m
+        assert datepicker.MONTH_NAMES[m - 1] in datepicker.month_title(2026, m)
 
 
 def test_the_title_is_a_button_not_a_link():
@@ -131,6 +131,20 @@ def test_future_days_are_still_visible():
     """A gap would make the month look broken rather than closed."""
     grid = datepicker.keyboard(2026, 10, datetime.date(2026, 10, 6))
     assert "31" in [b.text for b in day_cells(grid)]
+
+
+def test_future_days_carry_an_explicit_payload():
+    """Not dt:day (that would set the date) and not dt:none (that is silent)."""
+    grid = datepicker.keyboard(2026, 10, datetime.date(2026, 10, 6))
+    assert "dt:future:2026-10-07" in captions(grid)
+
+
+def test_padding_is_still_silent():
+    """Only future days answer back; padding, weekdays and title stay none."""
+    grid = datepicker.keyboard(2026, 10, datetime.date(2026, 10, 6))
+    blanks = [b for b in day_cells(grid) if not b.text.strip()]
+    assert blanks, "expected padding cells in this month"
+    assert all(b.callback_data == "dt:none" for b in blanks)
 
 
 def test_there_is_a_today_shortcut():
@@ -182,14 +196,26 @@ def test_shift_over_a_year():
     assert datepicker.shift(2026, 11, 3) == (2027, 2)
 
 
-def test_the_back_button_names_the_previous_month():
-    grid = datepicker.keyboard(2026, 10, datetime.date(2026, 10, 6))
-    assert "dt:prev:2026:9" in captions(grid)
+def test_the_back_arrow_is_disabled_at_the_start_of_the_event():
+    """October 2026 is the floor: paging back goes nowhere."""
+    kb = datepicker.keyboard(2026, 10, datetime.date(2026, 10, 6)).inline_keyboard
+    assert kb[0][0].text == "«"
+    assert kb[0][0].callback_data == "dt:none"
 
 
-def test_the_next_button_names_the_next_month():
-    grid = datepicker.keyboard(2026, 10, datetime.date(2026, 10, 6))
+def test_the_next_arrow_is_disabled_at_the_current_month():
+    """Paging past today goes nowhere."""
+    kb = datepicker.keyboard(2026, 10, datetime.date(2026, 10, 6)).inline_keyboard
+    assert kb[0][2].text == "»"
+    assert kb[0][2].callback_data == "dt:none"
+
+
+def test_paging_inside_the_window_names_resolved_months():
+    """Arrows with somewhere to go still carry the target month resolved."""
+    grid = datepicker.keyboard(2026, 10, datetime.date(2026, 11, 5))
     assert "dt:next:2026:11" in captions(grid)
+    grid = datepicker.keyboard(2026, 11, datetime.date(2026, 11, 5))
+    assert "dt:prev:2026:10" in captions(grid)
 
 
 def test_navigation_carries_a_resolved_month_not_an_offset():
@@ -198,7 +224,7 @@ def test_navigation_carries_a_resolved_month_not_an_offset():
     The handler used to subtract one and re-wrap, which meant two files had to
     agree about January.
     """
-    jan = datepicker.keyboard(2027, 1, datetime.date(2026, 12, 31))
+    jan = datepicker.keyboard(2027, 1, datetime.date(2027, 1, 15))
     assert "dt:prev:2026:12" in captions(jan)
 
 
@@ -216,11 +242,18 @@ def test_clamping_does_not_lose_the_days():
     assert "dt:day:2026-10-03" in captions(grid)
 
 
-def test_a_future_month_is_left_alone():
-    """Only the past is clamped; the future grid is just empty, not rewritten."""
+def test_a_future_month_snaps_to_the_present():
+    """Paging forward past today offers only future buttons."""
     grid = datepicker.keyboard(2026, 12, datetime.date(2026, 10, 6))
     kb = grid.inline_keyboard
-    assert any("December" in b.text for b in kb[0]), [b.text for b in kb[0]]
+    assert any("October" in b.text for b in kb[0]), [b.text for b in kb[0]]
+
+
+def test_a_month_before_the_event_snaps_forward_to_october():
+    """The event runs October 2026 only: September is not a month here."""
+    grid = datepicker.keyboard(2026, 9, datetime.date(2026, 10, 6))
+    kb = grid.inline_keyboard
+    assert any("October" in b.text for b in kb[0]), [b.text for b in kb[0]]
 
 
 def test_today_defaults_to_the_real_today():
