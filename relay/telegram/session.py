@@ -3,8 +3,9 @@
 The browser is the expensive part (~640MB measured on a 1GB host), so it
 exists only while a Screenshot is in flight: browser_session() launches on
 entry and closes on exit, and refuses outright when memory is short. The
-Relay itself is a singleton because the profile -- and therefore the Site
-Session -- belongs to the process, not to any one Screenshot.
+Relay itself is a singleton because the browser is a single scarce
+resource, not because of any session: every launch uses a fresh profile
+and logs in as its chat, so no session ever survives a Screenshot.
 """
 
 import asyncio

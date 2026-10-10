@@ -15,6 +15,7 @@ because each is a place a silent misread would hurt:
   - upload() distinguishes "the site read nothing" from "the page changed".
 """
 import datetime
+import os
 
 import pytest
 
@@ -84,6 +85,8 @@ class FakeDriver:
     def find_element(self, by, selector):
         if selector == "body":
             return FakeElement(self.body)
+        if selector == "button" and self.buttons:
+            return self.buttons[0]
         raise AssertionError("unexpected selector %r" % selector)
 
     def find_elements(self, by, selector):
@@ -118,7 +121,7 @@ def fast_polls(monkeypatch):
     suite nobody runs, so the loop counts drop and the sleep goes to nothing.
     """
     monkeypatch.setattr(relay_site, "POLL_SECONDS", 0.0)
-    for name in ("AUTHED_PROBES FORM_PROBES LOGIN_PROBES BUTTON_PROBES "
+    for name in ("FORM_PROBES LOGIN_PROBES BUTTON_PROBES "
                  "CALENDAR_PROBES MONTH_PROBES OCR_PROBES COMMIT_PROBES").split():
         monkeypatch.setattr(relay_site, name, 3)
 
@@ -175,26 +178,21 @@ def test_the_date_label_pattern():
 
 # ----------------------------------------------------------------- session
 
-def test_an_already_authenticated_browser_skips_the_form():
-    driver = FakeDriver(current_url="https://site.example/home",
-                        elements={"a": [FakeElement("Upload steps", sink=None)]})
-    driver.elements["a"] = [FakeElement("Upload steps")]
-    driver.elements["a"][0].get_attribute = lambda n: "/upload" \
-        if n == "href" else None
+def test_signing_in_fills_the_form(monkeypatch):
+    """The sign-in path types the given credentials, then clicks through."""
+    monkeypatch.setattr(relay_site.time, "sleep", lambda _s: None)
+    typed = []
+    clicked = []
+    driver = FakeDriver(
+        inputs=[TypingElement("text", typed), TypingElement("password", typed)],
+        buttons=[FakeElement(sink=clicked.append)],
+        elements={"a": [HrefElement("https://site.example/upload")]},
+    )
     r = relay_with(driver)
     r.login("user", "pass")
-    assert r.log[-1] == "existing session still valid; no sign-in needed"
-    assert not any("/auth" == u[-5:] for u in driver.visited[1:])
-
-
-def test_signing_in_fills_the_form():
-    driver = FakeDriver(body="USERNAME PASSWORD SIGN IN",
-                        inputs=[FakeElement(), FakeElement()])
-    # /auth bounce-away check must fail first, then the form appears.
-    driver.elements["a"] = []
-    r = relay_with(driver)
-    with pytest.raises(relay_site.SiteChanged):
-        r.login("user", "pass")
+    assert typed == ["user", "pass"]
+    assert clicked != []
+    assert r.log[-1] == "signed in"
 
 
 def test_a_missing_form_is_a_site_change_not_a_crash():
@@ -615,3 +613,233 @@ def test_authed_is_false_when_the_page_is_gone():
     r.driver.find_elements = lambda *a, **kw: (_ for _ in ()).throw(
         RuntimeError("page gone"))
     assert r._authed() is False
+
+
+class TypingElement(FakeElement):
+    """A form input that records what was typed, classified by its type."""
+
+    def __init__(self, kind, sink):
+        super().__init__()
+        self._kind = kind
+        self._sink = sink
+
+    def get_attribute(self, name):
+        if name == "type":
+            return self._kind
+        return super().get_attribute(name)
+
+    def send_keys(self, *keys):
+        self._sink.extend(keys)
+
+
+class HrefElement(FakeElement):
+    """A nav link exposing a fixed href."""
+
+    def __init__(self, href):
+        super().__init__()
+        self._href = href
+
+    def get_attribute(self, name):
+        if name == "href":
+            return self._href
+        return super().get_attribute(name)
+
+
+def test_login_signs_in_as_its_chat_despite_a_live_session(monkeypatch):
+    """B must never ride A's session.
+
+    A persisted profile used to make login() return early on ANY live
+    session without checking whose. Now every launch is a fresh profile
+    and login always fills the form, so this test puts a live session in
+    front and asserts the given credentials are typed anyway. Sleeps are
+    patched out.
+    """
+    monkeypatch.setattr(relay_site.time, "sleep", lambda _s: None)
+    typed = []
+    clicked = []
+    driver = FakeDriver(
+        inputs=[TypingElement("text", typed), TypingElement("password", typed)],
+        buttons=[FakeElement(sink=clicked.append)],
+        elements={"a": [HrefElement("https://site.example/upload")]},
+        current_url="https://site.example/home",
+    )
+    r = relay_with(driver)
+    r.login("bee", "hunter2")
+    assert typed == ["bee", "hunter2"]
+    assert clicked != []
+
+
+def make_firefox(init_raises=None, quit_raises=None, timeout_raises=None):
+    """One configurable Firefox double for the start/stop tests.
+
+    init_raises blows up in the constructor (no display at all);
+    quit_raises in quit() (browser already gone); timeout_raises in
+    set_page_load_timeout (a live driver that never became usable).
+    Made instances hang off the class, so the failure paths can assert
+    no browser was left running.
+    """
+    made = []
+
+    class _FakeFirefox:
+        def __init__(self, options=None, service=None):
+            if init_raises is not None:
+                raise init_raises
+            self.quit_called = False
+            made.append(self)
+
+        def set_page_load_timeout(self, s):
+            if timeout_raises is not None:
+                raise timeout_raises
+
+        def quit(self):
+            self.quit_called = True
+            if quit_raises is not None:
+                raise quit_raises
+
+    _FakeFirefox.made = made
+    return _FakeFirefox
+
+
+def fake_browser(monkeypatch, tmp_path, firefox_cls):
+    """Point the browser-launch seams at fakes.
+
+    STATE_DIR/GECKO live on the driver module, FIREFOX_BIN on config,
+    Firefox on webdriver, require_memory on memory -- patched where each
+    is defined/looked up, matching the seams start() reads.
+    os.devnull stands in for both binaries: it exists, so the
+    exists() guards pass, and the fake Firefox never execs it.
+    INBOX/LOGS/GECKO_LOG point into tmp_path: start() makedirs both,
+    and without this the suite touches the real state dir.
+    """
+    monkeypatch.setattr(relay_site, "STATE_DIR", str(tmp_path))
+    monkeypatch.setattr(relay_site, "GECKO", os.devnull)
+    monkeypatch.setattr(
+        relay_site, "GECKO_LOG",
+        os.path.join(str(tmp_path), "logs", "geckodriver.log"))
+    monkeypatch.setattr(relay_site.config, "FIREFOX_BIN", os.devnull)
+    monkeypatch.setattr(
+        relay_site.config, "INBOX", os.path.join(str(tmp_path), "inbox"))
+    monkeypatch.setattr(
+        relay_site.config, "LOGS", os.path.join(str(tmp_path), "logs"))
+    monkeypatch.setattr(relay_site.webdriver, "Firefox", firefox_cls)
+    monkeypatch.setattr(
+        relay_site.memory, "require_memory", lambda: {"available_mb": 9999}
+    )
+
+
+def test_browser_profile_is_fresh_per_launch_and_removed_on_stop(
+    tmp_path, monkeypatch
+):
+    """No cookies survive a Screenshot: temp dir per start, gone at stop."""
+    fake_browser(monkeypatch, tmp_path, make_firefox())
+    r = relay_site.Relay("https://site.example", headless=True, verbose=False)
+    r.start()
+    first = r._profile
+    assert first is not None and os.path.isdir(first)
+    assert os.path.dirname(first) == str(tmp_path)
+    r.stop()
+    assert r._profile is None
+    assert not os.path.exists(first)
+    r.start()
+    try:
+        assert r._profile is not None and r._profile != first
+    finally:
+        r.stop()
+    assert [n for n in os.listdir(tmp_path)
+            if n.startswith("relay-profile-")] == []
+
+
+def test_stop_cleans_up_even_when_quit_throws(tmp_path, monkeypatch):
+    """quit() throwing must not strand the profile dir."""
+    fake_browser(
+        monkeypatch, tmp_path,
+        make_firefox(quit_raises=RuntimeError("browser already gone")),
+    )
+    r = relay_site.Relay("https://site.example", headless=True, verbose=False)
+    r.start()
+    profile = r._profile
+    assert profile is not None and os.path.isdir(profile)
+    r.stop()  # must not raise, must still remove the dir
+    assert r._profile is None
+    assert not os.path.exists(profile)
+
+
+def test_failed_start_leaves_no_profile_dir(tmp_path, monkeypatch):
+    """Anything blowing up between mkdtemp and a live driver must not orphan."""
+    fake_browser(
+        monkeypatch, tmp_path,
+        make_firefox(init_raises=RuntimeError("no display")),
+    )
+    r = relay_site.Relay("https://site.example", headless=True, verbose=False)
+    with pytest.raises(RuntimeError, match="no display"):
+        r.start()
+    assert r._profile is None
+    assert [n for n in os.listdir(tmp_path)
+            if n.startswith("relay-profile-")] == []
+
+
+def test_failed_timeout_quits_the_driver_and_removes_the_profile(
+    tmp_path, monkeypatch
+):
+    """A driver that dies after construction must still be quit.
+
+    Firefox() handed back a live browser, then set_page_load_timeout threw:
+    old start() removed the dir but left the browser running, with no handle
+    on it and no profile to point a new one at. The quit must be attempted
+    even though setup as a whole failed.
+    """
+    firefox_cls = make_firefox(timeout_raises=RuntimeError("hung"))
+    fake_browser(monkeypatch, tmp_path, firefox_cls)
+    r = relay_site.Relay("https://site.example", headless=True, verbose=False)
+    with pytest.raises(RuntimeError, match="hung"):
+        r.start()
+    assert r.driver is None
+    assert r._profile is None
+    assert [n for n in os.listdir(tmp_path)
+            if n.startswith("relay-profile-")] == []
+    assert len(firefox_cls.made) == 1
+    assert firefox_cls.made[0].quit_called is True
+
+
+def test_start_sweeps_orphan_profiles_but_keeps_live(tmp_path, monkeypatch):
+    """A kill that never reached stop() leaves its dir for the next start.
+
+    Only relay-profile-* dirs go: anything else in STATE_DIR belongs to
+    somebody, and the live profile minted by this start() is untouched.
+    """
+    fake_browser(monkeypatch, tmp_path, make_firefox())
+    stale = os.path.join(str(tmp_path), "relay-profile-stale")
+    os.makedirs(stale)
+    (tmp_path / "other-dir").mkdir()
+    (tmp_path / "notes.txt").write_text("not a profile")
+    r = relay_site.Relay("https://site.example", headless=True, verbose=False)
+    r.start()
+    try:
+        assert not os.path.exists(stale)
+        assert (tmp_path / "other-dir").is_dir()
+        assert (tmp_path / "notes.txt").is_file()
+        assert r._profile is not None and os.path.isdir(r._profile)
+    finally:
+        r.stop()
+    assert [n for n in os.listdir(tmp_path)
+            if n.startswith("relay-profile-")] == []
+    assert (tmp_path / "other-dir").is_dir()
+    assert (tmp_path / "notes.txt").is_file()
+
+
+def test_stop_with_no_driver_still_cleans_the_profile(tmp_path, monkeypatch):
+    """Cleanup must not depend on a live driver.
+
+    A bare profile with driver None is built by hand here: a failed start()
+    now resets _profile to None itself. Old stop() no-oped on driver None
+    and orphaned the dir. This fails pre-fix.
+    """
+    monkeypatch.setattr(relay_site, "STATE_DIR", str(tmp_path))
+    r = relay_site.Relay("https://site.example", headless=True, verbose=False)
+    r._profile = os.path.join(str(tmp_path), "relay-profile-orphan")
+    os.makedirs(r._profile)
+    r.driver = None
+    r.stop()
+    assert r._profile is None
+    assert r.log[-1] == "browser profile removed"
+    assert not os.path.exists(os.path.join(str(tmp_path), "relay-profile-orphan"))
