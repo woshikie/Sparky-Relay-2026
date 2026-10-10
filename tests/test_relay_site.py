@@ -742,3 +742,21 @@ def test_failed_start_leaves_no_profile_dir(tmp_path, monkeypatch):
         r.start()
     assert r._profile is None
     assert os.listdir(tmp_path) == []
+
+
+def test_stop_with_no_driver_still_cleans_the_profile(tmp_path, monkeypatch):
+    """The dedent pin: cleanup must not depend on a live driver.
+
+    A failed start() leaves _profile set with driver None; old stop()
+    no-oped on driver None and orphaned the dir. This fails pre-fix.
+    """
+    import os
+
+    monkeypatch.setattr(relay_site, "STATE_DIR", str(tmp_path))
+    r = relay_site.Relay("https://site.example", headless=True, verbose=False)
+    r._profile = os.path.join(str(tmp_path), "relay-profile-orphan")
+    os.makedirs(r._profile)
+    r.driver = None
+    r.stop()
+    assert r._profile is None
+    assert not os.path.exists(os.path.join(str(tmp_path), "relay-profile-orphan"))
