@@ -57,6 +57,7 @@ KNOWN_KEYS = {
     "LEDGER_DB",
     "INBOX",
     "LOGS",
+    "HOLD_BROWSER_SECS",
 }
 
 ENV = _load()
@@ -140,6 +141,24 @@ MIN_STEPS, MAX_STEPS = 100, 200_000
 KNOWN_CUTOFF = ENV.get("KNOWN_CUTOFF", "2026-11-02T15:59:00+00:00")
 
 BACKUP_TIME = ENV.get("BACKUP_TIME", "03:17")
+
+# How long the read phase keeps the browser open for the coming Confirm.
+# 0 restores the old close-immediately behaviour. Garbage falls back to the
+# default and negatives floor at 0: this is a tuning knob, not a safety
+# decision like ACCESS_MODE, so refusing to start over a typo would be the
+# wrong trade (and ConfigRefused is the idiom for "guessing is unsafe").
+HOLD_BROWSER_SECS_DEFAULT = 60
+
+
+def _hold_secs(raw: str | None) -> int:
+    try:
+        val = int((raw or "").strip())
+    except ValueError:
+        return HOLD_BROWSER_SECS_DEFAULT
+    return max(0, val)
+
+
+HOLD_BROWSER_SECS = _hold_secs(ENV.get("HOLD_BROWSER_SECS"))
 
 
 def has_preset_credentials() -> bool:
