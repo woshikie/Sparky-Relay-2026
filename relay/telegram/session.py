@@ -8,7 +8,8 @@ not pay a ~20s relaunch after tapping. The Relay itself is a singleton
 because the browser is a single scarce resource, not because of any session:
 every launch uses a fresh profile and logs in as its chat, so no session
 ever crosses a chat boundary or survives a close; a held browser is
-same-chat-only and re-logs-in on reuse.
+same-chat-only and re-validates on reuse (re-logs-in only if its session
+died; see browser_session).
 """
 
 import asyncio
