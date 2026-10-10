@@ -314,6 +314,10 @@ def future_day() -> str:
     return "That day hasn't happened yet — pick today or earlier."
 
 
+def pre_event_day() -> str:
+    return "The event runs October 2026 — pick a day in October."
+
+
 def confirming(steps: int, reported: str, date_label: str, iso: str) -> str:
     return (
         "%(ok)s Confirming **%(s)s** steps for **%(dl)s**.\n\n"

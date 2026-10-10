@@ -97,10 +97,20 @@ def test_the_grid_names_the_month():
     assert any("2026" in l for l in labels), labels
 
 
-@pytest.mark.parametrize("year, month", [(2026, 9), (2026, 8), (2025, 12)])
-def test_months_before_the_event_show_october(year, month):
+@pytest.mark.parametrize(
+    "year, month, today",
+    [
+        (2026, 9, datetime.date(2026, 10, 6)),
+        (2026, 8, datetime.date(2026, 10, 6)),
+        (2025, 12, datetime.date(2026, 10, 6)),
+        # Discriminating: with today in November, a floor-less clamp to
+        # today would show November, not October.
+        (2026, 9, datetime.date(2026, 11, 5)),
+    ],
+)
+def test_months_before_the_event_show_october(year, month, today):
     """The event runs October 2026 only: September is not a month here."""
-    grid = datepicker.keyboard(year, month, datetime.date(2026, 10, 6))
+    grid = datepicker.keyboard(year, month, today)
     assert grid.inline_keyboard[0][1].text == "October 2026"
 
 
@@ -151,7 +161,10 @@ def test_no_future_payload_shape():
 
 
 def test_padding_is_still_silent():
-    """Padding, weekdays and title stay none; only real days tap through."""
+    """Padding, weekdays and title stay none; only real days tap through.
+
+    The Today shortcut in the same markup is live dt:today by design —
+    this is about the grid cells, not that footer button."""
     grid = datepicker.keyboard(2026, 10, datetime.date(2026, 10, 6))
     blanks = [b for b in day_cells(grid) if not b.text.strip()]
     assert blanks, "expected padding cells in this month"
@@ -263,15 +276,9 @@ def test_clamping_does_not_lose_the_days():
 
 
 def test_a_future_month_snaps_to_the_present():
-    """Paging forward past today offers only future buttons."""
+    """Paging forward past today lands back on today's month, every day
+    carrying a day payload."""
     grid = datepicker.keyboard(2026, 12, datetime.date(2026, 10, 6))
-    kb = grid.inline_keyboard
-    assert any("October" in b.text for b in kb[0]), [b.text for b in kb[0]]
-
-
-def test_a_month_before_the_event_snaps_forward_to_october():
-    """The event runs October 2026 only: September is not a month here."""
-    grid = datepicker.keyboard(2026, 9, datetime.date(2026, 10, 6))
     kb = grid.inline_keyboard
     assert any("October" in b.text for b in kb[0]), [b.text for b in kb[0]]
 
@@ -285,12 +292,12 @@ def test_today_defaults_to_the_app_clock(monkeypatch):
 
     def fake():
         seen.append(True)
-        return datetime.date(2026, 10, 6)
+        return datetime.date(2026, 12, 6)
 
     monkeypatch.setattr(clock_mod, "sg_today", fake)
-    grid = fresh.keyboard(2026, 10)
+    grid = fresh.keyboard(2031, 5)
     assert seen, "keyboard() must read the app SGT clock"
-    assert grid.inline_keyboard[0][1].text == "October 2026"
+    assert grid.inline_keyboard[0][1].text == "December 2026"
 
 
 def test_a_pre_event_today_pins_to_a_dead_october():
@@ -302,13 +309,25 @@ def test_a_pre_event_today_pins_to_a_dead_october():
 
 # --------------------------------------------------------- the sealed bit
 
-def test_the_grid_has_no_navigation_to_a_non_month():
-    """date() would raise on month 0 or 13, so the wrap must not produce one."""
-    for m in range(1, 13):
-        grid = datepicker.keyboard(2026, m, datetime.date(2026, 1, 1))
-        # January of the next year is the only month not clamped forward.
-        for data in captions(grid):
-            if data.startswith(("dt:prev:", "dt:next:")):
-                y, mm = data.split(":")[2:]
-                assert 1 <= int(mm) <= 12, data
-                assert int(mm) != 0, data
+@pytest.mark.parametrize(
+    "today, year, month",
+    [
+        (datetime.date(2026, 11, 5), 2026, 10),
+        (datetime.date(2026, 11, 5), 2026, 11),
+        # December-to-January wrap: the prev arrow must name December.
+        (datetime.date(2027, 1, 15), 2027, 1),
+    ],
+)
+def test_the_grid_has_no_navigation_to_a_non_month(today, year, month):
+    """shift()'s wrap must never emit month 0 or 13 onto the wire.
+
+    In-window todays, so the arrows carry real prev/next payloads that
+    are actually inspected — a fully clamped grid has only silent buttons
+    and the loop below would assert nothing.
+    """
+    grid = datepicker.keyboard(year, month, today)
+    nav = [d for d in captions(grid) if d.startswith(("dt:prev:", "dt:next:"))]
+    assert nav, "expected live arrows for an in-window month"
+    for data in nav:
+        _, _, _, mm = data.split(":")
+        assert 1 <= int(mm) <= 12, data

@@ -11,11 +11,23 @@ that would mean buying a domain. Hence the grid.
 Two rules this module owns, because getting either wrong is invisible until
 someone taps:
 
-  * callback_data starts with `dt:`, the prefix `cb_date` is registered on. It
-    used to be `cal:` here while the handler matched `^dt:`, so every tap was
-    dropped and the button spun forever. Nothing asserted the two agreed.
-  * prev/next carry the *target* month already resolved. Shifting was left to
-    the handler, so the wrap from January to December lived in a second file.
+  * the wire prefix: callback_data starts with `dt:`, the prefix `cb_date`
+    is registered on. It used to be `cal:` here while the handler matched
+    `^dt:`, so every tap was dropped and the button spun forever. Nothing
+    asserted the two agreed.
+  * prev/next carry the *target* month already resolved. Shifting was left
+    to the handler, so the wrap from January to December lived in a second
+    file.
+
+And four invariants it keeps, for the same reason:
+
+  * grid shape: every day row is seven wide, Monday-first, padded silent.
+  * window clamp: the grid lives in [October 2026, max(today's month,
+    October 2026)] — see clamp().
+  * tap-time judgment: every real day carries a day payload, future or
+    not; whether it has happened yet is judged at tap time, never at
+    render time.
+  * the clock: SGT via relay.clock, never datetime.date.today().
 """
 
 import calendar
@@ -43,8 +55,9 @@ MONTH_NAMES = (
 )
 WEEKDAYS = ("Mo", "Tu", "We", "Th", "Fr", "Sa", "Su")
 
-# The event runs October 2026 only, so the grid never leaves it: earlier
-# months snap forward to October, later months snap back to today's.
+# The event starts October 2026, so the grid lives in [October 2026,
+# max(today's month, October 2026)]: earlier months snap forward to
+# October, later months snap back to the ceiling month.
 EVENT_START_YEAR = 2026
 EVENT_START_MONTH = 10
 
@@ -102,8 +115,9 @@ def clamp(year: int, month: int, today: datetime.date) -> tuple[int, int]:
     """Snap (year, month) into the window; outside snaps to an edge."""
     if (year, month) < (EVENT_START_YEAR, EVENT_START_MONTH):
         return EVENT_START_YEAR, EVENT_START_MONTH
-    if (year, month) > _ceiling(today):
-        return _ceiling(today)
+    ceiling = _ceiling(today)
+    if (year, month) > ceiling:
+        return ceiling
     return year, month
 
 
@@ -112,10 +126,11 @@ def keyboard(
 ) -> InlineKeyboardMarkup:
     """InlineKeyboardMarkup for one month.
 
-    `year`/`month` are clamped into [October 2026, the current month]:
-    earlier months snap forward to October 2026, later months snap back
-    to today's month. A nav arrow whose target falls outside the window
-    is rendered as a silent button, so paging cannot leave it.
+    `year`/`month` are clamped into [October 2026, max(today's month,
+    October 2026)]: earlier months snap forward to October 2026, later
+    months snap back to the ceiling month. A nav arrow whose target falls
+    outside the window is rendered as a silent button, so paging cannot
+    leave it.
 
     Every real day carries a day payload, future or not: whether the day
     has happened yet is judged server-side at tap time, because a grid
