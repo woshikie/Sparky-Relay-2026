@@ -48,6 +48,18 @@ def test_the_date_keyboard_offers_today_and_yesterday(bot):
     assert any("datepicker" in t.lower() for t in labels)
 
 
+def test_the_date_keyboard_offers_cancel(bot):
+    """A misread must be droppable before any date exists (issue #5)."""
+    kb = bot.kb_date_default()
+    cancels = [
+        b.callback_data
+        for row in kb.inline_keyboard
+        for b in row
+        if "Cancel" in b.text
+    ]
+    assert cancels == ["ok:cancel"]
+
+
 def test_the_date_keyboard_shows_the_actual_dates(bot):
     """A label that says 'Today' is not enough; it has to say which day."""
     kb = bot.kb_date_default()
