@@ -190,25 +190,52 @@ class Relay:
             raise
         self._step("browser")
         # Fresh dir per launch under state (disk-backed, not /tmp which may
-        # be tmpfs RAM on a 1GB host). Removed in stop().
+        # be tmpfs RAM on a 1GB host). Removed in stop(); orphans from a
+        # killed process are swept here, since nothing else can own a
+        # relay-profile-* dir while this launch holds the site lock.
         self._profile = tempfile.mkdtemp(prefix="relay-profile-", dir=STATE_DIR)
-        os.makedirs(os.path.dirname(GECKO_LOG), exist_ok=True)
-        os.makedirs(config.INBOX, exist_ok=True)
-        svc = Service(executable_path=GECKO, log_output=GECKO_LOG)
-        self.driver = webdriver.Firefox(options=self._opts(), service=svc)
-        self.driver.set_page_load_timeout(60)
+        try:
+            self._sweep_orphan_profiles()
+            os.makedirs(os.path.dirname(GECKO_LOG), exist_ok=True)
+            os.makedirs(config.INBOX, exist_ok=True)
+            svc = Service(executable_path=GECKO, log_output=GECKO_LOG)
+            self.driver = webdriver.Firefox(options=self._opts(), service=svc)
+            self.driver.set_page_load_timeout(60)
+        except BaseException:
+            shutil.rmtree(self._profile, ignore_errors=True)
+            self._profile = None
+            raise
         self._say("browser started")
 
     def stop(self) -> None:
+        torn_down = self.driver is not None or self._profile is not None
         if self.driver:
             self._step("closing")
             with suppress(Exception):
                 self.driver.quit()
             self.driver = None
-            if self._profile is not None:
-                shutil.rmtree(self._profile, ignore_errors=True)
-                self._profile = None
+        if self._profile is not None:
+            shutil.rmtree(self._profile, ignore_errors=True)
+            self._profile = None
+        if torn_down:
             self._say("browser closed")
+
+    def _sweep_orphan_profiles(self) -> None:
+        """Remove profile dirs from kills that never reached stop().
+
+        Only ours match the prefix, and the live one (just created above)
+        is excluded. Best effort throughout: a leftover is wasted megabytes,
+        not a correctness problem, since no launch ever reuses a dir.
+        """
+        with suppress(Exception):
+            for name in os.listdir(STATE_DIR):
+                path = os.path.join(STATE_DIR, name)
+                if (
+                    name.startswith("relay-profile-")
+                    and path != self._profile
+                    and os.path.isdir(path)
+                ):
+                    shutil.rmtree(path, ignore_errors=True)
 
     def _text(self, el: WebElement) -> str | None:
         """Element text, tolerating the SPA swapping nodes mid-read.

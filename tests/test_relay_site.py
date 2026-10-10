@@ -690,3 +690,55 @@ def test_browser_profile_is_fresh_per_launch_and_removed_on_stop(
     finally:
         r.stop()
     assert os.listdir(tmp_path) == []
+
+
+def test_stop_cleans_up_even_when_quit_throws(tmp_path, monkeypatch):
+    """quit() throwing must not strand the profile dir."""
+    import os
+
+    class ThrowingFirefox:
+        def __init__(self, options=None, service=None):
+            pass
+
+        def set_page_load_timeout(self, s):
+            pass
+
+        def quit(self):
+            raise RuntimeError("browser already gone")
+
+    monkeypatch.setattr(relay_site, "STATE_DIR", str(tmp_path))
+    monkeypatch.setattr(relay_site, "GECKO", os.devnull)
+    monkeypatch.setattr(relay_site.config, "FIREFOX_BIN", os.devnull)
+    monkeypatch.setattr(relay_site.webdriver, "Firefox", ThrowingFirefox)
+    monkeypatch.setattr(
+        relay_site.memory, "require_memory", lambda: {"available_mb": 9999}
+    )
+    r = relay_site.Relay("https://site.example", headless=True, verbose=False)
+    r.start()
+    profile = r._profile
+    assert profile is not None and os.path.isdir(profile)
+    r.stop()  # must not raise, must still remove the dir
+    assert r._profile is None
+    assert not os.path.exists(profile)
+
+
+def test_failed_start_leaves_no_profile_dir(tmp_path, monkeypatch):
+    """Anything blowing up between mkdtemp and a live driver must not orphan."""
+    import os
+
+    class BrokenFirefox:
+        def __init__(self, options=None, service=None):
+            raise RuntimeError("no display")
+
+    monkeypatch.setattr(relay_site, "STATE_DIR", str(tmp_path))
+    monkeypatch.setattr(relay_site, "GECKO", os.devnull)
+    monkeypatch.setattr(relay_site.config, "FIREFOX_BIN", os.devnull)
+    monkeypatch.setattr(relay_site.webdriver, "Firefox", BrokenFirefox)
+    monkeypatch.setattr(
+        relay_site.memory, "require_memory", lambda: {"available_mb": 9999}
+    )
+    r = relay_site.Relay("https://site.example", headless=True, verbose=False)
+    with pytest.raises(RuntimeError, match="no display"):
+        r.start()
+    assert r._profile is None
+    assert os.listdir(tmp_path) == []
