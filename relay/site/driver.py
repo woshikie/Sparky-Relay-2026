@@ -144,7 +144,7 @@ class Relay:
         except Exception:
             self.progress = None
 
-    def _opts(self) -> Options:
+    def _opts(self, profile: str) -> Options:
         o = Options()
         if self.headless:
             o.add_argument("-headless")
@@ -158,10 +158,10 @@ class Relay:
         # A fresh profile every launch: no cookies, no session state from
         # any previous chat survives. Login is quick, and a saved session was
         # never worth its bug class (one chat silently riding another's).
-        if self._profile is None:
-            raise RuntimeError("profile created in start()")
+        # The dir is minted by start() and passed in, so _opts never has to
+        # guess which launch it belongs to.
         o.add_argument("-profile")
-        o.add_argument(self._profile)
+        o.add_argument(profile)
         for k, v in memory.tune_firefox_env().items():
             o.set_preference(k, v)
         return o
@@ -174,6 +174,12 @@ class Relay:
         """
         if self.driver:
             return
+        # A bare profile (dir minted, no live driver) means an earlier
+        # start() died between mkdtemp and a working browser. Reap it here
+        # so a re-entrant start() never silently orphans it under a new dir.
+        if self._profile is not None:
+            shutil.rmtree(self._profile, ignore_errors=True)
+            self._profile = None
         if not os.path.exists(GECKO):
             raise RuntimeError(
                 "geckodriver not found at %s\n  see README for where to get it" % GECKO
@@ -192,27 +198,40 @@ class Relay:
         self._step("browser")
         # Fresh dir per launch under state (disk-backed, not /tmp which may
         # be tmpfs RAM on a 1GB host). Removed in stop(); orphans from a
-        # killed process are swept here, since nothing else can own a
-        # relay-profile-* dir while this launch holds the site lock.
+        # killed process are swept just below, before this launch mints its
+        # own dir, since nothing else can own a relay-profile-* dir while
+        # this launch holds the site lock.
         # STATE_DIR itself first: a fresh custom path would otherwise fail
         # mkdtemp before anything gets a chance to create it.
         os.makedirs(STATE_DIR, exist_ok=True)
+        self._sweep_orphan_profiles()
         self._profile = tempfile.mkdtemp(prefix="relay-profile-", dir=STATE_DIR)
         try:
-            self._sweep_orphan_profiles()
             os.makedirs(os.path.dirname(GECKO_LOG), exist_ok=True)
             os.makedirs(config.INBOX, exist_ok=True)
             svc = Service(executable_path=GECKO, log_output=GECKO_LOG)
-            self.driver = webdriver.Firefox(options=self._opts(), service=svc)
+            assert self._profile is not None, "mkdtemp just minted a profile"
+            self.driver = webdriver.Firefox(
+                options=self._opts(self._profile), service=svc
+            )
             self.driver.set_page_load_timeout(60)
         except BaseException:
-            shutil.rmtree(self._profile, ignore_errors=True)
-            self._profile = None
+            # Firefox() may have handed back a live browser before
+            # set_page_load_timeout threw: quit it before dropping the dir,
+            # or it outlives us with no way back to its own profile.
+            if self.driver is not None:
+                with suppress(Exception):
+                    self.driver.quit()
+                self.driver = None
+            if self._profile is not None:
+                shutil.rmtree(self._profile, ignore_errors=True)
+                self._profile = None
             raise
         self._say("browser started")
 
     def stop(self) -> None:
-        torn_down = self.driver is not None or self._profile is not None
+        had_driver = self.driver is not None
+        did_work = had_driver or self._profile is not None
         if self.driver:
             self._step("closing")
             with suppress(Exception):
@@ -221,24 +240,21 @@ class Relay:
         if self._profile is not None:
             shutil.rmtree(self._profile, ignore_errors=True)
             self._profile = None
-        if torn_down:
-            self._say("browser closed")
+        if did_work:
+            self._say("browser closed" if had_driver else "browser profile removed")
 
     def _sweep_orphan_profiles(self) -> None:
         """Remove profile dirs from kills that never reached stop().
 
-        Only ours match the prefix, and the live one (just created above)
-        is excluded. Best effort throughout: a leftover is wasted megabytes,
-        not a correctness problem, since no launch ever reuses a dir.
+        Runs before this launch mints its own dir, so everything matching
+        the prefix is an orphan. Best effort throughout: a leftover is
+        wasted megabytes, not a correctness problem, since no launch ever
+        reuses a dir.
         """
         with suppress(Exception):
             for name in os.listdir(STATE_DIR):
                 path = os.path.join(STATE_DIR, name)
-                if (
-                    name.startswith("relay-profile-")
-                    and path != self._profile
-                    and os.path.isdir(path)
-                ):
+                if name.startswith("relay-profile-") and os.path.isdir(path):
                     shutil.rmtree(path, ignore_errors=True)
 
     def _text(self, el: WebElement) -> str | None:
