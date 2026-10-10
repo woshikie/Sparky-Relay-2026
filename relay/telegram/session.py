@@ -105,6 +105,7 @@ async def browser_session(
     global _held_chat, _held_until
     async with _site_lock:
         secs = config.HOLD_BROWSER_SECS
+        hold = hold and chat_id is not None and secs > 0
         r = get_relay(progress)
         live = _held_chat is not None and secs > 0 and time.monotonic() < _held_until
         if chat_id is None and live:
@@ -149,7 +150,7 @@ async def browser_session(
             yield r
             completed = True
         finally:
-            if completed and hold and chat_id is not None and secs > 0:
+            if completed and hold:
                 _held_chat = chat_id
                 _held_until = time.monotonic() + secs
                 print(
