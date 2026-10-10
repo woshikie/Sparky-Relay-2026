@@ -652,12 +652,31 @@ def test_login_signs_in_as_its_chat_despite_a_live_session(monkeypatch):
     assert typed == ["bee", "hunter2"]
 
 
+def fake_browser(monkeypatch, tmp_path, firefox_cls):
+    """Point the browser-launch seams at fakes.
+
+    STATE_DIR/GECKO live on the driver module, FIREFOX_BIN on config,
+    Firefox on webdriver, require_memory on memory -- patched where each
+    is defined/looked up, matching the seams start() reads.
+    os.devnull stands in for both binaries: it exists, so the
+    exists() guards pass, and the fake Firefox never execs it.
+    """
+    import os
+
+    monkeypatch.setattr(relay_site, "STATE_DIR", str(tmp_path))
+    monkeypatch.setattr(relay_site, "GECKO", os.devnull)
+    monkeypatch.setattr(relay_site.config, "FIREFOX_BIN", os.devnull)
+    monkeypatch.setattr(relay_site.webdriver, "Firefox", firefox_cls)
+    monkeypatch.setattr(
+        relay_site.memory, "require_memory", lambda: {"available_mb": 9999}
+    )
+
+
 def test_browser_profile_is_fresh_per_launch_and_removed_on_stop(
     tmp_path, monkeypatch
 ):
     """No cookies survive a Screenshot: temp dir per start, gone at stop."""
     import os
-    import sys
 
     class FakeFirefox:
         def __init__(self, options=None, service=None):
@@ -669,13 +688,7 @@ def test_browser_profile_is_fresh_per_launch_and_removed_on_stop(
         def quit(self):
             pass
 
-    monkeypatch.setattr(relay_site, "STATE_DIR", str(tmp_path))
-    monkeypatch.setattr(relay_site, "GECKO", sys.executable)
-    monkeypatch.setattr(relay_site.config, "FIREFOX_BIN", sys.executable)
-    monkeypatch.setattr(relay_site.webdriver, "Firefox", FakeFirefox)
-    monkeypatch.setattr(
-        relay_site.memory, "require_memory", lambda: {"available_mb": 9999}
-    )
+    fake_browser(monkeypatch, tmp_path, FakeFirefox)
     r = relay_site.Relay("https://site.example", headless=True, verbose=False)
     r.start()
     first = r._profile
@@ -706,13 +719,7 @@ def test_stop_cleans_up_even_when_quit_throws(tmp_path, monkeypatch):
         def quit(self):
             raise RuntimeError("browser already gone")
 
-    monkeypatch.setattr(relay_site, "STATE_DIR", str(tmp_path))
-    monkeypatch.setattr(relay_site, "GECKO", os.devnull)
-    monkeypatch.setattr(relay_site.config, "FIREFOX_BIN", os.devnull)
-    monkeypatch.setattr(relay_site.webdriver, "Firefox", ThrowingFirefox)
-    monkeypatch.setattr(
-        relay_site.memory, "require_memory", lambda: {"available_mb": 9999}
-    )
+    fake_browser(monkeypatch, tmp_path, ThrowingFirefox)
     r = relay_site.Relay("https://site.example", headless=True, verbose=False)
     r.start()
     profile = r._profile
@@ -730,13 +737,7 @@ def test_failed_start_leaves_no_profile_dir(tmp_path, monkeypatch):
         def __init__(self, options=None, service=None):
             raise RuntimeError("no display")
 
-    monkeypatch.setattr(relay_site, "STATE_DIR", str(tmp_path))
-    monkeypatch.setattr(relay_site, "GECKO", os.devnull)
-    monkeypatch.setattr(relay_site.config, "FIREFOX_BIN", os.devnull)
-    monkeypatch.setattr(relay_site.webdriver, "Firefox", BrokenFirefox)
-    monkeypatch.setattr(
-        relay_site.memory, "require_memory", lambda: {"available_mb": 9999}
-    )
+    fake_browser(monkeypatch, tmp_path, BrokenFirefox)
     r = relay_site.Relay("https://site.example", headless=True, verbose=False)
     with pytest.raises(RuntimeError, match="no display"):
         r.start()
