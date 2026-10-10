@@ -628,7 +628,7 @@ def _session_without_browser(session, monkeypatch):
     """
 
     @contextlib.asynccontextmanager
-    async def fake(chat_id=None, progress=None):
+    async def fake(chat_id=None, progress=None, hold=False):
         await session.sign_in(chat_id, progress)
         yield None
         raise AssertionError("entered a session that should have failed sign-in")
@@ -703,7 +703,7 @@ def test_sync_completes_when_the_site_has_nothing(bot, access, ledger, monkeypat
             return []
 
     @contextlib.asynccontextmanager
-    async def fake_session(chat_id=None, progress=None):
+    async def fake_session(chat_id=None, progress=None, hold=False):
         yield EmptyRelay()
     monkeypatch.setattr(session, "browser_session", fake_session)
 
@@ -900,7 +900,7 @@ def _photo_with_failing_session(bot, access, ledger, exc, tmp_path, monkeypatch,
                             bot.config.TELEGRAM_BOT_TOKEN)
 
     @contextlib.asynccontextmanager
-    async def failing(chat_id=None, progress=None):
+    async def failing(chat_id=None, progress=None, hold=False):
         raise exc
         yield
 
@@ -1181,7 +1181,7 @@ def test_the_recording_line_names_the_number_and_date(bot, access, monkeypatch, 
             return "Recorded"
 
     @contextlib.asynccontextmanager
-    async def fake_session(chat_id=None, progress=None):
+    async def fake_session(chat_id=None, progress=None, hold=False):
         yield R()
     monkeypatch.setattr(session, "browser_session", fake_session)
 
@@ -1234,7 +1234,7 @@ def test_a_second_screenshot_queues_behind_the_first(bot, access, ledger, tmp_pa
             return 6532, "6,532"
 
     @contextlib.asynccontextmanager
-    async def fake_session(chat_id=None, progress=None):
+    async def fake_session(chat_id=None, progress=None, hold=False):
         yield R()
 
     monkeypatch.setattr(session, "browser_session", fake_session)
@@ -1272,7 +1272,7 @@ def test_an_implausible_second_screenshot_is_refused(bot, access, ledger, tmp_pa
             return 5, "5"
 
     @contextlib.asynccontextmanager
-    async def fake_session(chat_id=None, progress=None):
+    async def fake_session(chat_id=None, progress=None, hold=False):
         yield R()
 
     monkeypatch.setattr(session, "browser_session", fake_session)

@@ -188,6 +188,10 @@ async def _cb_date(update: Update, ctx: ContextTypes.DEFAULT_TYPE | None) -> Non
             reply_markup=kb_confirm(reported),
         )
         await q.answer()
+        # Date activity means the confirmation is still alive: keep its held
+        # browser from lapsing mid-decision. Only the date-setting branches
+        # reach here; navigation (back/pick/prev/next/none) returned above.
+        session_mod.refresh_hold(chat.id)
 
 
 def ordinal(n: int) -> str:
@@ -266,6 +270,9 @@ async def cb_ok(update: Update, ctx: ContextTypes.DEFAULT_TYPE | None) -> None:
             await q.edit_message_text(words.cancelled())
             await q.answer()
             await _advance_chat(chat.id, msg)
+            # An explicit cancel ends the wait: close the held browser now
+            # rather than letting the hold lapse.
+            await session_mod.close_held(chat.id)
         return
 
     date = st.get("date")
@@ -279,10 +286,10 @@ async def cb_ok(update: Update, ctx: ContextTypes.DEFAULT_TYPE | None) -> None:
             "⏳ Recording %s steps for %s…" % (st["reported"], label)
         )
 
-    # The browser was closed after reading the number, so re-open it, re-upload
-    # the same Screenshot, then set the date and Commit in one go. This is a
-    # deliberate trade: a second OCR pass costs ~25s of the host's RAM twice
-    # instead of holding it once for as long as the user takes to decide.
+    # The read phase usually held the browser for this chat, so this reuses
+    # it instead of relaunching; otherwise it re-opens, re-uploads the same
+    # Screenshot, then sets the date and commits in one go. Either way the
+    # commit closes it (hold=False): the hold only ever delays one close.
     site_text = ""
     try:
         async with session_mod.browser_session(chat.id) as r:
