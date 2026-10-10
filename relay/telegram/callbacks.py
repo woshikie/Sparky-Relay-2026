@@ -16,6 +16,7 @@ from telegram.constants import ParseMode
 from telegram.error import TelegramError
 from telegram.ext import ContextTypes
 
+import relay.clock as clock
 import relay.store.ledger as ledger
 import relay.telegram.access as access
 import relay.telegram.codec as codec
@@ -23,8 +24,8 @@ import relay.telegram.failures as failures
 import relay.telegram.pending as pending_mod
 import relay.telegram.session as session_mod
 import relay.telegram.words as words
-from relay.clock import sg_today
 from relay.site.parsing import parse_profile
+from relay.telegram.datepicker import EVENT_START_MONTH, EVENT_START_YEAR
 from relay.telegram.keyboards import (
     kb_confirm,
     kb_date_default,
@@ -91,9 +92,9 @@ async def _cb_date(update: Update, ctx: ContextTypes.DEFAULT_TYPE | None) -> Non
 
     new_date: datetime.date | None = None
     if kind == "today":
-        new_date = sg_today()
+        new_date = clock.sg_today()
     elif kind == "yday":
-        new_date = sg_today() - datetime.timedelta(days=1)
+        new_date = clock.sg_today() - datetime.timedelta(days=1)
     elif kind == "back":
         await q.edit_message_reply_markup(reply_markup=kb_date_default())
         await q.answer()
@@ -101,7 +102,8 @@ async def _cb_date(update: Update, ctx: ContextTypes.DEFAULT_TYPE | None) -> Non
     elif kind == "pick":
         # Non-local safety: pick/prev/next funnel through kb_pick_date,
         # which funnels through keyboard()'s clamp, so no payload here can
-        # page the grid outside [event start, current month].
+        # page the grid outside [October 2026, max(today's month,
+        # October 2026)].
         y, m = int(rest[0]), int(rest[1])
         await q.edit_message_text(
             "\U0001f4c5 Pick the activity date.", reply_markup=kb_pick_date(y, m)
@@ -109,14 +111,19 @@ async def _cb_date(update: Update, ctx: ContextTypes.DEFAULT_TYPE | None) -> Non
         await q.answer()
         return
     elif kind == "prev":
-        # The target month arrives already resolved: datepicker.shift() owns the
-        # wrap, so there is no January/December arithmetic here to get wrong.
+        # Same clamp as pick (see above): the target month arrives already
+        # resolved — datepicker.shift() owns the wrap, so there is no
+        # January/December arithmetic here to get wrong — and kb_pick_date
+        # clamps it into the window.
         await q.edit_message_reply_markup(
             reply_markup=kb_pick_date(int(rest[0]), int(rest[1]))
         )
         await q.answer()
         return
     elif kind == "next":
+        # Same clamp as pick (see above): kb_pick_date clamps the target
+        # into the window, so a crafted out-of-window payload still lands
+        # inside it.
         await q.edit_message_reply_markup(
             reply_markup=kb_pick_date(int(rest[0]), int(rest[1]))
         )
@@ -124,9 +131,14 @@ async def _cb_date(update: Update, ctx: ContextTypes.DEFAULT_TYPE | None) -> Non
         return
     elif kind == "day":
         # Server-side guard: every real day carries a day payload, so a
-        # future tap is rejected here, at tap time, not at render time.
+        # tap is judged here, at tap time, not at render time. today/yday
+        # derive from sg_today() and need no guard; a hand-crafted day
+        # payload can name any date, so both edges are checked.
         new_date = datetime.date.fromisoformat(rest[0])
-        if new_date > sg_today():
+        if new_date < datetime.date(EVENT_START_YEAR, EVENT_START_MONTH, 1):
+            await q.answer(words.pre_event_day())
+            return
+        if new_date > clock.sg_today():
             await q.answer(words.future_day())
             return
     elif kind == "none":

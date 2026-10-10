@@ -16,9 +16,9 @@ from telegram import (
     ReplyKeyboardMarkup,
 )
 
+import relay.clock as clock
 import relay.telegram.codec as codec
 from relay import config
-from relay.clock import sg_today
 from relay.telegram.datepicker import keyboard as month_grid
 
 # ----------------------------------------------------------------------
@@ -27,7 +27,7 @@ from relay.telegram.datepicker import keyboard as month_grid
 
 
 def kb_date_default() -> InlineKeyboardMarkup:
-    t = sg_today()
+    t = clock.sg_today()
     y = t - datetime.timedelta(days=1)
     return InlineKeyboardMarkup(
         [
@@ -88,7 +88,7 @@ def kb_overwrite(old_steps: int) -> InlineKeyboardMarkup:
 
 
 def kb_pick_date(year: int, month: int) -> InlineKeyboardMarkup:
-    return month_grid(year, month, sg_today())
+    return month_grid(year, month, clock.sg_today())
 
 
 # ----------------------------------------------------------------------
