@@ -171,11 +171,20 @@ def test_every_day_row_is_seven_wide():
         assert len(row) == 7, [b.text for b in row]
 
 
-def test_every_month_is_a_whole_number_of_weeks():
+@pytest.mark.parametrize(
+    "today, year, month, title",
+    [
+        (datetime.date(2026, 10, 6), 2026, 10, "October 2026"),
+        (datetime.date(2026, 11, 5), 2026, 10, "October 2026"),
+        (datetime.date(2026, 11, 5), 2026, 11, "November 2026"),
+        (datetime.date(2026, 12, 10), 2026, 12, "December 2026"),
+    ],
+)
+def test_every_month_is_a_whole_number_of_weeks(today, year, month, title):
     """Padding exists precisely so the last week is not ragged."""
-    for m in range(1, 13):
-        grid = datepicker.keyboard(2026, m, datetime.date(2026, 1, 15))
-        assert all(len(r) == 7 for r in day_rows(grid)), m
+    grid = datepicker.keyboard(year, month, today)
+    assert grid.inline_keyboard[0][1].text == title
+    assert all(len(r) == 7 for r in day_rows(grid)), (title, grid)
 
 
 def test_the_first_of_the_month_lands_under_the_right_weekday():

@@ -113,9 +113,9 @@ def keyboard(
     """InlineKeyboardMarkup for one month.
 
     `year`/`month` are clamped into [October 2026, the current month]:
-    paging earlier than the event offers only dead buttons, and paging past
-    today offers only future ones. A nav arrow whose target falls outside
-    the window is rendered as a silent button, so paging cannot leave it.
+    earlier months snap forward to October 2026, later months snap back
+    to today's month. A nav arrow whose target falls outside the window
+    is rendered as a silent button, so paging cannot leave it.
 
     Every real day carries a day payload, future or not: whether the day
     has happened yet is judged server-side at tap time, because a grid
