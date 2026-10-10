@@ -213,6 +213,71 @@ def test_close_held_ignores_other_chats(session, ledger, fake_relay):
     assert fake_relay.stopped == 1
 
 
+class _CancelChat:
+    def __init__(self, chat_id):
+        self.id = chat_id
+
+
+class _CancelMessage:
+    def __init__(self, chat_id=1):
+        self.chat = _CancelChat(chat_id)
+        self.message_id = 200
+        self.edits = []
+        self.replies = []
+
+    async def reply_text(self, text, **kw):
+        self.replies.append(text)
+        return self
+
+
+class _CancelQuery:
+    def __init__(self, data, chat_id=1):
+        self.data = data
+        self.answers = []
+        self.message = _CancelMessage(chat_id)
+
+    async def answer(self, text=None, show_alert=False):
+        self.answers.append((text, show_alert))
+
+    async def edit_message_text(self, text, **kw):
+        self.message.edits.append(text)
+        return self.message
+
+
+def test_cancel_closes_held_outside_the_pending_lock(
+    bot, access, session, monkeypatch
+):
+    """Cancel must not call close_held under the pending lock (deadlock).
+
+    The commit path takes the pending lock while holding the site lock
+    (site->pending); close_held takes the site lock, so calling it inside
+    the pending lock (pending->site) hangs a concurrent Confirm+Cancel on
+    one chat forever. The probe records whether the chat's pending lock is
+    held when close_held runs: True on the old code, False on the fixed.
+    """
+    access.grant(1, "claim")
+    bot.pending.clear()
+    bot.pending.put((1, 100), {
+        "path": "/tmp/x.jpg", "steps": 6532, "reported": "6,532",
+        "scratch": _CancelMessage(1), "date": None,
+    })
+    seen = {}
+
+    async def probe(chat_id):
+        seen["chat"] = chat_id
+        seen["locked"] = bot.pending.lock_for(chat_id).locked()
+
+    monkeypatch.setattr(session, "close_held", probe)
+    q = _CancelQuery("ok:cancel", chat_id=1)
+    upd = type("U", (), {})()
+    upd.callback_query = q
+    upd.effective_chat = q.message.chat
+    upd.effective_message = q.message
+    run(bot.cb_ok(upd, None))
+    assert seen == {"chat": 1, "locked": False}
+    assert bot.pending.get((1, 100)) is None
+
+
 def test_a_foreign_chat_evicts_then_launches(session, ledger, fake_relay):
     """One browser ever: another chat's acquire closes the hold first."""
     creds(ledger, session, 1)

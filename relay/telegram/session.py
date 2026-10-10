@@ -181,7 +181,9 @@ def refresh_hold(chat_id: int) -> None:
     A date tap means the confirmation is still alive, so the hold must not
     lapse mid-decision. No-op when there is no hold for this chat or holding
     is off. Plain (not async): no awaits, so it is atomic on the event loop
-    and needs no lock.
+    and needs no lock. May revive an expired-but-unobserved hold (expiry is
+    lazy, seen only on the next acquire): benign, since the browser is still
+    resident and the user is still deciding.
     """
     global _held_until
     if config.HOLD_BROWSER_SECS <= 0 or _held_chat != chat_id:

@@ -270,9 +270,15 @@ async def cb_ok(update: Update, ctx: ContextTypes.DEFAULT_TYPE | None) -> None:
             await q.edit_message_text(words.cancelled())
             await q.answer()
             await _advance_chat(chat.id, msg)
-            # An explicit cancel ends the wait: close the held browser now
-            # rather than letting the hold lapse.
-            await session_mod.close_held(chat.id)
+        # An explicit cancel ends the wait: close the held browser now
+        # rather than letting the hold lapse. Outside the pending lock on
+        # purpose: close_held takes the site lock, while the commit path
+        # takes the pending lock while holding the site lock (site->pending),
+        # so closing in here (pending->site) would deadlock a concurrent
+        # Confirm+Cancel on one chat. The race is benign: if the commit
+        # already closed or cleared the hold, close_held no-ops (stop() is
+        # idempotent, and a foreign or missing hold returns early).
+        await session_mod.close_held(chat.id)
         return
 
     date = st.get("date")
