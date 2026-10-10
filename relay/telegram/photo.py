@@ -124,6 +124,12 @@ async def on_photo(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     )
     if not plausible:
         await msg.reply_text(words.implausible(reported), parse_mode=ParseMode.MARKDOWN)
+        # A refusal never enqueues, so no Confirm ever comes to consume the
+        # hold the read phase just armed: close it now instead of pinning
+        # ~640MB for HOLD_BROWSER_SECS for nothing. No pending lock is held
+        # here (the enqueue decision below has not run), so taking the site
+        # lock inside close_held cannot deadlock against the commit path.
+        await session_mod.close_held(chat.id)
         return
     record: pending_mod.Pending = {
         "path": path,
