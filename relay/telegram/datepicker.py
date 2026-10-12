@@ -185,6 +185,13 @@ def keyboard(
             InlineKeyboardButton("Today", callback_data=codec.date("today")),
         ]
     )
+    kb.append(
+        [
+            InlineKeyboardButton(
+                "\U0001f5d1 Cancel", callback_data=codec.confirm("cancel")
+            ),
+        ]
+    )
     return InlineKeyboardMarkup(kb)
 
 

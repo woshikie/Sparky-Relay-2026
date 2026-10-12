@@ -78,7 +78,7 @@ podman compose exec relay /app/.venv/bin/python -u check_container.py
 | File | Role |
 |---|---|
 | `relay/telegram/` | handlers, prompts, keyboards, access, copy |
-| `access.py` | the Access Modes, behind one `check()` |
+| `relay/telegram/access.py` | the Access Modes, behind one `check()` |
 | `relay/site/driver.py` | headless Firefox: upload, read, date, commit |
 | `relay/store/vault.py` | AES-GCM sealing for a supplied password |
 | `relay/store/ledger.py` | SQLite hot rows: Submissions, site days, credentials |
@@ -127,8 +127,10 @@ engine can substitute — Lightpanda has no `createImageBitmap` and never fetche
 the model at all. Measured and recorded in
 [ADR 0004](docs/adr/0004-browser-lifecycle-on-1gb-host.md).
 
-Because of that, the browser is launched per Screenshot and closed afterwards:
-~640MB for ~25 seconds, twice a day, instead of resident forever.
+Because of that, the browser is launched per Screenshot and held only briefly
+for the coming Confirm (up to `HOLD_BROWSER_SECS`, 60s by default): ~640MB
+for ~25 seconds plus the hold, twice a day, instead of resident forever.
+Set `HOLD_BROWSER_SECS=0` to restore the old close-immediately behaviour.
 
 ## Deploying
 

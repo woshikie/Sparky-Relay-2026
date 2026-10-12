@@ -378,9 +378,9 @@ def _confirm(bot, chat_id=1):
 def test_a_changed_second_read_aborts_the_commit(pending, monkeypatch, session):
     """The re-read must agree with what the user confirmed.
 
-    The browser is closed after the first read to free RAM, so Commit re-opens
-    it and re-uploads. If the site reads a different number the second time,
-    the Screenshot is not the one the user agreed to, and nothing is written.
+    Commit re-uploads in the (usually held) browser and sets the date there.
+    If the site reads a different number the second time, the Screenshot is
+    not the one the user agreed to, and nothing is written.
     """
     pending.pending.get((1, 100))["date"] = datetime.date(2026, 10, 4)
     pending.pending.get((1, 100))["iso"] = "2026-10-04"
@@ -750,3 +750,94 @@ def test_cancel_from_the_date_prompt_drops_the_screenshot(pending):
     run(pending.cb_ok(upd, None))
     assert pending.pending.get((1, 100)) is None
     assert "Discarded" in " ".join(upd.callback_query.message.edits)
+
+
+def test_cancel_deletes_the_scratch_message(pending):
+    """Acceptance: cancel pops the pending, deletes the scratch, answers.
+
+    The scratch is the progress message the intake left behind; each record
+    owns its own, so deleting it here cannot strand a newer Screenshot.
+    """
+    from relay.store import ledger as led
+    scratch = pending.pending.get((1, 100))["scratch"]
+    assert scratch.deleted is False
+    upd = type("U", (), {})()
+    upd.callback_query = FakeQuery("ok:cancel")
+    upd.effective_chat = upd.callback_query.effective_chat
+    upd.effective_message = upd.callback_query.effective_message
+    run(pending.cb_ok(upd, None))
+    assert pending.pending.get((1, 100)) is None
+    assert scratch.deleted is True
+    assert upd.callback_query.answers, "the tap was never answered"
+    assert led.all_submissions() == []
+
+
+def test_a_date_catch_all_logs_without_debug(pending, monkeypatch, session,
+                                             capsys):
+    """The date catch-all is error diagnostics: it logs with DBG off."""
+    monkeypatch.setattr(session, "DBG", False)
+    q = press(pending, "dt:")
+    assert q.answers, "the callback was never answered"
+    assert "date callback error" in capsys.readouterr().out
+
+
+def test_a_commit_catch_all_logs_without_debug(pending, monkeypatch, session,
+                                               capsys):
+    """The commit catch-all is error diagnostics: it logs with DBG off."""
+    monkeypatch.setattr(session, "DBG", False)
+    pending.pending.get((1, 100))["date"] = datetime.date(2026, 10, 4)
+    pending.pending.get((1, 100))["iso"] = "2026-10-04"
+    pending.pending.get((1, 100))["label"] = "October 4th, 2026"
+
+    class R:
+        def upload(self, path, mode="steps"):
+            return 6532, "6,532"
+        def set_date(self, d):
+            pass
+        def commit(self, steps):
+            raise RuntimeError("site hiccup")
+
+    @contextlib.asynccontextmanager
+    async def fake_session(chat_id=None, progress=None, hold=False):
+        yield R()
+    monkeypatch.setattr(session, "browser_session", fake_session)
+
+    q, upd = _confirm(pending)
+    run(pending.cb_ok(upd, None))
+    assert "commit error" in capsys.readouterr().out
+
+
+def test_cancel_survives_a_failed_advance(pending, monkeypatch, session,
+                                          capsys):
+    """A failed advance mid-cancel must not propagate: the cancel still
+    pops the pending, deletes the scratch, answers, and closes the hold.
+
+    present_confirmation requeues the record before reraising, so
+    swallowing here loses nothing; the next tap promotes the queue.
+    """
+    import relay.telegram.callbacks as callbacks_mod
+
+    monkeypatch.setattr(session, "DBG", False)
+
+    async def boom(chat_id, msg):
+        raise RuntimeError("present blew up")
+
+    monkeypatch.setattr(callbacks_mod, "_advance_chat", boom)
+    closed = []
+
+    async def fake_close(chat_id, expected_until=None):
+        closed.append((chat_id, expected_until))
+
+    monkeypatch.setattr(session, "close_held", fake_close)
+    scratch = pending.pending.get((1, 100))["scratch"]
+    q = FakeQuery("ok:cancel", chat_id=1)
+    upd = type("U", (), {})()
+    upd.callback_query = q
+    upd.effective_chat = q.effective_chat
+    upd.effective_message = q.effective_message
+    run(pending.cb_ok(upd, None))
+    assert pending.pending.get((1, 100)) is None
+    assert scratch.deleted is True
+    assert q.answers, "the tap was never answered"
+    assert closed == [(1, None)]
+    assert "cancel advance error" in capsys.readouterr().out

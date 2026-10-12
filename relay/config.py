@@ -41,6 +41,12 @@ def _load() -> dict[str, str]:
 
 # Keys we will accept from the environment, so an unrelated variable in the
 # shell cannot silently become configuration.
+#
+# INBOX, LEDGER_DB and LOGS are deliberately absent: they are never
+# read -- derived from RELAY_STATE_DIR -- so setting them is silently
+# inert (in file or env). Only the env overlay filters by KNOWN_KEYS;
+# file keys load unfiltered, so the absence here is what keeps an env
+# setting from looking configured.
 KNOWN_KEYS = {
     "TELEGRAM_BOT_TOKEN",
     "SITE_USERNAME",
@@ -54,9 +60,6 @@ KNOWN_KEYS = {
     "BACKUP_TIME",
     "KNOWN_CUTOFF",
     "RELAY_STATE_DIR",
-    "LEDGER_DB",
-    "INBOX",
-    "LOGS",
     "HOLD_BROWSER_SECS",
 }
 
@@ -109,8 +112,6 @@ ACCESS_MODE = _ACCESS_MODE
 DENY_CHAT_IDS = _chat_ids(ENV.get("DENY_CHAT_IDS", ""))
 # Per-person Shared Secrets, "label:secret" per line. Only hashes are stored.
 SHARED_SECRETS = ENV.get("SHARED_SECRETS", "") or None
-
-ENV = _load()
 
 TELEGRAM_BOT_TOKEN = ENV.get("TELEGRAM_BOT_TOKEN", "")
 SITE_USERNAME = ENV.get("SITE_USERNAME", "")

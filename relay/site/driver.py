@@ -166,20 +166,24 @@ class Relay:
             o.set_preference(k, v)
         return o
 
+    def _drop_profile(self) -> None:
+        """Remove the profile dir and forget it, best effort."""
+        if self._profile is not None:
+            shutil.rmtree(self._profile, ignore_errors=True)
+            self._profile = None
+
     def start(self) -> None:
         """Launch the browser. Refuses if the host cannot fit it.
 
-        Called per Screenshot rather than held open: the OCR needs ~640MB, and
-        on a 1GB host that has to be transient.
+        Launched per Screenshot and held only briefly for Confirm: the OCR
+        needs ~640MB, and on a 1GB host that has to be transient.
         """
         if self.driver:
             return
         # A bare profile (dir minted, no live driver) means an earlier
         # start() died between mkdtemp and a working browser. Reap it here
         # so a re-entrant start() never silently orphans it under a new dir.
-        if self._profile is not None:
-            shutil.rmtree(self._profile, ignore_errors=True)
-            self._profile = None
+        self._drop_profile()
         if not os.path.exists(GECKO):
             raise RuntimeError(
                 "geckodriver not found at %s\n  see README for where to get it" % GECKO
@@ -223,9 +227,7 @@ class Relay:
                 with suppress(Exception):
                     self.driver.quit()
                 self.driver = None
-            if self._profile is not None:
-                shutil.rmtree(self._profile, ignore_errors=True)
-                self._profile = None
+            self._drop_profile()
             raise
         self._say("browser started")
 
@@ -237,9 +239,7 @@ class Relay:
             with suppress(Exception):
                 self.driver.quit()
             self.driver = None
-        if self._profile is not None:
-            shutil.rmtree(self._profile, ignore_errors=True)
-            self._profile = None
+        self._drop_profile()
         if did_work:
             self._say("browser closed" if had_driver else "browser profile removed")
 
@@ -287,7 +287,7 @@ class Relay:
 
     # ---------- session ----------
 
-    def _authed(self) -> bool:
+    def is_authed(self) -> bool:
         """True when the nav exposes /upload, i.e. a live Site Session."""
         assert self.driver is not None, "browser not started"
         try:
@@ -373,7 +373,7 @@ class Relay:
         # Authenticated DOM = nav exposes /upload. URL alone is not enough:
         # it changes before the session is committed.
         for _ in range(BUTTON_PROBES):
-            if self._authed():
+            if self.is_authed():
                 break
             time.sleep(0.5)
         else:

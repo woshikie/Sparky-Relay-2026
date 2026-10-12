@@ -594,7 +594,7 @@ def test_authed_is_true_when_the_nav_exposes_upload():
     link.get_attribute = lambda k: "/upload"
     r.driver = type("D", (), {})()
     r.driver.find_elements = lambda *a, **kw: [link]
-    assert r._authed() is True
+    assert r.is_authed() is True
 
 
 def test_authed_is_false_when_the_nav_does_not():
@@ -603,7 +603,7 @@ def test_authed_is_false_when_the_nav_does_not():
     link.get_attribute = lambda k: "/home"
     r.driver = type("D", (), {})()
     r.driver.find_elements = lambda *a, **kw: [link]
-    assert r._authed() is False
+    assert r.is_authed() is False
 
 
 def test_authed_is_false_when_the_page_is_gone():
@@ -612,7 +612,7 @@ def test_authed_is_false_when_the_page_is_gone():
     r.driver = type("D", (), {})()
     r.driver.find_elements = lambda *a, **kw: (_ for _ in ()).throw(
         RuntimeError("page gone"))
-    assert r._authed() is False
+    assert r.is_authed() is False
 
 
 class TypingElement(FakeElement):

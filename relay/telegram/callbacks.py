@@ -2,8 +2,8 @@
 
 Pending confirmations live in telegram.pending, keyed by (chat_id,
 message_id). The guard is one-directional by design: a downgrade is
-always challenged, an upgrade never is. authorised() lives here because the
-callbacks are its only callers.
+always challenged, an upgrade never is. Access is asked through
+access.check(), like every other handler.
 """
 
 import asyncio
@@ -50,7 +50,7 @@ async def cb_date(update: Update, ctx: ContextTypes.DEFAULT_TYPE | None) -> None
     try:
         await _cb_date(update, ctx)
     except Exception as e:
-        session_mod.log(ctx, "date callback error: %r" % (e,))
+        session_mod.log_error(ctx, "date callback error: %r" % (e,))
         with suppress(TelegramError):
             await q.answer(
                 "something went wrong — send the screenshot again", show_alert=True
@@ -62,22 +62,18 @@ async def _cb_date(update: Update, ctx: ContextTypes.DEFAULT_TYPE | None) -> Non
     chat = update.effective_chat
     msg = update.effective_message
     assert q is not None and chat is not None and msg is not None
-    if not authorised(ctx, chat.id):
+    if not access.check(chat.id, getattr(chat, "username", None)):
         await q.answer("not authorised", show_alert=True)
         return
     _, kind, rest = codec.decode(q.data)
 
     # Navigation taps (back/pick/prev/next/none, and anything unrecognised)
-    # return from the dispatch below without reaching the refresh under the
-    # pending lock, so refresh here: paging the calendar past the deadline
-    # must not lose the hold mid-decision. Date kinds (today/yday/day) are
-    # deliberately excluded -- their refresh lives under the lock above the
-    # overwrite guard, and a dedicated test pins that placement. Guarded by
-    # a fresh liveness read (pre-lock st may be stale); refresh_hold itself
-    # no-ops for foreign or missing holds.
-    if kind not in ("today", "yday", "day") and (
-        pending_mod.latest_for_chat(chat.id) is not None
-    ):
+    # return before the refresh under the pending lock, so refresh here:
+    # paging the calendar past the deadline must not lose the hold
+    # mid-decision. Date kinds (today/yday/day) are deliberately excluded --
+    # their refresh lives under the lock above the overwrite guard, and a
+    # dedicated test pins that placement.
+    if kind not in ("today", "yday", "day"):
         session_mod.refresh_hold(chat.id)
 
     key: tuple[int, int] | None = None
@@ -104,14 +100,10 @@ async def _cb_date(update: Update, ctx: ContextTypes.DEFAULT_TYPE | None) -> Non
         key, st = found
 
     new_date: datetime.date | None = None
-    today_now: datetime.date | None = None
-    if kind in ("today", "yday", "day"):
-        today_now = clock.sg_today()
+    today_now = clock.sg_today()
     if kind == "today":
-        assert today_now is not None
         new_date = today_now
     elif kind == "yday":
-        assert today_now is not None
         new_date = today_now - datetime.timedelta(days=1)
     elif kind == "back":
         await q.edit_message_reply_markup(reply_markup=kb_date_default())
@@ -128,20 +120,9 @@ async def _cb_date(update: Update, ctx: ContextTypes.DEFAULT_TYPE | None) -> Non
         )
         await q.answer()
         return
-    elif kind == "prev":
-        # Same clamp as pick (see above): the target month arrives already
-        # resolved — datepicker.shift() owns the wrap, so there is no
-        # January/December arithmetic here to get wrong — and kb_pick_date
-        # clamps it into the window.
-        await q.edit_message_reply_markup(
-            reply_markup=kb_pick_date(int(rest[0]), int(rest[1]))
-        )
-        await q.answer()
-        return
-    elif kind == "next":
-        # Same clamp as pick (see above): kb_pick_date clamps the target
-        # into the window, so a crafted out-of-window payload still lands
-        # inside it.
+    elif kind in ("prev", "next"):
+        # Clamped as pick above: kb_pick_date clamps the target into the
+        # window, so a crafted out-of-window payload still lands inside it.
         await q.edit_message_reply_markup(
             reply_markup=kb_pick_date(int(rest[0]), int(rest[1]))
         )
@@ -166,7 +147,6 @@ async def _cb_date(update: Update, ctx: ContextTypes.DEFAULT_TYPE | None) -> Non
         # next). today needs no *ceiling* guard — it is the ceiling — but
         # the floor applies to every kind: on 2026-10-01 yday is 2026-09-30,
         # and before the event today itself is pre-event.
-        assert today_now is not None
         if new_date < datetime.date(EVENT_START_YEAR, EVENT_START_MONTH, 1):
             await q.answer(words.pre_event_day())
             return
@@ -264,7 +244,7 @@ async def cb_ok(update: Update, ctx: ContextTypes.DEFAULT_TYPE | None) -> None:
     chat = update.effective_chat
     msg = update.effective_message
     assert q is not None and chat is not None and msg is not None
-    if not authorised(ctx, chat.id):
+    if not access.check(chat.id, getattr(chat, "username", None)):
         await q.answer("not authorised", show_alert=True)
         return
     try:
@@ -305,7 +285,6 @@ async def cb_ok(update: Update, ctx: ContextTypes.DEFAULT_TYPE | None) -> None:
     assert st is not None
 
     if action == "cancel":
-        still_live = False
         async with pending_mod.lock_for(chat.id):
             st = pending_mod.pop(key, None)
             if st is None:
@@ -315,26 +294,47 @@ async def cb_ok(update: Update, ctx: ContextTypes.DEFAULT_TYPE | None) -> None:
                 )
                 await q.edit_message_text("Expired. Send the screenshot again.")
                 return
+            scratch = st.get("scratch")
             await q.edit_message_text(words.cancelled())
             await q.answer()
-            await _advance_chat(chat.id, msg)
+            try:
+                await _advance_chat(chat.id, msg)
+            except Exception as e:
+                # Broad on purpose, like the expired path above and the
+                # commit path below: present_confirmation requeues the
+                # record before reraising, so the next tap promotes and
+                # nothing is lost by swallowing here. Error diagnostics
+                # log unconditionally (see session.log_error).
+                session_mod.log_error(ctx, "cancel advance error: %r" % (e,))
             # Photo B reused/extended the same per-chat hold while queued
             # behind A, so cancelling A into B must not destroy what B
             # needs. Read under the lock so the close below cannot race
-            # the advance it just performed.
+            # the advance it just performed. This stays alongside the token
+            # below on purpose: the token only catches a hold armed *after*
+            # this snapshot, while still_live guards the hold B already
+            # armed before it, which the token cannot distinguish.
             still_live = pending_mod.latest_for_chat(chat.id) is not None
+            expected = session_mod.hold_deadline(chat.id)
+        # The scratch message outlived its Screenshot: remove it now, best
+        # effort, broad like the advance below: a tap must always be
+        # answered. Outside the pending lock like the close below -- the
+        # SITE lock must not be taken while the pending lock is held, and
+        # scratch.delete() takes neither lock, so it runs out here too.
+        with suppress(Exception):
+            if scratch is not None:
+                await scratch.delete()
         # An explicit cancel ends the wait: close the held browser now
         # rather than letting the hold lapse -- but only when nothing is
         # still live (no queue advanced into the hold). Outside the pending
         # lock on purpose: close_held takes the site lock, while the commit
         # path takes the pending lock while holding the site lock
         # (site->pending), so closing in here (pending->site) would deadlock
-        # a concurrent Confirm+Cancel on one chat. The race is benign: if
-        # the commit already closed or cleared the hold, close_held no-ops
-        # (stop() is idempotent, and a foreign or missing hold returns
-        # early).
+        # a concurrent Confirm+Cancel on one chat. The token guards the
+        # remaining race: a photo intake arming a fresh hold between this
+        # lock's release and the site lock's acquire moves the deadline, so
+        # the close no-ops instead of destroying the new hold.
         if not still_live:
-            await session_mod.close_held(chat.id)
+            await session_mod.close_held(chat.id, expected_until=expected)
         return
 
     date = st.get("date")
@@ -402,7 +402,7 @@ async def cb_ok(update: Update, ctx: ContextTypes.DEFAULT_TYPE | None) -> None:
                 start_prompt=lambda: ask_credentials(msg, chat.id),
             )
             if log_line:
-                session_mod.log(ctx, log_line)
+                session_mod.log_error(ctx, log_line)
             await q.answer(alert, show_alert=alarm)
             await _advance_chat(chat.id, msg)
         return
@@ -452,13 +452,3 @@ async def cb_ok(update: Update, ctx: ContextTypes.DEFAULT_TYPE | None) -> None:
 
     with suppress(TelegramError):
         await q.answer("recorded")
-
-
-def authorised(ctx: ContextTypes.DEFAULT_TYPE | None, chat_id: int) -> bool:
-    """Deprecated shim. Access now lives in access.check().
-
-    Kept so nothing calls a removed function, but every handler should ask
-    access.check() directly — it returns a reason, which the user needs to be
-    told.
-    """
-    return bool(access.check(chat_id))

@@ -17,7 +17,6 @@ import contextlib
 import os
 import time
 from collections.abc import AsyncIterator
-from contextlib import suppress
 from typing import NoReturn
 
 from telegram.ext import ContextTypes
@@ -30,17 +29,20 @@ from relay.site import driver
 DBG = bool(os.environ.get("RELAY_DEBUG"))
 
 
-def log(ctx: ContextTypes.DEFAULT_TYPE | None, msg: str) -> None:
-    if DBG and ctx is not None:
-        queue = ctx.job_queue
-        if queue is not None:
-            with suppress(Exception):
-                queue.run_once(_noop_job, 0)  # no-op; keeps job_queue referenced
+def log(_ctx: ContextTypes.DEFAULT_TYPE | None, msg: str) -> None:
+    # _ctx kept for call-site stability.
+    # Plain print: the nightly backup scheduled in app.main() already keeps
+    # the job queue referenced, so log() needs no scaffold job of its own.
+    if DBG:
+        print("[relay] %s" % msg, flush=True)
+
+
+def log_error(_ctx: ContextTypes.DEFAULT_TYPE | None, msg: str) -> None:
+    # _ctx kept for call-site stability, mirroring log().
+    # Unconditional on purpose: catch-all diagnostics (failures.explain
+    # returns a log line only for unrecognised failures) must reach the
+    # operator even when RELAY_DEBUG is off. Info stays on gated log().
     print("[relay] %s" % msg, flush=True)
-
-
-async def _noop_job(_context: object) -> None:
-    """Debug no-op for log(): scheduled, never awaited for its result."""
 
 
 # The site's OCR runs in the page, so the browser is the expensive part: ~640MB
@@ -55,6 +57,18 @@ _relay: driver.Relay | None = None
 # never by a timer task (no background tasks except the nightly backup).
 _held_chat: int | None = None
 _held_until: float = 0.0
+
+
+def _clear_hold() -> None:
+    """Forget which chat holds the browser and until when.
+
+    Clears the hold after the browser is stopped. Arming writes the two
+    fields directly; every clear funnels through here, so a close always
+    wins over a refresh that landed mid-stop. Callers run under _site_lock.
+    """
+    global _held_chat, _held_until
+    _held_chat = None
+    _held_until = 0.0
 
 
 def get_relay(
@@ -95,7 +109,9 @@ async def browser_session(
     leaderboard read) -- never for anything that writes. A None acquire with
     a live hold borrows that browser without disturbing the hold: no sign-in,
     no deadline change, no close, since standings are global and need no
-    identity.
+    identity. The borrow does navigate -- the standings read GETs /home, off
+    the confirm panel -- but the commit re-uploads the same Screenshot before
+    setting the date, so the hold still skips the ~20s relaunch.
 
     This must be an *async* context manager. With the plain
     `contextlib.contextmanager` on an `async def`, every caller doing
@@ -126,8 +142,7 @@ async def browser_session(
                 # there is only ever one browser.
                 print("[relay] closing held browser", flush=True)
                 await asyncio.to_thread(r.stop)
-                _held_chat = None
-                _held_until = 0.0
+                _clear_hold()
             # InsufficientMemory propagates as itself: it already carries the
             # numbers, and wrapping it in a second exception type meant
             # callers had to catch both for one condition. It raises before
@@ -149,7 +164,7 @@ async def browser_session(
                 # and fail as SiteChanged. A dead session mid-hold reads
                 # as not authed and falls through to sign_in as before.
                 try:
-                    still_authed = r._authed()
+                    still_authed = r.is_authed()
                 except Exception:
                     still_authed = False
                 if still_authed:
@@ -188,8 +203,7 @@ async def browser_session(
                         "[relay] %.0fMB available after close" % mem_after,
                         flush=True,
                     )
-                _held_chat = None
-                _held_until = 0.0
+                _clear_hold()
 
 
 def refresh_hold(chat_id: int) -> None:
@@ -239,8 +253,7 @@ async def close_held(chat_id: int, expected_until: float | None = None) -> None:
             return
         print("[relay] closing browser", flush=True)
         await asyncio.to_thread(get_relay().stop)
-        _held_chat = None
-        _held_until = 0.0
+        _clear_hold()
 
 
 async def site_login(

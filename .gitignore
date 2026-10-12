@@ -9,8 +9,7 @@ ledger.sqlite3-wal
 ledger.sqlite3-shm
 inbox/
 logs/
-.browserprofile/
-botprofile/
+relay-profile-*/
 
 # geckodriver binary (see README for the download)
 bin/
