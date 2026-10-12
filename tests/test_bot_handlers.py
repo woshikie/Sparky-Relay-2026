@@ -628,7 +628,7 @@ def _session_without_browser(session, monkeypatch):
     """
 
     @contextlib.asynccontextmanager
-    async def fake(chat_id=None, progress=None):
+    async def fake(chat_id=None, progress=None, hold=False):
         await session.sign_in(chat_id, progress)
         yield None
         raise AssertionError("entered a session that should have failed sign-in")
@@ -703,7 +703,7 @@ def test_sync_completes_when_the_site_has_nothing(bot, access, ledger, monkeypat
             return []
 
     @contextlib.asynccontextmanager
-    async def fake_session(chat_id=None, progress=None):
+    async def fake_session(chat_id=None, progress=None, hold=False):
         yield EmptyRelay()
     monkeypatch.setattr(session, "browser_session", fake_session)
 
@@ -900,7 +900,7 @@ def _photo_with_failing_session(bot, access, ledger, exc, tmp_path, monkeypatch,
                             bot.config.TELEGRAM_BOT_TOKEN)
 
     @contextlib.asynccontextmanager
-    async def failing(chat_id=None, progress=None):
+    async def failing(chat_id=None, progress=None, hold=False):
         raise exc
         yield
 
@@ -976,26 +976,97 @@ def test_a_photo_failure_reports_on_the_original_message(bot, access, ledger, tm
     assert "Upload failed" in upd.message.said
 
 
-# ------------------------------------------------------------------- log()
+def test_a_photo_catch_all_logs_without_debug(bot, access, ledger, tmp_path,
+                                              monkeypatch, session, capsys):
+    """The upload catch-all is error diagnostics: it logs with DBG off."""
+    monkeypatch.setattr(session, "DBG", False)
+    upd = _photo_with_failing_session(
+        bot, access, ledger, RuntimeError("something unexpected"),
+        tmp_path, monkeypatch, session)
+    run(bot.on_photo(upd, None))
+    assert "failed" in upd.message.said.lower()
+    assert "upload error" in capsys.readouterr().out
 
-def test_log_is_quiet_without_a_context(bot, capsys):
+
+def test_a_photo_recognised_failure_logs_nothing(bot, access, ledger, tmp_path,
+                                                 monkeypatch, session, capsys):
+    """Recognised failures say it out loud and leave the log alone."""
+    monkeypatch.setattr(session, "DBG", False)
+    upd = _photo_with_failing_session(bot, access, ledger, bot.NoCredentials(),
+                                      tmp_path, monkeypatch, session)
+    run(bot.on_photo(upd, None))
+    assert "username" in upd.message.said.lower()
+    assert "upload error" not in capsys.readouterr().out
+
+
+def test_a_sync_catch_all_logs_without_debug(bot, access, ledger, monkeypatch,
+                                             session, capsys):
+    """The sync catch-all is error diagnostics: it logs with DBG off."""
+    monkeypatch.setattr(session, "DBG", False)
+    access.grant(23, "manual")
+    ledger.save_credentials(23, "testuser", "testpass123",
+                            bot.config.TELEGRAM_BOT_TOKEN)
+
+    @contextlib.asynccontextmanager
+    async def failing(chat_id=None, progress=None, hold=False):
+        raise RuntimeError("site hiccup")
+        yield
+
+    monkeypatch.setattr(session, "browser_session", failing)
+    run(bot.on_sync(FakeUpdate(chat_id=23), None))
+    assert "sync error" in capsys.readouterr().out
+
+
+# --------------------------------------------- log() and log_error()
+
+def test_log_is_quiet_without_a_context(bot, capsys, monkeypatch, session):
     """No context means no job_queue to touch, and the line still prints."""
+    monkeypatch.setattr(session, "DBG", True)
     bot.log(None, "hello")
     assert "hello" in capsys.readouterr().out
 
 
-def test_log_with_a_context_prints(bot, capsys):
+def test_log_with_a_context_prints(bot, capsys, monkeypatch, session):
+    monkeypatch.setattr(session, "DBG", True)
     bot.log(type("C", (), {"job_queue": None})(), "hello")
     assert "hello" in capsys.readouterr().out
 
 
-def test_log_survives_a_job_queue_that_raises(bot, capsys):
+def test_log_survives_a_job_queue_that_raises(bot, capsys, monkeypatch,
+                                              session):
     """A broken job_queue must not take down the log line."""
+    monkeypatch.setattr(session, "DBG", True)
+
     class BadQ:
         def run_once(self, *a, **kw):
             raise RuntimeError("no scheduler")
     bot.log(type("C", (), {"job_queue": BadQ()})(), "hello")
     assert "hello" in capsys.readouterr().out
+
+
+def test_log_is_silent_unless_debug(bot, capsys, monkeypatch, session):
+    """RELAY_DEBUG gates the info line: production stays quiet by default.
+
+    DBG is pinned False rather than relying on the ambient environment,
+    so RELAY_DEBUG=1 in the operator's shell cannot flip this test.
+    """
+    monkeypatch.setattr(session, "DBG", False)
+    bot.log(None, "hello")
+    assert "hello" not in capsys.readouterr().out
+
+
+def test_log_error_prints_without_debug(bot, capsys, monkeypatch, session):
+    """Catch-all diagnostics bypass the gate: DBG False still prints."""
+    monkeypatch.setattr(session, "DBG", False)
+    bot.log_error(None, "boom")
+    assert "boom" in capsys.readouterr().out
+
+
+def test_log_error_prints_with_debug(bot, capsys, monkeypatch, session):
+    """The error path prints under DBG True too: there is no double gate."""
+    monkeypatch.setattr(session, "DBG", True)
+    bot.log_error(None, "boom")
+    assert "boom" in capsys.readouterr().out
 
 
 def test_the_old_site_login_entry_point_is_gone(bot):
@@ -1038,8 +1109,8 @@ def test_ask_password_marks_a_preset(bot, access):
     assert bot.prompt_stage(53)["preset"] is True
 
 
-def test_kb_done_returns_the_standing_commands(bot):
-    labels = [b.text for row in bot.kb_done().keyboard for b in row]
+def test_kb_reply_returns_the_standing_commands(bot):
+    labels = [b.text for row in bot.kb_reply().keyboard for b in row]
     assert any("Status" in l for l in labels)
 
 
@@ -1181,7 +1252,7 @@ def test_the_recording_line_names_the_number_and_date(bot, access, monkeypatch, 
             return "Recorded"
 
     @contextlib.asynccontextmanager
-    async def fake_session(chat_id=None, progress=None):
+    async def fake_session(chat_id=None, progress=None, hold=False):
         yield R()
     monkeypatch.setattr(session, "browser_session", fake_session)
 
@@ -1234,7 +1305,7 @@ def test_a_second_screenshot_queues_behind_the_first(bot, access, ledger, tmp_pa
             return 6532, "6,532"
 
     @contextlib.asynccontextmanager
-    async def fake_session(chat_id=None, progress=None):
+    async def fake_session(chat_id=None, progress=None, hold=False):
         yield R()
 
     monkeypatch.setattr(session, "browser_session", fake_session)
@@ -1272,7 +1343,7 @@ def test_an_implausible_second_screenshot_is_refused(bot, access, ledger, tmp_pa
             return 5, "5"
 
     @contextlib.asynccontextmanager
-    async def fake_session(chat_id=None, progress=None):
+    async def fake_session(chat_id=None, progress=None, hold=False):
         yield R()
 
     monkeypatch.setattr(session, "browser_session", fake_session)

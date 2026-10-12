@@ -1,8 +1,8 @@
 """Who may drive the Relay, under whichever Access Mode is configured.
 
-One entry point — `check(chat_id)` — so every handler asks the same question
-the same way, and so changing Access Mode is a config change rather than an
-audit of every handler.
+One entry point — `check(chat_id, username=None)` — so every handler asks
+the same question the same way, and so changing Access Mode is a config
+change rather than an audit of every handler.
 
     whitelist_claim  the first chat to /start claims the Relay; everyone else
                      needs to be granted. Safest.

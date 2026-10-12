@@ -10,8 +10,9 @@ survives is to not hold it open. Measured alternatives, for the record:
     Chromium single-proc  794MB   -- works, slower, heavier
     Chromium multi-proc   1060MB  -- works, heaviest
 
-So: launch per Screenshot, close after Commit, and refuse to start if the host
-cannot fit it. See docs/adr/0004-browser-lifecycle-on-1gb-host.md.
+So: launch per Screenshot, hold briefly for Confirm, close after Commit,
+and refuse to start if the host cannot fit it. See
+docs/adr/0004-browser-lifecycle-on-1gb-host.md.
 """
 
 import os
