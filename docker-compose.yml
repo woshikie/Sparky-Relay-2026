@@ -62,7 +62,6 @@ services:
       # All mutable state on the volume, so the image stays read-only-ish and a
       # rebuild does not lose the ledger.
       RELAY_STATE_DIR: /app/data
-      LEDGER_DB: /app/data/ledger.sqlite3
       HEADLESS: "1"
       FIREFOX_BIN: /usr/bin/firefox
       # Keep the engine single-process: fewer processes, less shared memory.

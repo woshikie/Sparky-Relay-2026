@@ -308,8 +308,9 @@ async def cb_ok(update: Update, ctx: ContextTypes.DEFAULT_TYPE | None) -> None:
             still_live = pending_mod.latest_for_chat(chat.id) is not None
             expected = session_mod.hold_deadline(chat.id)
         # The scratch message outlived its Screenshot: remove it now, best
-        # effort. Outside the pending lock like the close below -- Telegram
-        # I/O must not run while the lock is held.
+        # effort. Outside the pending lock like the close below -- the
+        # SITE lock must not be taken while the pending lock is held, and
+        # scratch.delete() takes neither lock, so it runs out here too.
         with suppress(TelegramError):
             if scratch is not None:
                 await scratch.delete()

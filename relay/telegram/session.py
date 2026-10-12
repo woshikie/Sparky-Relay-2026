@@ -32,7 +32,8 @@ DBG = bool(os.environ.get("RELAY_DEBUG"))
 def log(ctx: ContextTypes.DEFAULT_TYPE | None, msg: str) -> None:
     # Plain print: the nightly backup scheduled in app.main() already keeps
     # the job queue referenced, so log() needs no scaffold job of its own.
-    print("[relay] %s" % msg, flush=True)
+    if DBG:
+        print("[relay] %s" % msg, flush=True)
 
 
 # The site's OCR runs in the page, so the browser is the expensive part: ~640MB

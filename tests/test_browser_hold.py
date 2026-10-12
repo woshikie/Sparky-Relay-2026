@@ -746,6 +746,43 @@ def test_cancel_into_a_queue_keeps_the_hold(
     assert fake_relay.stopped == 0
 
 
+def test_cancel_deletes_only_the_cancelled_scratch(
+    bot, access, session, ledger, fake_relay
+):
+    """Cancelling A removes A's scratch, leaves B's alone, presents B.
+
+    A and B carry distinct scratch messages; the cancel deletes exactly
+    the popped record's, while the advance presents queued B on the same
+    message the tap came from.
+    """
+    access.grant(1, "claim")
+    creds(ledger, session, 1)
+    bot.pending.clear()
+    scratch_a = _CancelMessage(1)
+    scratch_b = _CancelMessage(1)
+    bot.pending.put((1, 100), {
+        "path": "/tmp/x.jpg", "steps": 6532, "reported": "6,532",
+        "scratch": scratch_a, "date": None,
+    })
+    bot.pending.enqueue(1, {
+        "path": "/tmp/y.jpg", "steps": 7000, "reported": "7,000",
+        "scratch": scratch_b, "date": None,
+    })
+
+    async def held():
+        async with session.browser_session(1, hold=True):
+            pass
+
+    run(held())
+    assert session._held_chat == 1
+    q = _press_cancel(bot)
+    assert scratch_a.deleted is True
+    assert scratch_b.deleted is False
+    assert bot.pending.latest_for_chat(1)[1]["steps"] == 7000
+    assert len(q.message.replies) == 1
+    assert "7,000" in q.message.replies[0]
+
+
 def test_cancel_with_no_queue_still_closes_the_hold(
     bot, access, session, ledger, fake_relay
 ):
@@ -806,7 +843,9 @@ def test_cancel_passes_the_hold_it_snapshot(
     assert fake_relay.stopped == 1
 
 
-def test_close_held_ignores_a_rearmed_hold(session, ledger, fake_relay):
+def test_close_held_ignores_a_rearmed_hold(
+    session, ledger, fake_relay, monkeypatch
+):
     """A stale token must not destroy the hold that replaced it.
 
     A photo intake arming a fresh hold between cancel's lock release and
@@ -814,6 +853,8 @@ def test_close_held_ignores_a_rearmed_hold(session, ledger, fake_relay):
     no-ops, closing with the current one still releases.
     """
     creds(ledger, session, 1)
+    now = [6000.0]
+    monkeypatch.setattr(time, "monotonic", lambda: now[0])
 
     async def held():
         async with session.browser_session(1, hold=True):
@@ -821,6 +862,7 @@ def test_close_held_ignores_a_rearmed_hold(session, ledger, fake_relay):
 
     run(held())
     stale = session._held_until
+    now[0] += 1.0
     session.refresh_hold(1)
     rearmed = session._held_until
     assert rearmed != stale

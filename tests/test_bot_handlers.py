@@ -978,24 +978,46 @@ def test_a_photo_failure_reports_on_the_original_message(bot, access, ledger, tm
 
 # ------------------------------------------------------------------- log()
 
-def test_log_is_quiet_without_a_context(bot, capsys):
+def test_log_is_quiet_without_a_context(bot, capsys, monkeypatch):
     """No context means no job_queue to touch, and the line still prints."""
+    import importlib
+
+    monkeypatch.setattr(
+        importlib.import_module("relay.telegram.session"), "DBG", True
+    )
     bot.log(None, "hello")
     assert "hello" in capsys.readouterr().out
 
 
-def test_log_with_a_context_prints(bot, capsys):
+def test_log_with_a_context_prints(bot, capsys, monkeypatch):
+    import importlib
+
+    monkeypatch.setattr(
+        importlib.import_module("relay.telegram.session"), "DBG", True
+    )
     bot.log(type("C", (), {"job_queue": None})(), "hello")
     assert "hello" in capsys.readouterr().out
 
 
-def test_log_survives_a_job_queue_that_raises(bot, capsys):
+def test_log_survives_a_job_queue_that_raises(bot, capsys, monkeypatch):
     """A broken job_queue must not take down the log line."""
+    import importlib
+
+    monkeypatch.setattr(
+        importlib.import_module("relay.telegram.session"), "DBG", True
+    )
+
     class BadQ:
         def run_once(self, *a, **kw):
             raise RuntimeError("no scheduler")
     bot.log(type("C", (), {"job_queue": BadQ()})(), "hello")
     assert "hello" in capsys.readouterr().out
+
+
+def test_log_is_silent_unless_debug(bot, capsys):
+    """RELAY_DEBUG gates the line: production stays quiet by default."""
+    bot.log(None, "hello")
+    assert "hello" not in capsys.readouterr().out
 
 
 def test_the_old_site_login_entry_point_is_gone(bot):

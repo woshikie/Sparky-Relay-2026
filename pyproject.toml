@@ -29,8 +29,9 @@ skip_covered = true
 # check_container.py inside the image, not here, so it is omitted above.
 #
 # The floor is 90, not 100. The gap is browser code in
-# relay/telegram/session.py + callbacks.py: the success path of on_photo,
-# the commit itself in cb_ok, and the app construction in main(). Those need a live Firefox and a real Telegram API, and they are
+# relay/telegram/photo.py + callbacks.py + app.py: the success path of
+# on_photo, the commit itself in cb_ok, and the app construction in main().
+# Those need a live Firefox and a real Telegram API, and they are
 # covered by make verify inside the image. Chasing the last few percent here
 # would mean either a fake browser that proves nothing or excluding the lines
 # and calling it a pass.
