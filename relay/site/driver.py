@@ -7,6 +7,8 @@ upload + read the Detected Steps, set the Activity Date, commit.
 import datetime
 import os
 import re
+import shutil
+import tempfile
 import time
 from contextlib import suppress
 
@@ -37,7 +39,6 @@ ROOT = os.path.dirname(os.path.dirname(HERE))
 # State that must survive a restart lives under config.LEDGER_DB's directory, so
 # in a container it is the mounted volume rather than the (read-only) image.
 STATE_DIR = config.STATE_DIR
-PROFILE = os.environ.get("BROWSER_PROFILE", os.path.join(STATE_DIR, ".browserprofile"))
 GECKO = os.environ.get("GECKODRIVER_PATH", os.path.join(ROOT, "bin", "geckodriver"))
 GECKO_LOG = os.path.join(config.LOGS, "geckodriver.log")
 
@@ -50,7 +51,6 @@ MIN_STEPS, MAX_STEPS = 100, 200_000
 # values are seconds-minutes because a cold VM is slow to hydrate, and a test
 # suite that waits 30s to prove a timeout fires is a test suite nobody runs.
 POLL_SECONDS = 0.5
-AUTHED_PROBES = 12  # /auth may bounce to /home with a live session
 FORM_PROBES = 40  # the sign-in form must render
 LOGIN_PROBES = 60  # sign-in must reach an authenticated DOM
 BUTTON_PROBES = 20  # a button we are waiting to appear
@@ -122,6 +122,7 @@ class Relay:
         self.progress = progress
         self.driver: webdriver.Firefox | None = None
         self.log: list[str] = []
+        self._profile: str | None = None
 
     # ---------- plumbing ----------
 
@@ -143,7 +144,7 @@ class Relay:
         except Exception:
             self.progress = None
 
-    def _opts(self) -> Options:
+    def _opts(self, profile: str) -> Options:
         o = Options()
         if self.headless:
             o.add_argument("-headless")
@@ -154,12 +155,13 @@ class Relay:
         if _in_container():
             o.set_preference("security.sandbox.content.level", 0)
             self._say("container detected: content sandbox relaxed")
-        # A persistent profile keeps the Site Session across restarts, so the
-        # Relay does not re-authenticate on every process start. This is also
-        # what makes on-demand launching tolerable: we pay login once, not once
-        # per Screenshot.
+        # A fresh profile every launch: no cookies, no session state from
+        # any previous chat survives. Login is quick, and a saved session was
+        # never worth its bug class (one chat silently riding another's).
+        # The dir is minted by start() and passed in, so _opts never has to
+        # guess which launch it belongs to.
         o.add_argument("-profile")
-        o.add_argument(PROFILE)
+        o.add_argument(profile)
         for k, v in memory.tune_firefox_env().items():
             o.set_preference(k, v)
         return o
@@ -172,6 +174,12 @@ class Relay:
         """
         if self.driver:
             return
+        # A bare profile (dir minted, no live driver) means an earlier
+        # start() died between mkdtemp and a working browser. Reap it here
+        # so a re-entrant start() never silently orphans it under a new dir.
+        if self._profile is not None:
+            shutil.rmtree(self._profile, ignore_errors=True)
+            self._profile = None
         if not os.path.exists(GECKO):
             raise RuntimeError(
                 "geckodriver not found at %s\n  see README for where to get it" % GECKO
@@ -188,21 +196,66 @@ class Relay:
             self._say("NOT launching the browser: %s" % e)
             raise
         self._step("browser")
-        os.makedirs(PROFILE, exist_ok=True)
-        os.makedirs(os.path.dirname(GECKO_LOG), exist_ok=True)
-        os.makedirs(config.INBOX, exist_ok=True)
-        svc = Service(executable_path=GECKO, log_output=GECKO_LOG)
-        self.driver = webdriver.Firefox(options=self._opts(), service=svc)
-        self.driver.set_page_load_timeout(60)
+        # Fresh dir per launch under state (disk-backed, not /tmp which may
+        # be tmpfs RAM on a 1GB host). Removed in stop(); orphans from a
+        # killed process are swept just below, before this launch mints its
+        # own dir, since nothing else can own a relay-profile-* dir while
+        # this launch holds the site lock.
+        # STATE_DIR itself first: a fresh custom path would otherwise fail
+        # mkdtemp before anything gets a chance to create it.
+        os.makedirs(STATE_DIR, exist_ok=True)
+        self._sweep_orphan_profiles()
+        self._profile = tempfile.mkdtemp(prefix="relay-profile-", dir=STATE_DIR)
+        try:
+            os.makedirs(os.path.dirname(GECKO_LOG), exist_ok=True)
+            os.makedirs(config.INBOX, exist_ok=True)
+            svc = Service(executable_path=GECKO, log_output=GECKO_LOG)
+            assert self._profile is not None, "mkdtemp just minted a profile"
+            self.driver = webdriver.Firefox(
+                options=self._opts(self._profile), service=svc
+            )
+            self.driver.set_page_load_timeout(60)
+        except BaseException:
+            # Firefox() may have handed back a live browser before
+            # set_page_load_timeout threw: quit it before dropping the dir,
+            # or it outlives us with no way back to its own profile.
+            if self.driver is not None:
+                with suppress(Exception):
+                    self.driver.quit()
+                self.driver = None
+            if self._profile is not None:
+                shutil.rmtree(self._profile, ignore_errors=True)
+                self._profile = None
+            raise
         self._say("browser started")
 
     def stop(self) -> None:
+        had_driver = self.driver is not None
+        did_work = had_driver or self._profile is not None
         if self.driver:
             self._step("closing")
             with suppress(Exception):
                 self.driver.quit()
             self.driver = None
-            self._say("browser closed")
+        if self._profile is not None:
+            shutil.rmtree(self._profile, ignore_errors=True)
+            self._profile = None
+        if did_work:
+            self._say("browser closed" if had_driver else "browser profile removed")
+
+    def _sweep_orphan_profiles(self) -> None:
+        """Remove profile dirs from kills that never reached stop().
+
+        Runs before this launch mints its own dir, so everything matching
+        the prefix is an orphan. Best effort throughout: a leftover is
+        wasted megabytes, not a correctness problem, since no launch ever
+        reuses a dir.
+        """
+        with suppress(Exception):
+            for name in os.listdir(STATE_DIR):
+                path = os.path.join(STATE_DIR, name)
+                if name.startswith("relay-profile-") and os.path.isdir(path):
+                    shutil.rmtree(path, ignore_errors=True)
 
     def _text(self, el: WebElement) -> str | None:
         """Element text, tolerating the SPA swapping nodes mid-read.
@@ -282,13 +335,9 @@ class Relay:
         self._step("signin")
         self._say("opening sign-in")
         self.driver.get(self.base + "/auth")
-        # A persisted profile may already hold a live Session, in which case
-        # /auth bounces to /home and there is no form to fill. Check first.
-        for _ in range(AUTHED_PROBES):
-            if self._authed():
-                self._say("existing session still valid; no sign-in needed")
-                return
-            time.sleep(0.5)
+        # No early return on a live session: the profile is fresh, so any
+        # session here would be someone else's leftovers, and B riding A's
+        # login is exactly the bug fresh profiles exist to kill.
         # Wait for the form to actually render; the SPA hydrates after load and
         # a fixed sleep loses the race on a cold profile / cold VM.
         u: WebElement | None = None
@@ -324,14 +373,7 @@ class Relay:
         # Authenticated DOM = nav exposes /upload. URL alone is not enough:
         # it changes before the session is committed.
         for _ in range(BUTTON_PROBES):
-            try:
-                hrefs = [
-                    a.get_attribute("href") or ""
-                    for a in self.driver.find_elements(By.CSS_SELECTOR, "a")
-                ]
-            except Exception:
-                hrefs = []
-            if any("/upload" in h for h in hrefs):
+            if self._authed():
                 break
             time.sleep(0.5)
         else:
