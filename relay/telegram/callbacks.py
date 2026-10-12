@@ -2,8 +2,8 @@
 
 Pending confirmations live in telegram.pending, keyed by (chat_id,
 message_id). The guard is one-directional by design: a downgrade is
-always challenged, an upgrade never is. authorised() lives here because the
-callbacks are its only callers.
+always challenged, an upgrade never is. Access is asked through
+access.check(), like every other handler.
 """
 
 import asyncio
@@ -244,7 +244,7 @@ async def cb_ok(update: Update, ctx: ContextTypes.DEFAULT_TYPE | None) -> None:
     chat = update.effective_chat
     msg = update.effective_message
     assert q is not None and chat is not None and msg is not None
-    if not authorised(ctx, chat.id):
+    if not access.check(chat.id, getattr(chat, "username", None)):
         await q.answer("not authorised", show_alert=True)
         return
     try:
@@ -285,7 +285,6 @@ async def cb_ok(update: Update, ctx: ContextTypes.DEFAULT_TYPE | None) -> None:
     assert st is not None
 
     if action == "cancel":
-        still_live = False
         async with pending_mod.lock_for(chat.id):
             st = pending_mod.pop(key, None)
             if st is None:
@@ -443,13 +442,3 @@ async def cb_ok(update: Update, ctx: ContextTypes.DEFAULT_TYPE | None) -> None:
 
     with suppress(TelegramError):
         await q.answer("recorded")
-
-
-def authorised(ctx: ContextTypes.DEFAULT_TYPE | None, chat_id: int) -> bool:
-    """Deprecated shim. Access now lives in access.check().
-
-    Kept so nothing calls a removed function, but every handler should ask
-    access.check() directly — it returns a reason, which the user needs to be
-    told.
-    """
-    return bool(access.check(chat_id))

@@ -29,7 +29,6 @@ from relay.telegram.app import main as main
 from relay.telegram.app import on_ready as on_ready
 from relay.telegram.callbacks import (  # noqa: F401
     _cb_date,
-    authorised,
     cb_date,
     cb_ok,
     ordinal,
@@ -59,7 +58,6 @@ from relay.telegram.keyboards import (  # noqa: F401
     kb_confirm,
     kb_credential_choice,
     kb_date_default,
-    kb_done,
     kb_overwrite,
     kb_pick_date,
     kb_prompt,

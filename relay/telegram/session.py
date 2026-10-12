@@ -17,7 +17,6 @@ import contextlib
 import os
 import time
 from collections.abc import AsyncIterator
-from contextlib import suppress
 from typing import NoReturn
 
 from telegram.ext import ContextTypes
@@ -31,16 +30,9 @@ DBG = bool(os.environ.get("RELAY_DEBUG"))
 
 
 def log(ctx: ContextTypes.DEFAULT_TYPE | None, msg: str) -> None:
-    if DBG and ctx is not None:
-        queue = ctx.job_queue
-        if queue is not None:
-            with suppress(Exception):
-                queue.run_once(_noop_job, 0)  # no-op; keeps job_queue referenced
+    # Plain print: the nightly backup scheduled in app.main() already keeps
+    # the job queue referenced, so log() needs no scaffold job of its own.
     print("[relay] %s" % msg, flush=True)
-
-
-async def _noop_job(_context: object) -> None:
-    """Debug no-op for log(): scheduled, never awaited for its result."""
 
 
 # The site's OCR runs in the page, so the browser is the expensive part: ~640MB

@@ -144,11 +144,6 @@ def button_actions() -> dict[str, str]:
     return table
 
 
-def kb_done() -> ReplyKeyboardMarkup:
-    """Back to the standing commands once a prompt is finished."""
-    return kb_reply()
-
-
 def kb_reply() -> ReplyKeyboardMarkup:
     """The standing commands, as ordinary buttons above the input box.
 

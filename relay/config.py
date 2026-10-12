@@ -41,6 +41,12 @@ def _load() -> dict[str, str]:
 
 # Keys we will accept from the environment, so an unrelated variable in the
 # shell cannot silently become configuration.
+#
+# LEDGER_DB, INBOX and LOGS are deliberately absent: they are derived from
+# RELAY_STATE_DIR, never read from the environment, so accepting them here
+# would let a setting be silently ignored. Unknown keys are dropped by
+# _load(), so setting one of those three now behaves like any other
+# unknown key instead of looking configured.
 KNOWN_KEYS = {
     "TELEGRAM_BOT_TOKEN",
     "SITE_USERNAME",
@@ -54,9 +60,6 @@ KNOWN_KEYS = {
     "BACKUP_TIME",
     "KNOWN_CUTOFF",
     "RELAY_STATE_DIR",
-    "LEDGER_DB",
-    "INBOX",
-    "LOGS",
     "HOLD_BROWSER_SECS",
 }
 

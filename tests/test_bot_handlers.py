@@ -1038,8 +1038,8 @@ def test_ask_password_marks_a_preset(bot, access):
     assert bot.prompt_stage(53)["preset"] is True
 
 
-def test_kb_done_returns_the_standing_commands(bot):
-    labels = [b.text for row in bot.kb_done().keyboard for b in row]
+def test_kb_reply_returns_the_standing_commands(bot):
+    labels = [b.text for row in bot.kb_reply().keyboard for b in row]
     assert any("Status" in l for l in labels)
 
 
