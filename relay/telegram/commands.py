@@ -154,7 +154,7 @@ async def on_sync(update: Update, ctx: ContextTypes.DEFAULT_TYPE | None) -> None
             msg, e, operation="Sync", start_prompt=lambda: ask_credentials(msg, chat.id)
         )
         if log_line:
-            session_mod.log(ctx, log_line)
+            session_mod.log_error(ctx, log_line)
         return
 
     if not days:

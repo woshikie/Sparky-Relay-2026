@@ -13,7 +13,7 @@ its own cleanup before calling in:
             msg, e, operation="Upload",
             start_prompt=lambda: ask_credentials(msg, chat.id))
         if log_line:
-            session_mod.log(ctx, log_line)
+            session_mod.log_error(ctx, log_line)
 
 Return:
 `operation` names the step for the catch-all ("Upload", "Sync", "Commit") and

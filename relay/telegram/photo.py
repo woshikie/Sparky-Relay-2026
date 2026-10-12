@@ -112,7 +112,7 @@ async def on_photo(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
             start_prompt=lambda: ask_credentials(msg, chat.id),
         )
         if log_line:
-            session_mod.log(ctx, log_line)
+            session_mod.log_error(ctx, log_line)
         return
 
     plausible = relay_site.MIN_STEPS <= steps <= relay_site.MAX_STEPS

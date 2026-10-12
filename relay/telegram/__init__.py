@@ -94,6 +94,7 @@ from relay.telegram.session import (  # noqa: F401
     browser_session,
     get_relay,
     log,
+    log_error,
     sign_in,
     site_login,
 )

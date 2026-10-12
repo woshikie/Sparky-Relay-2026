@@ -37,6 +37,14 @@ def log(_ctx: ContextTypes.DEFAULT_TYPE | None, msg: str) -> None:
         print("[relay] %s" % msg, flush=True)
 
 
+def log_error(_ctx: ContextTypes.DEFAULT_TYPE | None, msg: str) -> None:
+    # _ctx kept for call-site stability, mirroring log().
+    # Unconditional on purpose: catch-all diagnostics (failures.explain
+    # returns a log line only for unrecognised failures) must reach the
+    # operator even when RELAY_DEBUG is off. Info stays on gated log().
+    print("[relay] %s" % msg, flush=True)
+
+
 # The site's OCR runs in the page, so the browser is the expensive part: ~640MB
 # measured. On a 1GB host it must not be held open. One Relay at a time, and
 # by default only for as long as a Screenshot is in flight.

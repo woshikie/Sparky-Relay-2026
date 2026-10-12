@@ -50,7 +50,7 @@ async def cb_date(update: Update, ctx: ContextTypes.DEFAULT_TYPE | None) -> None
     try:
         await _cb_date(update, ctx)
     except Exception as e:
-        session_mod.log(ctx, "date callback error: %r" % (e,))
+        session_mod.log_error(ctx, "date callback error: %r" % (e,))
         with suppress(TelegramError):
             await q.answer(
                 "something went wrong — send the screenshot again", show_alert=True
@@ -297,7 +297,15 @@ async def cb_ok(update: Update, ctx: ContextTypes.DEFAULT_TYPE | None) -> None:
             scratch = st.get("scratch")
             await q.edit_message_text(words.cancelled())
             await q.answer()
-            await _advance_chat(chat.id, msg)
+            try:
+                await _advance_chat(chat.id, msg)
+            except Exception as e:
+                # Broad on purpose, like the expired path above and the
+                # commit path below: present_confirmation requeues the
+                # record before reraising, so the next tap promotes and
+                # nothing is lost by swallowing here. Error diagnostics
+                # log unconditionally (see session.log_error).
+                session_mod.log_error(ctx, "cancel advance error: %r" % (e,))
             # Photo B reused/extended the same per-chat hold while queued
             # behind A, so cancelling A into B must not destroy what B
             # needs. Read under the lock so the close below cannot race
@@ -394,7 +402,7 @@ async def cb_ok(update: Update, ctx: ContextTypes.DEFAULT_TYPE | None) -> None:
                 start_prompt=lambda: ask_credentials(msg, chat.id),
             )
             if log_line:
-                session_mod.log(ctx, log_line)
+                session_mod.log_error(ctx, log_line)
             await q.answer(alert, show_alert=alarm)
             await _advance_chat(chat.id, msg)
         return
