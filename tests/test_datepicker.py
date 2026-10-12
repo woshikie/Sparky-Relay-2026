@@ -29,11 +29,11 @@ def captions(markup):
 def day_rows(markup):
     """Only the rows of day cells.
 
-    The header (arrows + month title) and the footer (Today) are not 7 wide,
-    which is correct -- so a blanket seven-wide assertion would be testing the
-    wrong thing and would fail on a right answer.
+    The header (arrows + month title) and the footer (Today, Cancel) are not
+    7 wide, which is correct -- so a blanket seven-wide assertion would be
+    testing the wrong thing and would fail on a right answer.
     """
-    return markup.inline_keyboard[2:-1]
+    return markup.inline_keyboard[2:-2]
 
 
 def day_cells(markup):
@@ -59,7 +59,9 @@ def test_every_callback_reaches_a_registered_handler(bot):
 def test_the_grid_uses_the_prefix_the_router_matches(bot):
     grid = datepicker.keyboard(2026, 10, datetime.date(2026, 10, 6))
     prefixes = {d.split(":")[0] for d in captions(grid)}
-    assert prefixes == {"dt"}, prefixes
+    # dt for the grid, ok for the Cancel row (routed to cb_ok, like every
+    # other Cancel).
+    assert prefixes == {"dt", "ok"}, prefixes
 
 
 def _patterns(bot):
@@ -174,6 +176,24 @@ def test_padding_is_still_silent():
 def test_there_is_a_today_shortcut():
     grid = datepicker.keyboard(2026, 10, datetime.date(2026, 10, 6))
     assert "dt:today" in captions(grid)
+
+
+def test_the_grid_carries_cancel():
+    """Two taps to cancel after Open datepicker, not a backing-out.
+
+    The Cancel row carries ok:cancel, so it routes to cb_ok like every
+    other Cancel instead of needing a tap back to the date prompt first.
+    """
+    grid = datepicker.keyboard(2026, 10, datetime.date(2026, 10, 6))
+    assert "ok:cancel" in captions(grid)
+
+
+def test_kb_pick_date_carries_cancel(bot):
+    """The kb_pick_date path shows the same Cancel row as the grid."""
+    from relay.telegram import codec
+
+    grid = bot.kb_pick_date(2026, 10)
+    assert codec.confirm("cancel") in datepicker.callback_captions(grid)
 
 
 # ---------------------------------------------------------------- shape
