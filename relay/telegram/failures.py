@@ -59,11 +59,9 @@ class FailureKind(NamedTuple):
 
 
 # The catch-all keeps each caller's own headline: the words are the same shape
-# ("X failed"), but the copy was written per flow and there is no reason to
-# churn what the user reads in a refactor.
-# The headlines keep each caller's own text byte-for-byte -- including the
-# Sync headline, which has no emoji where the other two do. Unifying the copy
-# is a separate change; a refactor must not churn what the user reads.
+# ("X failed"), but the copy was written per flow -- including the Sync
+# headline, which has no emoji where the other two do. Unifying the copy is a
+# separate change; a refactor must not churn what the user reads.
 CATCH_ALL: dict[Operation, str] = {
     "Upload": "❌ Upload failed: `%s`",
     "Sync": " Sync failed: `%s`",

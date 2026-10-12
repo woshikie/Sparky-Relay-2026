@@ -62,22 +62,18 @@ async def _cb_date(update: Update, ctx: ContextTypes.DEFAULT_TYPE | None) -> Non
     chat = update.effective_chat
     msg = update.effective_message
     assert q is not None and chat is not None and msg is not None
-    if not authorised(ctx, chat.id):
+    if not access.check(chat.id, getattr(chat, "username", None)):
         await q.answer("not authorised", show_alert=True)
         return
     _, kind, rest = codec.decode(q.data)
 
     # Navigation taps (back/pick/prev/next/none, and anything unrecognised)
-    # return from the dispatch below without reaching the refresh under the
-    # pending lock, so refresh here: paging the calendar past the deadline
-    # must not lose the hold mid-decision. Date kinds (today/yday/day) are
-    # deliberately excluded -- their refresh lives under the lock above the
-    # overwrite guard, and a dedicated test pins that placement. Guarded by
-    # a fresh liveness read (pre-lock st may be stale); refresh_hold itself
-    # no-ops for foreign or missing holds.
-    if kind not in ("today", "yday", "day") and (
-        pending_mod.latest_for_chat(chat.id) is not None
-    ):
+    # return before the refresh under the pending lock, so refresh here:
+    # paging the calendar past the deadline must not lose the hold
+    # mid-decision. Date kinds (today/yday/day) are deliberately excluded --
+    # their refresh lives under the lock above the overwrite guard, and a
+    # dedicated test pins that placement.
+    if kind not in ("today", "yday", "day"):
         session_mod.refresh_hold(chat.id)
 
     key: tuple[int, int] | None = None
@@ -104,14 +100,10 @@ async def _cb_date(update: Update, ctx: ContextTypes.DEFAULT_TYPE | None) -> Non
         key, st = found
 
     new_date: datetime.date | None = None
-    today_now: datetime.date | None = None
-    if kind in ("today", "yday", "day"):
-        today_now = clock.sg_today()
+    today_now = clock.sg_today()
     if kind == "today":
-        assert today_now is not None
         new_date = today_now
     elif kind == "yday":
-        assert today_now is not None
         new_date = today_now - datetime.timedelta(days=1)
     elif kind == "back":
         await q.edit_message_reply_markup(reply_markup=kb_date_default())
@@ -128,20 +120,9 @@ async def _cb_date(update: Update, ctx: ContextTypes.DEFAULT_TYPE | None) -> Non
         )
         await q.answer()
         return
-    elif kind == "prev":
-        # Same clamp as pick (see above): the target month arrives already
-        # resolved — datepicker.shift() owns the wrap, so there is no
-        # January/December arithmetic here to get wrong — and kb_pick_date
-        # clamps it into the window.
-        await q.edit_message_reply_markup(
-            reply_markup=kb_pick_date(int(rest[0]), int(rest[1]))
-        )
-        await q.answer()
-        return
-    elif kind == "next":
-        # Same clamp as pick (see above): kb_pick_date clamps the target
-        # into the window, so a crafted out-of-window payload still lands
-        # inside it.
+    elif kind in ("prev", "next"):
+        # Clamped as pick above: kb_pick_date clamps the target into the
+        # window, so a crafted out-of-window payload still lands inside it.
         await q.edit_message_reply_markup(
             reply_markup=kb_pick_date(int(rest[0]), int(rest[1]))
         )
@@ -166,7 +147,6 @@ async def _cb_date(update: Update, ctx: ContextTypes.DEFAULT_TYPE | None) -> Non
         # next). today needs no *ceiling* guard — it is the ceiling — but
         # the floor applies to every kind: on 2026-10-01 yday is 2026-09-30,
         # and before the event today itself is pre-event.
-        assert today_now is not None
         if new_date < datetime.date(EVENT_START_YEAR, EVENT_START_MONTH, 1):
             await q.answer(words.pre_event_day())
             return

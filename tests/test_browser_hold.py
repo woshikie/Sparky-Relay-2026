@@ -50,7 +50,7 @@ class FakeRelay:
     def login(self, username, password):
         self.login_calls.append((username, password))
 
-    def _authed(self):
+    def is_authed(self):
         return self.authed
 
 

@@ -57,6 +57,17 @@ _held_chat: int | None = None
 _held_until: float = 0.0
 
 
+def _clear_hold() -> None:
+    """Forget which chat holds the browser and until when.
+
+    Every write of the two fields beside stop() funnels through here, so a
+    new one cannot clear half the state. Callers run under _site_lock.
+    """
+    global _held_chat, _held_until
+    _held_chat = None
+    _held_until = 0.0
+
+
 def get_relay(
     progress: progress_mod.Progress | None = None,
 ) -> driver.Relay:
@@ -95,7 +106,9 @@ async def browser_session(
     leaderboard read) -- never for anything that writes. A None acquire with
     a live hold borrows that browser without disturbing the hold: no sign-in,
     no deadline change, no close, since standings are global and need no
-    identity.
+    identity. The borrow does navigate -- the standings read GETs /home, off
+    the confirm panel -- but the commit re-uploads the same Screenshot before
+    setting the date, so the hold still skips the ~20s relaunch.
 
     This must be an *async* context manager. With the plain
     `contextlib.contextmanager` on an `async def`, every caller doing
@@ -126,8 +139,7 @@ async def browser_session(
                 # there is only ever one browser.
                 print("[relay] closing held browser", flush=True)
                 await asyncio.to_thread(r.stop)
-                _held_chat = None
-                _held_until = 0.0
+                _clear_hold()
             # InsufficientMemory propagates as itself: it already carries the
             # numbers, and wrapping it in a second exception type meant
             # callers had to catch both for one condition. It raises before
@@ -149,7 +161,7 @@ async def browser_session(
                 # and fail as SiteChanged. A dead session mid-hold reads
                 # as not authed and falls through to sign_in as before.
                 try:
-                    still_authed = r._authed()
+                    still_authed = r.is_authed()
                 except Exception:
                     still_authed = False
                 if still_authed:
@@ -188,8 +200,7 @@ async def browser_session(
                         "[relay] %.0fMB available after close" % mem_after,
                         flush=True,
                     )
-                _held_chat = None
-                _held_until = 0.0
+                _clear_hold()
 
 
 def refresh_hold(chat_id: int) -> None:
@@ -239,8 +250,7 @@ async def close_held(chat_id: int, expected_until: float | None = None) -> None:
             return
         print("[relay] closing browser", flush=True)
         await asyncio.to_thread(get_relay().stop)
-        _held_chat = None
-        _held_until = 0.0
+        _clear_hold()
 
 
 async def site_login(
