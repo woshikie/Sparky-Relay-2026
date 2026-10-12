@@ -660,3 +660,15 @@ def test_a_second_confirm_tap_commits_nothing(pending, monkeypatch,
     assert q2.answers, "the second tap was never answered"
     row = led.last_submission("2026-10-04")
     assert row and row["steps"] == 6532
+
+
+def test_cancel_from_the_date_prompt_drops_the_screenshot(pending):
+    """No date picked yet: Cancel still discards, no Confirm needed first."""
+    assert pending.pending.get((1, 100))["date"] is None
+    upd = type("U", (), {})()
+    upd.callback_query = FakeQuery("ok:cancel")
+    upd.effective_chat = upd.callback_query.effective_chat
+    upd.effective_message = upd.callback_query.effective_message
+    run(pending.cb_ok(upd, None))
+    assert pending.pending.get((1, 100)) is None
+    assert "Discarded" in " ".join(upd.callback_query.message.edits)
