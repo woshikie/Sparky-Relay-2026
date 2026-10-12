@@ -315,26 +315,37 @@ async def cb_ok(update: Update, ctx: ContextTypes.DEFAULT_TYPE | None) -> None:
                 )
                 await q.edit_message_text("Expired. Send the screenshot again.")
                 return
+            scratch = st.get("scratch")
             await q.edit_message_text(words.cancelled())
             await q.answer()
             await _advance_chat(chat.id, msg)
             # Photo B reused/extended the same per-chat hold while queued
             # behind A, so cancelling A into B must not destroy what B
             # needs. Read under the lock so the close below cannot race
-            # the advance it just performed.
+            # the advance it just performed. This stays alongside the token
+            # below on purpose: the token only catches a hold armed *after*
+            # this snapshot, while still_live guards the hold B already
+            # armed before it, which the token cannot distinguish.
             still_live = pending_mod.latest_for_chat(chat.id) is not None
+            expected = session_mod.hold_deadline(chat.id)
+        # The scratch message outlived its Screenshot: remove it now, best
+        # effort. Outside the pending lock like the close below -- Telegram
+        # I/O must not run while the lock is held.
+        with suppress(TelegramError):
+            if scratch is not None:
+                await scratch.delete()
         # An explicit cancel ends the wait: close the held browser now
         # rather than letting the hold lapse -- but only when nothing is
         # still live (no queue advanced into the hold). Outside the pending
         # lock on purpose: close_held takes the site lock, while the commit
         # path takes the pending lock while holding the site lock
         # (site->pending), so closing in here (pending->site) would deadlock
-        # a concurrent Confirm+Cancel on one chat. The race is benign: if
-        # the commit already closed or cleared the hold, close_held no-ops
-        # (stop() is idempotent, and a foreign or missing hold returns
-        # early).
+        # a concurrent Confirm+Cancel on one chat. The token guards the
+        # remaining race: a photo intake arming a fresh hold between this
+        # lock's release and the site lock's acquire moves the deadline, so
+        # the close no-ops instead of destroying the new hold.
         if not still_live:
-            await session_mod.close_held(chat.id)
+            await session_mod.close_held(chat.id, expected_until=expected)
         return
 
     date = st.get("date")

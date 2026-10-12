@@ -276,10 +276,14 @@ class _CancelMessage:
         self.message_id = 200
         self.edits = []
         self.replies = []
+        self.deleted = False
 
     async def reply_text(self, text, **kw):
         self.replies.append(text)
         return self
+
+    async def delete(self):
+        self.deleted = True
 
 
 class _CancelQuery:
@@ -315,9 +319,10 @@ def test_cancel_closes_held_outside_the_pending_lock(
     })
     seen = {}
 
-    async def probe(chat_id):
+    async def probe(chat_id, expected_until=None):
         seen["chat"] = chat_id
         seen["locked"] = bot.pending.lock_for(chat_id).locked()
+        seen["expected_until"] = expected_until
 
     monkeypatch.setattr(session, "close_held", probe)
     q = _CancelQuery("ok:cancel", chat_id=1)
@@ -326,7 +331,7 @@ def test_cancel_closes_held_outside_the_pending_lock(
     upd.effective_chat = q.message.chat
     upd.effective_message = q.message
     run(bot.cb_ok(upd, None))
-    assert seen == {"chat": 1, "locked": False}
+    assert seen == {"chat": 1, "locked": False, "expected_until": None}
     assert bot.pending.get((1, 100)) is None
 
 
@@ -760,5 +765,68 @@ def test_cancel_with_no_queue_still_closes_the_hold(
     run(held())
     assert session._held_chat == 1
     _press_cancel(bot)
+    assert session._held_chat is None
+    assert fake_relay.stopped == 1
+
+
+def test_cancel_passes_the_hold_it_snapshot(
+    bot, access, session, ledger, fake_relay, monkeypatch
+):
+    """The cancel closes with the deadline it saw under the pending lock.
+
+    The probe captures the token: it must equal the armed deadline, so a
+    photo intake rearming a fresh hold after the snapshot makes the close
+    a no-op instead of destroying the new hold.
+    """
+    access.grant(1, "claim")
+    creds(ledger, session, 1)
+    bot.pending.clear()
+    bot.pending.put((1, 100), {
+        "path": "/tmp/x.jpg", "steps": 6532, "reported": "6,532",
+        "scratch": _CancelMessage(1), "date": None,
+    })
+    seen = {}
+    real_close = session.close_held
+
+    async def probe(chat_id, expected_until=None):
+        seen["chat"] = chat_id
+        seen["expected_until"] = expected_until
+        await real_close(chat_id, expected_until=expected_until)
+
+    monkeypatch.setattr(session, "close_held", probe)
+
+    async def held():
+        async with session.browser_session(1, hold=True):
+            pass
+
+    run(held())
+    armed = session._held_until
+    _press_cancel(bot)
+    assert seen == {"chat": 1, "expected_until": armed}
+    assert fake_relay.stopped == 1
+
+
+def test_close_held_ignores_a_rearmed_hold(session, ledger, fake_relay):
+    """A stale token must not destroy the hold that replaced it.
+
+    A photo intake arming a fresh hold between cancel's lock release and
+    the site lock's acquire moves the deadline: closing with the old token
+    no-ops, closing with the current one still releases.
+    """
+    creds(ledger, session, 1)
+
+    async def held():
+        async with session.browser_session(1, hold=True):
+            pass
+
+    run(held())
+    stale = session._held_until
+    session.refresh_hold(1)
+    rearmed = session._held_until
+    assert rearmed != stale
+    run(session.close_held(1, expected_until=stale))
+    assert session._held_chat == 1
+    assert fake_relay.stopped == 0
+    run(session.close_held(1, expected_until=rearmed))
     assert session._held_chat is None
     assert fake_relay.stopped == 1

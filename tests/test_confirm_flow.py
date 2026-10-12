@@ -750,3 +750,23 @@ def test_cancel_from_the_date_prompt_drops_the_screenshot(pending):
     run(pending.cb_ok(upd, None))
     assert pending.pending.get((1, 100)) is None
     assert "Discarded" in " ".join(upd.callback_query.message.edits)
+
+
+def test_cancel_deletes_the_scratch_message(pending):
+    """Acceptance: cancel pops the pending, deletes the scratch, answers.
+
+    The scratch is the progress message the intake left behind; each record
+    owns its own, so deleting it here cannot strand a newer Screenshot.
+    """
+    from relay.store import ledger as led
+    scratch = pending.pending.get((1, 100))["scratch"]
+    assert scratch.deleted is False
+    upd = type("U", (), {})()
+    upd.callback_query = FakeQuery("ok:cancel")
+    upd.effective_chat = upd.callback_query.effective_chat
+    upd.effective_message = upd.callback_query.effective_message
+    run(pending.cb_ok(upd, None))
+    assert pending.pending.get((1, 100)) is None
+    assert scratch.deleted is True
+    assert upd.callback_query.answers, "the tap was never answered"
+    assert led.all_submissions() == []
