@@ -29,7 +29,8 @@ from relay.site import driver
 DBG = bool(os.environ.get("RELAY_DEBUG"))
 
 
-def log(ctx: ContextTypes.DEFAULT_TYPE | None, msg: str) -> None:
+def log(_ctx: ContextTypes.DEFAULT_TYPE | None, msg: str) -> None:
+    # _ctx kept for call-site stability.
     # Plain print: the nightly backup scheduled in app.main() already keeps
     # the job queue referenced, so log() needs no scaffold job of its own.
     if DBG:
@@ -53,8 +54,9 @@ _held_until: float = 0.0
 def _clear_hold() -> None:
     """Forget which chat holds the browser and until when.
 
-    Every write of the two fields beside stop() funnels through here, so a
-    new one cannot clear half the state. Callers run under _site_lock.
+    Clears the hold after the browser is stopped. Arming writes the two
+    fields directly; every clear funnels through here, so a close always
+    wins over a refresh that landed mid-stop. Callers run under _site_lock.
     """
     global _held_chat, _held_until
     _held_chat = None

@@ -113,8 +113,6 @@ DENY_CHAT_IDS = _chat_ids(ENV.get("DENY_CHAT_IDS", ""))
 # Per-person Shared Secrets, "label:secret" per line. Only hashes are stored.
 SHARED_SECRETS = ENV.get("SHARED_SECRETS", "") or None
 
-ENV = _load()
-
 TELEGRAM_BOT_TOKEN = ENV.get("TELEGRAM_BOT_TOKEN", "")
 SITE_USERNAME = ENV.get("SITE_USERNAME", "")
 SITE_PASSWORD = ENV.get("SITE_PASSWORD", "")
