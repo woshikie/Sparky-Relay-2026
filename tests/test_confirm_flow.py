@@ -378,9 +378,9 @@ def _confirm(bot, chat_id=1):
 def test_a_changed_second_read_aborts_the_commit(pending, monkeypatch, session):
     """The re-read must agree with what the user confirmed.
 
-    The browser is closed after the first read to free RAM, so Commit re-opens
-    it and re-uploads. If the site reads a different number the second time,
-    the Screenshot is not the one the user agreed to, and nothing is written.
+    Commit re-uploads in the (usually held) browser and sets the date there.
+    If the site reads a different number the second time, the Screenshot is
+    not the one the user agreed to, and nothing is written.
     """
     pending.pending.get((1, 100))["date"] = datetime.date(2026, 10, 4)
     pending.pending.get((1, 100))["iso"] = "2026-10-04"
